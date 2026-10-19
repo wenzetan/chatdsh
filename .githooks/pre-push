@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# 推送前闸门。逐条处理待推送的引用：
+#   1. gitleaks 扫描远端没有的全部提交，首次推送时该范围等于全部历史
+#   2. 本机个人身份闭集比对同一范围
+# 提交前闸门只看暂存区，历史里的泄露只能在这一层拦住。
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+	echo "隐私防护：未找到 gitleaks，无法扫描待推送提交。" >&2
+	exit 1
+fi
+
+zero="0000000000000000000000000000000000000000"
+status=0
+ranges=()
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+	[ -n "${local_sha:-}" ] || continue
+	[ "$local_sha" = "$zero" ] && continue
+	[ "${remote_sha:-$zero}" = "$local_sha" ] && continue
+	if [ "${remote_sha:-$zero}" = "$zero" ]; then
+		echo "隐私防护：$local_ref 在远端不存在，扫描全部历史"
+		ranges+=("--all")
+	else
+		echo "隐私防护：扫描 $local_ref 的 $remote_sha..$local_sha"
+		ranges+=("$remote_sha..$local_sha")
+	fi
+done
+
+if [ "${#ranges[@]}" -eq 0 ]; then
+	echo "隐私防护：没有需要推送的提交"
+	exit 0
+fi
+
+for range in "${ranges[@]}"; do
+	if [ "$range" = "--all" ]; then
+		log_opts="--all"
+	else
+		log_opts="$range"
+	fi
+	if ! gitleaks git --log-opts="$log_opts" --redact --no-banner -c .gitleaks.toml -v; then
+		status=1
+	fi
+done
+
+if [ "$status" -ne 0 ]; then
+	echo >&2
+	echo "隐私防护：待推送的提交里有疑似凭据或隐私数据。" >&2
+	echo "  历史里的泄露必须改写历史并吊销对应凭据，不能靠新提交覆盖。" >&2
+	exit 1
+fi
+
+if ! python3 .githooks/check-identity.py --range "$(printf '%s\n' "${ranges[@]}")"; then
+	echo >&2
+	echo "隐私防护：待推送的提交包含本机个人身份信息。" >&2
+	exit 1
+fi
