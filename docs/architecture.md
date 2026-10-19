@@ -143,6 +143,12 @@ DSH 自带一套绑定 DeepSeek 平台账号的登录、余额与充值接缝：
 
 结论：走 `dsh` 命令行启动的载体必须避开该名称。ChatDSH 的桌面载体用 `chatdsh-desktop`；被跳过的三行里有两行本来就应当关闭，`ui-sidebar-browser` 由组合包按自有开关条件补回。
 
+### 2.14 遥测导出的现状与出口
+
+DSH 自带的 `@deepseek-ai/dsh-otel` 只提供两条日志通道：`createEventReporter` 与 `createSessionLogReporter`。前者用于普通事件，后者按字节上限批量上送会话日志。`session-telemetry-otel` 只在用户提交反馈时采集会话日志，`desktop-product-telemetry` 只在 profile 名为 `desktop` 时启用。两者都不覆盖追踪与指标。
+
+ChatDSH 的遥测自成一套：唯一的出口 `@chatdsh/plugin-telemetry` 在宿主平面注册 `ctx.chatdshTelemetry`，内部用 DSH 安装里的 OpenTelemetry 包自建三条管道，直发本机 OpenObserve。上游两行的关闭语义沿用：`DSH_TELEMETRY_DISABLED` 取任何非空值时整体关闭。信号清单、命名规范、上下文传播与关闭入口见[遥测与调试接口](telemetry.md)。
+
 ## 三、总体架构
 
 三个平面加一个共享中枢。
@@ -257,7 +263,7 @@ flowchart TB
 | `@chatdsh/plugin-voice` | 语音识别，复用内置实验性接口 | `dsh-experimental-api-speech-to-text` 行 |
 | `@chatdsh/plugin-images` | 图像生成与编辑工具的服务端部分 | `ctx.tools`、`ctx.attachments` |
 | `@chatdsh/mcp-server` | 把工具目录暴露为 MCP 服务端 | 独立子系统，见 4.4 |
-| `@chatdsh/plugin-metrics` | 遥测导出端点 | `dsh-session-telemetry-otel` 行 |
+| `@chatdsh/plugin-telemetry` | 唯一遥测出口：`ctx.chatdshTelemetry`、开关、脱敏、浏览器与移动端中继、自监控指标 | `ctx.provide`、`ctx.webServer.register`、`dsh-session-telemetry-otel` 行 |
 
 ### 4.4 MCP 服务端
 

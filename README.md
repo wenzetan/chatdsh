@@ -13,6 +13,7 @@
 | [reachability.md](docs/reachability.md) | 网络可达性与 Tailscale 接入 |
 | [hermes-integration.md](docs/hermes-integration.md) | Hermes 记忆系统接入 |
 | [computer-use-design-review.md](docs/computer-use-design-review.md) | 桌面控制方案的独立评审记录 |
+| [telemetry.md](docs/telemetry.md) | 遥测与调试接口：信号清单、命名规范、上下文传播、关闭开关、内容边界、验收方式 |
 | [secret-guard.md](docs/secret-guard.md) | 凭据与隐私防护：钩子、规则、占位约定、历史泄露清理 |
 | [prompts/git-commit-message.md](docs/prompts/git-commit-message.md) | 提交信息提示词模板 |
 
