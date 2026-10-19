@@ -196,11 +196,22 @@ Web 形态的 profile 补丁层按以下方式收敛宿主行，属于本端模�
 
 ## 五、命令行
 
-命令行做成 `@deepseek-harness-tui/dsh-tui` 0.12.0 的插件，不提供独立可执行文件。它复用 `dsh-tui` 的准入协议与贡献点，把控制平面作为一个渠道接进去。
+命令行做成 `@deepseek-harness-tui/dsh-tui` 0.16.1 的插件，不提供独立可执行文件。它复用 `dsh-tui` 的准入协议与贡献点，把控制平面作为一个渠道接进去。
+
+dsh-tui 的版本不能独立指定，由 DSH 内核版本决定。`dsh-tui` 内部有一份 `UPSTREAM_VALIDATED_VERSIONS` 清单，只有安装的 DSH 内核版本落在清单内才算验证支持；`package.json` 的 peer 范围比清单宽，安装通过不代表验证支持，落在清单外会在启动页报告版本漂移。本机实测的对应关系如下（peer 满足数按 `semver` 对 `0.2.1-rc.2` 逐项判定）：
+
+| DSH 内核 | dsh-tui | `UPSTREAM_VALIDATED_VERSION` | 是否覆盖 0.2.1-rc.2 | dsh peer 满足 |
+|---|---|---|---|---|
+| 0.2.1-rc.2 | 0.12.0 | 0.2.0-rc.2 | 否 | 0 / 31 |
+| 0.2.1-rc.2 | 0.15.0 | 0.2.0-rc.2 | 否 | 0 / 37 |
+| 0.2.1-rc.2 | 0.16.0 | 0.2.1-rc.2 | 是 | 36 / 36 |
+| 0.2.1-rc.2 | 0.16.1 | 0.2.1-rc.2 | 是 | 36 / 36 |
+
+版本链固定为三步：全局 DSH 版本确定后，选验证清单覆盖该版本的 dsh-tui，再按该 dsh-tui 的贡献点编写 `@chatdsh/cli`。四端共用同一个全局 DSH 版本，dsh-tui 与 CLI 插件都跟随它；DSH 升级到 0.2.1-rc.2 之后的版本时，要重新核对新 dsh-tui 的清单与 `preset-patch`、`panels` 等新增贡献点。
 
 ### 5.1 复用 dsh-tui 的模块
 
-`dsh-tui` 自带 `@dsh-std/*` 公共定义（`Command`、`LocalStorage`、`MessageObserver`、`Presentation`、`Workspace`）与 `tui.dsh/*` 私有命名空间。本端实测可用的贡献点导出如下（`package.json` 的 `exports` 与 `lib/types`）：
+`dsh-tui` 0.16.1 自带 `@dsh-std/*` 公共定义（`Command`、`LocalStorage`、`MessageObserver`、`Presentation`、`Workspace`）与 `tui.dsh/*` 私有命名空间。本端实测可用的贡献点导出如下（`package.json` 的 `exports` 与 `lib/types`）：
 
 | 贡献点 | 子路径 | 本端用途 |
 |---|---|---|
@@ -210,6 +221,8 @@ Web 形态的 profile 补丁层按以下方式收敛宿主行，属于本端模�
 | `Workspaces` | `./workspaces` | 工作区提供方与本地工作区运行时 |
 | `CommandTrees` | `./command-trees` | 命令树提供方 |
 | `PluginHost` | `./plugin-host` | 契约协商、权限清单、插件存储、消息观察、效果账本 |
+| `Panels` | `./panels` | 侧栏面板：`register`／`list`／`open`／`close`／`badge`／`subscribe`／`compact`，每插件至多 4 个、全局至多 32 个 |
+| `PresetPatch` | `./preset-patch` | 按 preset id 与行 id 改写 agent preset 内某行的 `config` |
 | `Extensions` | `./extensions` | 决策事件、对话框、状态栏、快捷键、渲染器、提示条、主题 |
 
 `TuiSceneProps` 实测带 `React`、`ui`、`channel`、`close` 四项，其中 `React` 与 `ui` 必须用宿主注入的实例，不能用插件自带副本。这条约束决定命令行模块的渲染都经宿主运行时。

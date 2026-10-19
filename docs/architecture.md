@@ -348,11 +348,13 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 
 ### 6.2 命令行
 
-`@chatdsh/cli` 做成 `@deepseek-harness-tui/dsh-tui`（0.12.0，Ink 实现）的插件，不提供独立可执行文件。
+`@chatdsh/cli` 做成 `@deepseek-harness-tui/dsh-tui`（Ink 实现）的插件，不提供独立可执行文件。
 
-dsh-tui 自带一套准入协议：`@dsh-std/*` 提供公共定义（`Command`、`LocalStorage`、`MessageObserver`、`Presentation`、`Workspace`），`tui.dsh/*` 是它的私有命名空间，已有 `Channel`（`API_VERSION` 为 `tui.dsh/v1alpha1`，`wireRevision` 为 6）、`DecisionEvents`、`SettingsSection`、`Scene`、`WorkspaceProvider` 五个契约。definition 集合记在 `dsh-ecosystem-spec/registry/registry-0.15.json`，权限清单在 `registry/permissions-0.1.json`。目录收录本身不产生实际支持，协议支持与权限授予分开判断。
+dsh-tui 的版本由 DSH 内核版本决定，不能独立指定。dsh-tui 内部有一份 `UPSTREAM_VALIDATED_VERSIONS` 清单，只有安装的 DSH 内核版本落在该清单内才算验证支持；`package.json` 的 peer 范围比这份清单更宽，安装能通过不等于验证支持，装到清单外会在启动页报告版本漂移并给出重装到已验证版本的命令。实测：DSH 0.2.1-rc.2 对应 dsh-tui 0.16.0 与 0.16.1（两者的 `UPSTREAM_VALIDATED_VERSION` 为 `0.2.1-rc.2`，36 个 dsh peer 全部满足），本设计取 0.16.1；0.12.0 只验证到 0.2.0-rc.2，31 个 dsh peer 全部拒绝 0.2.1-rc.2。版本链因此是固定的：全局 DSH 版本确定后再选验证清单覆盖该版本的 dsh-tui，最后按该 dsh-tui 的贡献点编写 `@chatdsh/cli`；全平台共用同一个全局 DSH 版本，dsh-tui 与 CLI 插件都跟随它。
 
-接入方式是提供 `tui.dsh/v1alpha1` 的 definition。实现 `Channel` 契约把控制平面作为一个渠道接进去：`open`、`subscribe`、`invoke`、`close` 四种操作，快照是 `TuiChannelSnapshot { wireRevision, channelId, version, state }`。用 `SettingsSection` 与 `Scene` 两个贡献点扩展设置页与场景，需要时再用 `WorkspaceProvider` 提供工作区列表。
+dsh-tui 自带一套准入协议：`@dsh-std/*` 提供公共定义（`Command`、`LocalStorage`、`MessageObserver`、`Presentation`、`Workspace`），`tui.dsh/*` 是它的私有命名空间，已有 `Channel`（`API_VERSION` 为 `tui.dsh/v1alpha1`，`wireRevision` 为 6）、`DecisionEvents`、`SettingsSection`、`Scene`、`WorkspaceProvider`、`Backend` 六个契约。definition 集合记在 `tui-profile/registry/registry-0.15.json`（`profileVersion` 为 `tui-admission/0.15`），权限清单在 `registry/permissions-0.1.json`。目录收录本身不产生实际支持，协议支持与权限授予分开判断。
+
+接入方式是提供 `tui.dsh/v1alpha1` 的 definition。实现 `Channel` 契约把控制平面作为一个渠道接进去：`open`、`subscribe`、`invoke`、`close` 四种操作，快照是 `TuiChannelSnapshot { wireRevision, channelId, version, state }`。用 `SettingsSection`、`Scene`、`Panels` 三个贡献点扩展设置页、场景与侧栏面板，需要时再用 `WorkspaceProvider` 提供工作区列表；`preset-patch` 用于按 id 改写 agent preset 内某行的配置。
 
 非交互模式转发到 `dsh --profile headless "<任务>"` 并按行输出 JSON。仓库内自主编辑沿用 `tool-bash`、`tool-fs`。编辑器集成走 `dsh --profile acp`。
 
@@ -644,6 +646,8 @@ Electron 主进程承担原生能力与运行时编排，控制平面、运行�
 ## 十一、风险与取舍
 
 **对 0.2.1-rc.2 的强绑定。** 自建插件依赖 Remote 方法契约、`ctx` 服务名与补丁行 id，升级会带来回归。取舍是在每个插件的 `engines.dsh` 与 profile 依赖里固定范围，升级走人工回归。
+
+**dsh-tui 的版本由内核版本决定，不能独立选择。** dsh-tui 的 `peerDependencies` 范围比它的 `UPSTREAM_VALIDATED_VERSIONS` 清单宽，安装能通过但不代表验证支持。取舍是把 DSH 内核、dsh-tui、`@chatdsh/cli` 三者作为一条链一起升级：内核固定后才选清单覆盖该内核的 dsh-tui，再按它的贡献点写 CLI 插件；内核升级到清单外的新版本时启动页会报版本漂移，必须先确认新版 dsh-tui 已把该内核列入清单再升级，不做跨清单版本的运行。
 
 **整行 config 覆盖与静默跳过。** 补丁覆盖整行配置，遗漏键会落到未定义；`name` 写错或 `id` 未匹配只打印警告。取舍是每次改动后用 `--dump-config` 与 `--dump-config-schema` 校验并要求警告输出为空。
 
