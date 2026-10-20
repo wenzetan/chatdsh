@@ -2,16 +2,16 @@
 # dsh-runtime 容器入口：准备容器内的工作副本与依赖，然后启动 dsh 运行时。
 #
 # 宿主仓库以只读方式挂在 /src，容器内的可写副本在 /work：
-# profile 目录里的 link: 依赖（packages/** 与同级仓库 chatdsn-adapter）依赖目录层级，
-# 复制时保持 chatdsh-main 与 chatdsn-adapter 的同级关系，链接才解析得到。
+# profile 目录里的 link: 依赖按同级关系解析，runtime 与 dsh-adapter 在仓库根下同级，
+# 复制时保持这个层级，链接才解析得到。
 #
 # DSH_HOME 指向 /work/.dsh，位于容器内的可写卷里，不指向宿主目录。
 set -euo pipefail
 
 SRC_ROOT=/src
 WORK_ROOT=/work
-REPO_DIR="$WORK_ROOT/chatdsh-main"
-ADAPTER_DIR="$WORK_ROOT/chatdsn-adapter"
+REPO_DIR="$WORK_ROOT/runtime"
+ADAPTER_DIR="$WORK_ROOT/dsh-adapter"
 PROFILE=chatdsh-web
 
 export DSH_HOME="$WORK_ROOT/.dsh"
@@ -57,10 +57,10 @@ link_dsh_deps() {
 	node scripts/link-dsh-deps.mjs
 }
 
-# 同级仓库 chatdsn-adapter 是独立仓库，自带类型声明与构建脚本。
+# dsh-adapter 与 runtime 同级，自带类型声明与构建脚本。
 # 自建包的类型检查要读它的声明文件，因此先把它构建出来。
 build_adapter() {
-	log build "构建 chatdsn-adapter"
+	log build "构建 dsh-adapter"
 	cd "$ADAPTER_DIR"
 	node scripts/link-dsh-deps.mjs
 	pnpm install --no-frozen-lockfile --config.auto-install-peers=false

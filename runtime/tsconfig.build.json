@@ -5,6 +5,9 @@
       "path": "packages/core/contracts"
     },
     {
+      "path": "packages/core/backends"
+    },
+    {
       "path": "packages/client/approval"
     },
     {

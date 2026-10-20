@@ -13,3 +13,7 @@ export * from './approval.ts';
 export * from './artifacts.ts';
 export * from './session-events.ts';
 export * from './assembly.ts';
+export * from './services.ts';
+export * from './chat-backend.ts';
+export * from './memory-backend.ts';
+export * from './model-backend.ts';
