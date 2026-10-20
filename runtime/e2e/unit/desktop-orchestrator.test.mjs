@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tempHome } from '../../scripts/lib/cleanup.mjs';
-import { createOrchestrator, AlreadyRunningError } from '../../packages/desktop/lib/index.js';
+import { createOrchestrator, AlreadyRunningError } from '../../desktop/lib/index.js';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const LAUNCH_ROOT = tempHome('desktop-test');
@@ -21,7 +21,7 @@ const PORT = 3177;
 function options(env) {
   return {
     launchRoot: LAUNCH_ROOT,
-    gateway: { command: process.execPath, args: [resolve(ROOT, 'packages/gateway/lib/main.js')] },
+    gateway: { command: process.execPath, args: [resolve(ROOT, 'gateway/lib/main.js')] },
     gatewayUrl: `http://127.0.0.1:${PORT}`,
     runtimeUrl: `http://127.0.0.1:${PORT}`,
     readyTimeoutMs: 20_000,
