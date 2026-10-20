@@ -1,0 +1,40 @@
+{
+  "name": "@chatdsh/plugin-memory",
+  "version": "0.1.0",
+  "description": "ChatDSH 宿主平面插件：记忆接入层（bank 规则、召回、写入、降级上报）",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.memory.degraded"
+      ],
+      "spans": [
+        "chatdsh.memory.recall",
+        "chatdsh.memory.write"
+      ],
+      "metrics": [
+        "chatdsh_memory_recall_seconds"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../../chatdsn-adapter"
+  }
+}

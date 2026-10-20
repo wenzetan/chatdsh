@@ -1,0 +1,35 @@
+{
+  "name": "dsh-profile-chatdsh-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ChatDSH 的长任务 profile：headless 运行，没有界面，由控制平面按任务驱动",
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../chatdsn-adapter",
+    "@chatdsh/bundle-hosted": "link:../../packages/bundles/hosted",
+    "@chatdsh/bundle-memory-hindsight": "link:../../packages/bundles/memory-hindsight",
+    "@chatdsh/bundle-worker": "link:../../packages/bundles/worker",
+    "@chatdsh/plugin-approval": "link:../../packages/plugins/approval",
+    "@chatdsh/plugin-artifacts": "link:../../packages/plugins/artifacts",
+    "@chatdsh/plugin-assistants": "link:../../packages/plugins/assistants",
+    "@chatdsh/plugin-connectors": "link:../../packages/plugins/connectors",
+    "@chatdsh/plugin-identity": "link:../../packages/plugins/identity",
+    "@chatdsh/plugin-import": "link:../../packages/plugins/import",
+    "@chatdsh/plugin-memory": "link:../../packages/plugins/memory",
+    "@chatdsh/plugin-projects": "link:../../packages/plugins/projects",
+    "@chatdsh/plugin-push": "link:../../packages/plugins/push",
+    "@chatdsh/plugin-session-index": "link:../../packages/plugins/session-index",
+    "@chatdsh/plugin-telemetry": "link:../../packages/plugins/telemetry",
+    "@chatdsh/plugin-usage": "link:../../packages/plugins/usage"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-headless",
+        "@chatdsh/bundle-hosted",
+        "@chatdsh/bundle-memory-hindsight",
+        "@chatdsh/bundle-worker"
+      ]
+    }
+  }
+}

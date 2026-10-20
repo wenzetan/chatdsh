@@ -50,6 +50,20 @@ async function collectSources(dir) {
   return out;
 }
 
+// 包可以嵌套在 packages 的子目录下（例如 packages/plugins/<name>），因此按目录递归找清单文件。
+async function collectManifests(dir) {
+  const out = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'lib' || entry.name === 'src') continue;
+    const full = join(dir, entry.name);
+    if (!entry.isDirectory()) continue;
+    const manifestPath = join(full, 'package.json');
+    if (await exists(manifestPath)) out.push(manifestPath);
+    out.push(...await collectManifests(full));
+  }
+  return out;
+}
+
 function collectUsedNames(text) {
   const names = new Set();
   for (const name of text.match(EVENT) ?? []) {
@@ -84,12 +98,7 @@ if (!await exists(PACKAGES_DIR)) {
   process.exit(0);
 }
 
-const manifestPaths = [];
-for (const entry of await readdir(PACKAGES_DIR, { withFileTypes: true })) {
-  if (!entry.isDirectory()) continue;
-  const manifestPath = join(PACKAGES_DIR, entry.name, 'package.json');
-  if (await exists(manifestPath)) manifestPaths.push(manifestPath);
-}
+const manifestPaths = await collectManifests(PACKAGES_DIR);
 
 if (manifestPaths.length === 0) {
   console.log('packages 目录下还没有包，遥测声明比对在出现包之后生效。');
@@ -124,6 +133,72 @@ for (const manifestPath of manifestPaths) {
   for (const name of used) {
     if (!declared.has(name)) failures.push(`${relative(ROOT, manifestPath)} 的源码出现 ${name}，package.json 没有声明`);
   }
+}
+
+// 属性一致性：文档里每个 span 行的属性列必须覆盖源码里同名调用设置的全部键。
+{
+  const spanRows = docText
+    .split('\n')
+    .map((line) => line.match(/^\| span \| `([a-z0-9.]+)` \|.*\| (.+) \|\s*$/))
+    .filter((match) => match !== null)
+    .map((match) => ({
+      name: match[1],
+      attributes: [...match[2].matchAll(/`([\w.]+)`/g)].map((item) => item[1]),
+    }));
+
+  const sourceTexts = [];
+  for (const manifestPath of manifestPaths) {
+    for (const file of await collectSources(dirname(manifestPath))) {
+      sourceTexts.push({ file, text: await readFile(file, 'utf8') });
+    }
+  }
+
+  for (const row of spanRows) {
+    for (const { file, text } of sourceTexts) {
+      const lines = text.split('\n');
+      const start = lines.findIndex((line) => line.includes(`'${row.name}'`));
+      if (start < 0) continue;
+      const keys = new Set();
+      for (let index = start; index < lines.length && index < start + 40; index += 1) {
+        // 遇到下一个 span 调用就停，避免把相邻信号的属性算进来。
+        if (index > start && /runSpan(Sync)?\(/.test(lines[index])) break;
+        for (const match of lines[index].matchAll(/setAttribute\('([\w.]+)'/g)) keys.add(match[1]);
+      }
+      for (const key of keys) {
+        if (!row.attributes.includes(key)) {
+          failures.push(`${relative(ROOT, file)} 的 ${row.name} 设置了 ${key}，docs/telemetry.md 的属性列里没有`);
+        }
+      }
+    }
+  }
+  // 事件属性：同名 event 调用带的键必须在文档的属性列里。
+  const eventRows = docText
+    .split('\n')
+    .map((line) => line.match(/^\| event \| `([a-z0-9.]+)` \|.*\| (.+) \|\s*$/))
+    .filter((match) => match !== null)
+    .map((match) => ({
+      name: match[1],
+      attributes: [...match[2].matchAll(/`([\w.]+)`/g)].map((item) => item[1]),
+    }));
+
+  for (const row of eventRows) {
+    for (const { file, text } of sourceTexts) {
+      const lines = text.split('\n');
+      const start = lines.findIndex((line) => line.includes(`'${row.name}'`));
+      if (start < 0) continue;
+      const keys = new Set();
+      for (let index = start; index < lines.length && index < start + 12; index += 1) {
+        for (const match of lines[index].matchAll(/'([\w.]+)':/g)) keys.add(match[1]);
+        if (index > start && /\}\);/.test(lines[index])) break;
+      }
+      for (const key of keys) {
+        if (!row.attributes.includes(key)) {
+          failures.push(`${relative(ROOT, file)} 的 ${row.name} 带了 ${key}，docs/telemetry.md 的属性列里没有`);
+        }
+      }
+    }
+  }
+  console.log(`属性一致性核对了 ${spanRows.length} 个 span、${eventRows.length} 个 event 声明。`);
 }
 
 if (failures.length > 0) {

@@ -1,0 +1,94 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: false
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@chatdsh/bundle-hosted':
+        specifier: link:../../packages/bundles/hosted
+        version: link:../../packages/bundles/hosted
+      '@chatdsh/client-account':
+        specifier: link:../../packages/clients/account
+        version: link:../../packages/clients/account
+      '@chatdsh/client-approval':
+        specifier: link:../../packages/clients/approval
+        version: link:../../packages/clients/approval
+      '@chatdsh/client-artifacts':
+        specifier: link:../../packages/clients/artifacts
+        version: link:../../packages/clients/artifacts
+      '@chatdsh/client-assistants':
+        specifier: link:../../packages/clients/assistants
+        version: link:../../packages/clients/assistants
+      '@chatdsh/client-connectors':
+        specifier: link:../../packages/clients/connectors
+        version: link:../../packages/clients/connectors
+      '@chatdsh/client-memory':
+        specifier: link:../../packages/clients/memory
+        version: link:../../packages/clients/memory
+      '@chatdsh/client-projects':
+        specifier: link:../../packages/clients/projects
+        version: link:../../packages/clients/projects
+      '@chatdsh/client-share':
+        specifier: link:../../packages/clients/share
+        version: link:../../packages/clients/share
+      '@chatdsh/client-telemetry':
+        specifier: link:../../packages/clients/telemetry
+        version: link:../../packages/clients/telemetry
+      '@chatdsh/plugin-approval':
+        specifier: link:../../packages/plugins/approval
+        version: link:../../packages/plugins/approval
+      '@chatdsh/plugin-artifacts':
+        specifier: link:../../packages/plugins/artifacts
+        version: link:../../packages/plugins/artifacts
+      '@chatdsh/plugin-assistants':
+        specifier: link:../../packages/plugins/assistants
+        version: link:../../packages/plugins/assistants
+      '@chatdsh/plugin-connectors':
+        specifier: link:../../packages/plugins/connectors
+        version: link:../../packages/plugins/connectors
+      '@chatdsh/plugin-identity':
+        specifier: link:../../packages/plugins/identity
+        version: link:../../packages/plugins/identity
+      '@chatdsh/plugin-import':
+        specifier: link:../../packages/plugins/import
+        version: link:../../packages/plugins/import
+      '@chatdsh/plugin-projects':
+        specifier: link:../../packages/plugins/projects
+        version: link:../../packages/plugins/projects
+      '@chatdsh/plugin-push':
+        specifier: link:../../packages/plugins/push
+        version: link:../../packages/plugins/push
+      '@chatdsh/plugin-session-index':
+        specifier: link:../../packages/plugins/session-index
+        version: link:../../packages/plugins/session-index
+      '@chatdsh/plugin-telemetry':
+        specifier: link:../../packages/plugins/telemetry
+        version: link:../../packages/plugins/telemetry
+      '@chatdsh/plugin-usage':
+        specifier: link:../../packages/plugins/usage
+        version: link:../../packages/plugins/usage
+      '@chatdsh/preset-chat':
+        specifier: link:../../packages/presets/chat
+        version: link:../../packages/presets/chat
+      '@chatdsh/tool-artifact':
+        specifier: link:../../packages/presets/tool-artifact
+        version: link:../../packages/presets/tool-artifact
+      '@chatdsh/tool-connector':
+        specifier: link:../../packages/presets/tool-connector
+        version: link:../../packages/presets/tool-connector
+      '@chatdsh/tool-image':
+        specifier: link:../../packages/presets/tool-image
+        version: link:../../packages/presets/tool-image
+      '@chatdsh/tool-project':
+        specifier: link:../../packages/presets/tool-project
+        version: link:../../packages/presets/tool-project
+      '@chatdsh/tool-research':
+        specifier: link:../../packages/presets/tool-research
+        version: link:../../packages/presets/tool-research
+      '@chatdsh/tool-share':
+        specifier: link:../../packages/presets/tool-share
+        version: link:../../packages/presets/tool-share

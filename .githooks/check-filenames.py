@@ -79,7 +79,9 @@ def main():
     allow = load_allow()
     hits = []
     for path in staged_paths():
-        if any(path == a or path.startswith(a) for a in allow):
+        # 放行清单按「路径片段」匹配：条目出现在路径任意位置即放行，
+        # 因此 `.npmrc` 一条可以覆盖各 profile 目录下的同名文件。
+        if any(a in path for a in allow):
             continue
         if TEMPLATE.search(path):
             continue

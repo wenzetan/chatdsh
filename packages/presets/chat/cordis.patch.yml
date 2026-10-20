@@ -1,0 +1,68 @@
+# @chatdsh/preset-chat 的补丁层：声明会话平面使用的 agent preset。
+#
+# 预设内的条目属于会话作用域，与会话一起创建与销毁；工具可见范围由预设差异与
+# ctx.tools.restrict 收敛。宿主平面已经注册的行在这里重新挂载到会话作用域，
+# 两层的行 id 各自独立。
+
+- insert:
+    - id: preset-chatdsh
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: chatdsh
+        name: ChatDSH
+        description: ChatDSH 的默认预设：文件读写、命令执行、内容检索、网页抓取与任务清单工具齐备；网页操作与桌面控制不在此列，按工作区或会话设置追加。
+        order: 6
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                你是 ChatDSH 的助手，一个可以读写文件、运行命令、检索与会话内容的自托管助手。
+                需要查看文件内容时读取文件，不要凭印象猜测；需要运行命令时直接运行，不要只给出命令文本。
+                多步任务先用任务清单工具列出步骤，完成一步就更新一步。
+                只报告实际执行过的操作与实际的执行结果，不确定的事情明确说明不确定。
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: chatdsh-tool-artifact
+            name: '@chatdsh/tool-artifact'
+          - id: chatdsh-tool-project
+            name: '@chatdsh/tool-project'
+          - id: chatdsh-tool-share
+            name: '@chatdsh/tool-share'
+          - id: chatdsh-tool-connector
+            name: '@chatdsh/tool-connector'
+          - id: chatdsh-tool-research
+            name: '@chatdsh/tool-research'
+          - id: chatdsh-tool-image
+            name: '@chatdsh/tool-image'

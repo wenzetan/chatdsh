@@ -4,7 +4,7 @@
 
 ## 一、单机形态的组件与启动
 
-五类进程，都在同一台机器上。运行时只绑回环，控制平面的绑定地址见下一条，Hermes 与 Hindsight 同机时绑回环。
+五类组件：启动器、控制平面、运行时、Hermes、Hindsight。启动器、控制平面、运行时在控制宿主上；Hermes 由控制平面托管、与运行时同机；Hindsight 由用户自行部署，可同机或分机。运行时只绑回环，控制平面的绑定地址见下一条，Hermes 与 Hindsight 同机时绑回环。Hermes 与 Hindsight 都是可选组件，各自以插件接入；`chatBackend` 与 `memoryBackend` 的四种组合见[聊天后端与记忆接入](hermes-integration.md)第四节。
 
 **启动器**取单实例锁、初始化数据目录、生成或读取控制平面密钥、拉起控制平面、等待就绪、打开浏览器。它本身不承载业务。
 
@@ -43,11 +43,11 @@ chatdsh.example.com {
 
 **运行时**每用户一个 DSH 进程，端口由控制平面分配（随机回环端口），`$DSH_HOME` 指向该用户的目录，只从控制平面注入的请求头部读取身份。
 
-**Hermes** 每用户一个实例，`HERMES_HOME` 在该用户的租户目录下。**Hindsight** 是全局单例的 Docker 服务，记忆按 bank 分区而不是按实例分区。
+**Hermes** 每用户一个实例，`HERMES_HOME` 在该用户的租户目录下，只在 `chatBackend` 为 `hermes` 时启动。**Hindsight** 由用户自行部署，可以是同机的 Docker 服务，也可以是另一台机器上的服务；控制平面只探活不托管它的进程。记忆按 bank 分区而不是按实例分区。
 
-启动顺序：取锁、初始化数据目录、读取密钥、启动控制平面、控制平面探活 Hindsight、按配置拉起 Hermes、由控制平面拉起运行时、轮询回环端口直到健康、打开浏览器。停止时先停运行时与 Hermes，再停控制平面。
+启动顺序：取锁、初始化数据目录、读取密钥、启动控制平面、控制平面探活 Hindsight（`memoryBackend` 为 `hindsight` 时）、按配置拉起 Hermes（`chatBackend` 为 `hermes` 时）、由控制平面拉起运行时、轮询回环端口直到健康、打开浏览器。停止时先停运行时与 Hermes，再停控制平面。
 
-降级路径要显式定义。Hindsight 不可用时记忆能力降级：召回返回空、写入进本地待写队列。Hermes 不可用时聊天能力不可用，工作会话不受影响，审批推送也不会产生——这一点要写进用户可见的状态说明。
+降级路径要显式定义。`memoryBackend` 为 `hindsight` 而 Hindsight 不可达时记忆能力降级：召回返回空、写入进本地待写队列。`chatBackend` 为 `hermes` 而 Hermes 不可用时聊天能力不可用，工作会话不受影响，审批推送也不会产生——这一点要写进用户可见的状态说明。`memoryBackend` 为 `hermes` 时记忆随 Hermes 的可用性变化。`memoryBackend` 为 `none` 时不加载记忆插件，不存在记忆降级。
 
 ## 二、数据布局
 
@@ -108,7 +108,7 @@ flowchart LR
 
 **用量从第一天就累加。** 每一轮的 token 与轮次写进账本，字段含租户、工作区、账号、会话、轮次、模型、provider、四类 token 计数与记录时间，并以「会话编号加轮次」作为唯一约束，避免跨进程上报重传导致重复计账。
 
-**记忆按账号与工作区分 bank，写入不跨 bank 镜像。** 账号 bank 用前缀 `acct:<accountId>`，工作区 bank 用前缀 `t:<tenantId>:ws:<memoryGroupId>`。`memoryGroupId` 默认等于 `workspaceId`，用户把两个工作区关联成记忆组后两者共用一个组标识，从而使跨设备的两份检出共享记忆；关联只影响记忆，不改变会话归属与项目设置。租户前缀从第一天就在，避免不同租户的标识相撞。私有工作区召回工作区 bank 加账号 bank、写入账号 bank；共享工作区召回工作区 bank 加当前用户自己的账号 bank、写入工作区 bank。私有工作区转为共享时不迁移记忆，转共享后作者仍能带着自己的历史工作，新成员只能看到转共享之后沉淀的内容，这一点要在界面里说明。
+**记忆后端为 `hindsight` 时，记忆按账号与工作区分 bank，写入不跨 bank 镜像。** 账号 bank 用前缀 `acct:<accountId>`，工作区 bank 用前缀 `t:<tenantId>:ws:<memoryGroupId>`。`memoryGroupId` 默认等于 `workspaceId`，用户把两个工作区关联成记忆组后两者共用一个组标识，从而使跨设备的两份检出共享记忆；关联只影响记忆，不改变会话归属与项目设置。租户前缀从第一天就在，避免不同租户的标识相撞。私有工作区召回工作区 bank 加账号 bank、写入账号 bank；共享工作区召回工作区 bank 加当前用户自己的账号 bank、写入工作区 bank。私有工作区转为共享时不迁移记忆，转共享后作者仍能带着自己的历史工作，新成员只能看到转共享之后沉淀的内容，这一点要在界面里说明。
 
 **设备与订阅表从第一天就有。** 记录按账号建：同一台物理设备上的两个账号是两条互相不可见的记录，各自持有自己的节点令牌与订阅。每条记录含精确 Origin（协议、主机、端口逐字相同）、平台、角色、令牌摘要与签发时间、最后使用时间、最后在线时间、送达档位、`tailscaleLogin`（首次经 Tailscale 登录时记录的稳定标识，用于把新设备归到既有账号），以及 `syncScope`（全部会话、仅带工作区的会话、不同步，默认全部会话）。跨设备推送按它决定投给谁，会话同步按它决定是否上报。
 
@@ -116,7 +116,7 @@ flowchart LR
 
 **定时任务表在控制平面。** 任务含 cron 表达式、目标会话、动作类型（唤醒运行时投递消息，或直接推送）、启用状态与最近一次执行结果。运行时的 `ctx.schedule` 只用于进程内短时延。
 
-**Hermes 与 Hindsight 的生命周期由控制平面托管。** 两者的启动、探活、降级与回收都在控制平面，Hermes 实例与运行时进程合并调度：同一用户活跃时两者都起，空闲时一起停。
+**Hermes 的生命周期由控制平面托管，Hindsight 由用户自行部署。** `chatBackend` 为 `hermes` 时 Hermes 的启动、探活、降级与回收都在控制平面，Hermes 实例与运行时进程合并调度：同一用户活跃时两者都起，空闲时一起停。Hindsight 的进程不由控制平面托管，`memoryBackend` 为 `hindsight` 时控制平面持有它的地址与探活结果，探活失败按记忆降级处理。
 
 ## 四、将来作为增量加入的部分
 
@@ -138,7 +138,9 @@ flowchart LR
 
 账号链六行默认禁用：`deepseek-account`、`llm-deepseek-account`、`account-controller`、`ui-settings-account`、`web-deepseek-api`、`web-search-deepseek`。`deepseekAccount` 被六个包引用，整链禁用才能避免失败的 fiber。
 
-Hermes 与 Hindsight 作为可选组件：不启用时聊天能力不可用，工作会话与命令行照常；启用时按 [Hermes 接入](hermes-integration.md) 分流。
+Hermes 与 Hindsight 作为可选组件，各自以插件接入，四种组合都成立：无 Hermes 有 Hindsight 时聊天走 DSH、记忆经 Hindsight；无 Hermes 无 Hindsight 时聊天走 DSH、记忆不启用；有 Hermes 无 Hindsight 时聊天与记忆都走 Hermes 内置；有 Hermes 有 Hindsight 时聊天走 Hermes、记忆走 Hindsight 的 bank。见[聊天后端与记忆接入](hermes-integration.md)。
+
+默认取 `chatBackend: dsh`、`memoryBackend: none`：装好即可对话，不依赖任何外部服务。用户在设置页选择启用 Hindsight 或启用 Hermes，控制平面把对应开关写进配置并下发运行时。Hindsight 由用户自行部署，控制平面只提供连接配置与探活，不启动它的进程；单机部署的实测参数见第八节。
 
 ## 八、容量与进程池的测量
 

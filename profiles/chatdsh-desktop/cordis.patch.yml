@@ -1,0 +1,64 @@
+# chatdsh-desktop 的本部署补丁层。
+#
+# 桌面形态与 Web 形态共用界面，差别在组合包：storage-jsonl 显式钉住会话日志位置，
+# bundle-desktop 保留浏览器侧栏并声明审批呈现由壳层承担。
+
+# 会话检索：跨会话搜索与按工作区过滤走这一行。
+# 这一行已由 Web 应用在配置里注册，这里覆盖它的配置，不能再插入一次同名条目。
+- id: session-query-sqlite
+  name: '@deepseek-ai/dsh-session-query-sqlite'
+  config:
+    path: !!js dshHomePath('session-index.sqlite')
+    openAt: startup
+
+# 新会话默认使用 ChatDSH 自己的预设。
+- id: agent-preset-registry
+  name: '@deepseek-ai/dsh-agent-preset-registry'
+  config:
+    default: chatdsh
+
+# 浏览器侧的客户端插件。
+#
+# 这些行必须落在 profile 自己的补丁层：客户端模块图按 loader 条目的来源目录解析包元数据，
+# 组合包插入的行会以组合包所在目录为基准，而自建包只安装在 profile 的 node_modules 里。
+#
+# 同样的行在 chatdsh-web 里也有一份，重复是有意的：补丁层不能跨 profile 复用，搬进组合包
+# 会让上面那条路径解析失效。
+- insert:
+    - id: chatdsh-client-telemetry
+      name: '@chatdsh/client-telemetry'
+    - id: chatdsh-client-projects
+      name: '@chatdsh/client-projects'
+    - id: chatdsh-client-artifacts
+      name: '@chatdsh/client-artifacts'
+    - id: chatdsh-client-assistants
+      name: '@chatdsh/client-assistants'
+    - id: chatdsh-client-share
+      name: '@chatdsh/client-share'
+    - id: chatdsh-client-account
+      name: '@chatdsh/client-account'
+    - id: chatdsh-client-memory
+      name: '@chatdsh/client-memory'
+    - id: chatdsh-client-approval
+      name: '@chatdsh/client-approval'
+    - id: chatdsh-client-connectors
+      name: '@chatdsh/client-connectors'
+
+# 单机形态不接 DeepSeek 官方账号链，模型凭据由设置页或环境变量提供。
+- id: deepseek-account
+  disabled: true
+
+- id: llm-deepseek-account
+  disabled: true
+
+- id: account-controller
+  disabled: true
+
+- id: ui-settings-account
+  disabled: true
+
+- id: web-deepseek-api
+  disabled: true
+
+- id: web-search-deepseek
+  disabled: true

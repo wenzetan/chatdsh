@@ -1,0 +1,9 @@
+# ChatDSH 存储组合包：会话日志落 JSONL 文件。
+#
+# 单机与桌面形态用这一份；团队版换 Postgres 时由 profile 换成另一个存储组合包。这一行
+# 显式写出根目录，使「会话存哪里」在配置里可见，不依赖上游默认值。
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')

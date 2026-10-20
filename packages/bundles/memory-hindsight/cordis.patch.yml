@@ -1,0 +1,15 @@
+# ChatDSH 记忆组合包。
+#
+# 只在 `memoryBackend` 为 `hindsight` 时由 profile 加入；不加这个组合包就是「记忆不启用」
+# 的形态。凭据经环境变量名引用，服务地址由控制平面按部署情况写入。
+
+- insert:
+    - id: chatdsh-memory
+      name: '@chatdsh/plugin-memory'
+      config:
+        hindsightUrl: http://127.0.0.1:8889
+        apiKeyEnv: HINDSIGHT_API_KEY
+        maxTokens: 1024
+        requestTimeoutMs: 5000
+        mirrorToOwnBank: false
+        additionalBanks: []

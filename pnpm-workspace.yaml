@@ -1,0 +1,8 @@
+packages:
+  - packages/contracts
+  - packages/plugins/*
+  - packages/presets/*
+  - packages/clients/*
+  - packages/bundles/*
+  - packages/gateway
+  - packages/desktop

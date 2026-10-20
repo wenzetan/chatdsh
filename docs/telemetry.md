@@ -108,9 +108,8 @@ flowchart TB
 | 控制平面 | `chatdsh-gateway` | 包名，例如 `@chatdsh/gateway` |
 | 运行时 | `chatdsh-runtime` | 包名 |
 | 浏览器客户端 | `chatdsh-browser` | 客户端插件包名 |
-| 桌面主进程 | `chatdsh-desktop` | `@chatdsh/desktop-shell` |
-| 移动端 | `chatdsh-mobile` | `@chatdsh/mobile` |
-| 命令行 | `chatdsh-cli` | `@chatdsh/cli` |
+| 桌面主进程 | `chatdsh-desktop` | `@chatdsh/desktop` |
+| 命令行 | `chatdsh-cli` | 全局 `dsh-tui`，不另设包 |
 | 长任务 | `chatdsh-worker` | 包名 |
 | MCP 服务端 | `chatdsh-mcp` | `@chatdsh/mcp-server` |
 
@@ -145,16 +144,19 @@ flowchart TB
 | span | `chatdsh.gateway.identity` | 身份头解析与账号匹配 | `auth.mode`、`outcome` |
 | span | `chatdsh.gateway.access` | 会话归属判定 | `session.id`、`workspace.id`、`outcome` |
 | span | `chatdsh.gateway.runtime.lifecycle` | 运行时启动、就绪、停止、回收 | `action`、`runtime.id`、`outcome` |
-| span | `chatdsh.gateway.replica.append` | 会话副本追加 | `session.id`、`seq`、`bytes` |
+| span | `chatdsh.gateway.replica.append` | 会话副本追加 | `session.id`、`seq`、`bytes`、`outcome` |
 | span | `chatdsh.gateway.share.render` | 分享快照渲染 | `share.id`、`up_to_seq` |
 | span | `chatdsh.gateway.push.deliver` | 推送投递 | `device.kind`、`outcome` |
 | span | `chatdsh.gateway.schedule.run` | 定时任务执行 | `task.id`、`action`、`outcome` |
+| span | `chatdsh.gateway.power.policy` | 电源策略下发与生效 | `power.mode`、`outcome` |
 | event | `chatdsh.gateway.auth.failed` | 认证失败 | `auth.mode`、`error.code` |
+| event | `chatdsh.gateway.power.failed` | 阻止睡眠失败或被执行环境拒绝 | `power.mode`、`error.code` |
 | metric | `chatdsh_http_requests_total` | 全部入站请求 | `route`、`method`、`status_class` |
 | metric | `chatdsh_http_request_duration_seconds` | 全部入站请求 | `route`、`method` |
 | metric | `chatdsh_replica_lag_sessions` | 副本落后会话数 | 无 |
 | metric | `chatdsh_push_deliveries_total` | 推送投递 | `device.kind`、`outcome` |
 | metric | `chatdsh_schedule_runs_total` | 定时任务 | `action`、`outcome` |
+| metric | `chatdsh_power_policy_active` | 当前生效的保活与阻止睡眠档位 | `power.mode` |
 
 ### 6.2 运行时宿主平面
 
@@ -166,6 +168,7 @@ flowchart TB
 | span | `chatdsh.runtime.session.create` | 会话创建 | `session.kind` |
 | span | `chatdsh.runtime.session.append` | 会话事件追加 | `event.type`、`seq`、`bytes` |
 | span | `chatdsh.runtime.session.fork` | 会话分叉 | `parent.session.id`、`boundary` |
+| span | `chatdsh.runtime.chat.dispatch` | 聊天回合按后端分派 | `chat.backend`、`outcome` |
 | span | `chatdsh.runtime.remote.call` | Remote 方法调用 | `rpc.method`、`outcome` |
 | span | `chatdsh.runtime.tool.execute` | 工具执行 | `tool.name`、`outcome` |
 | span | `chatdsh.runtime.approval.wait` | 审批等待 | `approval.kind`、`decision` |
@@ -235,10 +238,12 @@ flowchart TB
 | span | `chatdsh.desktop.runtime.orchestrate` | 拉起运行时并等待就绪 | `runtime.id`、`outcome` |
 | span | `chatdsh.desktop.update.check` | 更新检查与下载 | `channel`、`outcome` |
 | span | `chatdsh.desktop.computeruse.lease` | 桌面控制租约 | `action`、`outcome` |
+| span | `chatdsh.desktop.power.block` | 电源阻止启动与释放 | `power.mode`、`action`、`outcome` |
 | event | `chatdsh.desktop.crash.evidence` | 崩溃证据采集 | `exit.code`、`uptime.seconds` |
 | event | `chatdsh.desktop.notification` | 系统通知 | `kind`、`outcome` |
 | metric | `chatdsh_desktop_startup_seconds` | 启动阶段耗时 | `stage` |
 | metric | `chatdsh_desktop_crashes_total` | 崩溃次数 | `reason` |
+| metric | `chatdsh_desktop_power_blockers` | 活动电源阻止器数量 | `power.mode` |
 
 ### 6.7 移动端
 
@@ -279,28 +284,36 @@ flowchart TB
 
 | 信号 | 名称 | 触发点 | 必需属性 |
 |---|---|---|---|
-| span | `chatdsh.memory.recall` | Hindsight 召回 | `bank.kind`、`hits`、`outcome` |
-| span | `chatdsh.memory.write` | 记忆写入 | `bank.kind`、`outcome` |
+| span | `chatdsh.memory.recall` | 记忆召回（Hindsight 或 Hermes 内置） | `bank.kind`、`hits`、`outcome` |
+| span | `chatdsh.memory.write` | 记忆写入（Hindsight 或 Hermes 内置） | `bank.kind`、`outcome` |
 | span | `chatdsh.dependency.probe` | Hermes、Hindsight 探活 | `dependency`、`outcome` |
 | event | `chatdsh.memory.degraded` | 记忆降级 | `reason` |
 | metric | `chatdsh_memory_recall_seconds` | 召回耗时 | `bank_kind` |
 | metric | `chatdsh_dependency_probe_failures_total` | 探活失败 | `dependency` |
+| span | `chatdsh.import.seed` | 把会话副本还原成会话种子 | `records.count`、`seed.count`、`outcome` |
+| event | `chatdsh.import.seed.failed` | 副本形状不合法 | `error.type`、`records.count` |
+| metric | `chatdsh_import_seed_total` | 种子构造次数 | `outcome` |
+| span | `chatdsh.connectors.sync` | 把连接器记录同步成加载器行 | `connectors.count`、`create.count`、`update.count`、`remove.count`、`outcome` |
+| event | `chatdsh.connectors.sync.failed` | 同步失败 | `error.type` |
+| metric | `chatdsh_connectors_sync_total` | 同步次数 | `outcome` |
 
 ### 6.11 同步、分享与遥测自监控
 
 | 信号 | 名称 | 触发点 | 必需属性 |
 |---|---|---|---|
-| span | `chatdsh.sync.event.push` | 事件推送到控制平面 | `session.id`、`seq` |
+| span | `chatdsh.sync.event.push` | 事件推送到控制平面 | `session.id`、`seq`、`outcome` |
 | span | `chatdsh.sync.import` | 会话导入 | `mode`、`events` |
 | event | `chatdsh.sync.watermark` | 同步水位变化 | `session.id`、`lag.events` |
 | event | `chatdsh.telemetry.dropped` | 队列满丢弃 | `signal`、`reason` |
-| event | `chatdsh.telemetry.invalid_context` | `traceparent` 非法被丢弃 | `carrier`、`reason` |
+| event | `chatdsh.telemetry.invalid` | `traceparent` 非法被丢弃 | `carrier`、`reason` |
 | event | `chatdsh.telemetry.enabled` | 遥测在进程内开启 | `reason` |
 | event | `chatdsh.telemetry.export.failed` | 导出失败 | `signal`、`error.code` |
+| span | `chatdsh.telemetry.probe` | 自检探针写一条日志、一个 span 与一个计数器 | `probe.id` |
 | metric | `chatdsh_telemetry_queue_depth` | 队列深度 | `signal` |
 | metric | `chatdsh_telemetry_dropped_total` | 丢弃计数 | `signal`、`reason` |
 | metric | `chatdsh_telemetry_export_failures_total` | 导出失败 | `signal`、`status` |
 | metric | `chatdsh_telemetry_export_duration_seconds` | 导出耗时 | `signal` |
+| metric | `chatdsh_telemetry_self_test_total` | 自检次数 | `probe.id` |
 
 ## 七、上下文传播
 
@@ -319,7 +332,7 @@ flowchart TB
 | 移动端到控制平面 | HTTP 头 `traceparent` | 设备令牌与 trace 分开 |
 | 命令行到控制平面 | HTTP 头 `traceparent` | 同浏览器 |
 
-没有父上下文时新建一条 trace，并在资源属性里带 `chatdsh.instance.id`。`traceparent` 格式非法时丢弃该值、新开 trace，并记一条 `chatdsh.telemetry.invalid_context` 事件，不把非法值写进属性。
+没有父上下文时新建一条 trace，并在资源属性里带 `chatdsh.instance.id`。`traceparent` 格式非法时丢弃该值、新开 trace，并记一条 `chatdsh.telemetry.invalid` 事件，不把非法值写进属性。
 
 ## 八、关闭开关
 

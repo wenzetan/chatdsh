@@ -1,0 +1,29 @@
+{
+  "name": "dsh-profile-chatdsh-acp",
+  "private": true,
+  "description": "端到端验收用的 ACP 形态 profile：dsh-base 加自建宿主平面组合包，用于脚本化创建会话并核对投影",
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../../chatdsn-adapter",
+    "@chatdsh/bundle-hosted": "link:../../../packages/bundles/hosted",
+    "@chatdsh/plugin-approval": "link:../../../packages/plugins/approval",
+    "@chatdsh/plugin-artifacts": "link:../../../packages/plugins/artifacts",
+    "@chatdsh/plugin-assistants": "link:../../../packages/plugins/assistants",
+    "@chatdsh/plugin-connectors": "link:../../../packages/plugins/connectors",
+    "@chatdsh/plugin-identity": "link:../../../packages/plugins/identity",
+    "@chatdsh/plugin-import": "link:../../../packages/plugins/import",
+    "@chatdsh/plugin-projects": "link:../../../packages/plugins/projects",
+    "@chatdsh/plugin-push": "link:../../../packages/plugins/push",
+    "@chatdsh/plugin-session-index": "link:../../../packages/plugins/session-index",
+    "@chatdsh/plugin-telemetry": "link:../../../packages/plugins/telemetry",
+    "@chatdsh/plugin-usage": "link:../../../packages/plugins/usage"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-acp-app",
+        "@chatdsh/bundle-hosted"
+      ]
+    }
+  }
+}

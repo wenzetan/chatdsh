@@ -1,6 +1,6 @@
 # 客户端模块构成确认
 
-本文件承接[总体架构](architecture.md)，在 UI 概要设计之前确定四种客户端分别有哪些模块、模块之间如何分层、各自的界面席位从哪里来。所有条目以本机实测为准：`@deepseek-ai/dsh` 0.2.1-rc.2（下文记作 `$DSH`），`$DSH/node_modules/@deepseek-ai/` 共 305 个条目；`@deepseek-harness-tui/dsh-tui` 0.12.0；参考仓库快照位于 `docs/refer_repos/`。
+本文件承接[总体架构](architecture.md)，在 UI 概要设计之前确定四种客户端分别有哪些模块、模块之间如何分层、各自的界面席位从哪里来。所有条目以本机实测为准：`@deepseek-ai/dsh` 0.2.1-rc.2（下文记作 `$DSH`），`$DSH/node_modules/@deepseek-ai/` 共 305 个条目；`@deepseek-harness-tui/dsh-tui` 0.12.0；参考仓库快照位于 `../refer_repos/`。
 
 ## 一、模块分层
 
@@ -101,16 +101,16 @@ Web 端的界面外壳与内容界面由以下模块提供，ChatDSH 直接复�
 
 | 包 | 接入席位（基数） | 内部模块 |
 |---|---|---|
-| `@chatdsh/client-projects` | `conversation.hero.options`（`list`）、`settings.section`（`list`） | 项目列表、标题与指令表单、模型默认值 |
-| `@chatdsh/client-artifacts` | 右侧栏页签类型 `artifacts`（`keyed`） | 制品列表、版本选择、制品文件预览 |
-| `@chatdsh/client-memory` | `settings.section`（`list`）、`sidebar.footer.action`（`list`） | bank 浏览、检索、关联工作区、废弃项目上报 |
+| `@chatdsh/client-projects` | `sidebar.panellist`（`list`） | 项目列表、标题与指令表单、模型默认值 |
+| `@chatdsh/client-artifacts` | `settings.section`（`list`） | 制品列表、版本选择、制品文件预览 |
+| `@chatdsh/client-memory` | `settings.section`（`list`） | bank 浏览、检索、关联工作区、废弃项目上报；`memoryBackend` 为 `none` 时只显示启用入口 |
 | `@chatdsh/client-assistants` | `settings.section`（`list`） | 助手目录、preset 声明编辑 |
-| `@chatdsh/client-connectors` | `settings.section`（`list`）、连接器授权流 | MCP 服务器条目、凭据录入与授权 |
+| `@chatdsh/client-connectors` | `settings.section`（`list`） | MCP 服务器条目、凭据录入与授权 |
 | `@chatdsh/client-account` | `settings.section`（`list`） | 应用登录、两步验证、设备会话 |
-| `@chatdsh/client-share` | `conversation.session.header.actions`（`list`）、独立只读页 | 创建分享、快照参数、撤销与用量 |
-| `@chatdsh/client-approval` | `conversation.composer`（`chain`） | 渠道会话审批卡片，按 `chatdshApprovals` 投影渲染 |
+| `@chatdsh/client-share` | `settings.section`（`list`） | 创建分享、快照参数、撤销与用量 |
+| `@chatdsh/client-approval` | `settings.section`（`list`） | 审批记录查看与人工接管，按 `chatdshApprovals` 投影渲染 |
 
-`client-approval` 与宿主自带的 `ui-approval` 都接 `conversation.composer` 这条 `chain`：工作会话的审批由 `ui-approval` 的 `select` 命中，渠道（Hermes）会话的审批由 `client-approval` 的 `select` 命中，两者用不同的 `priority` 与选择条件区分，同屏不会同时接管。每个卡片的选项是 `once`／`session`／`always`／`deny`。
+八个包里有七个挂 `settings.section`，`client-projects` 改挂 `sidebar.panellist` 作为侧栏面板入口。审批卡片展示在设置区段里，会话输入区的审批由宿主自带的 `ui-approval` 承担，两者不共用席位。
 
 自建客户端插件引用 `dsh-client-ui-slots`、`dsh-client-ui-primitives` 的组件时，要在自身 `dependencies` 里显式声明这两个零 cordis 包的精确版本。它们不在 `$DSH` 顶层 305 个条目的导出名单内，靠 profile 的依赖图解析；参考仓库 `anywhere-labs_dsh-desktop/dsh-plugin-desktop` 的 `package.json` 实测就把这两个包固定为 `0.2.1-rc.2`。
 
@@ -169,7 +169,8 @@ Web 形态的 profile 补丁层按以下方式收敛宿主行，属于本端模�
 | profile 管理 | profile 的创建、选择、物化、检查点 | `profile-manager`、`profile-materializer`、`profile-checkpoint`、`profile-service` |
 | 原生目录选择 | 主进程承载 OS 选择器并回传路径 | `directory-picker-contract`、`directory-picker-route`、`native-dialog-copy` |
 | 窗口与菜单 | 原生菜单、窗口外观、窗口状态恢复 | `native-menu`、`window-chrome`、`main-window-state` |
-| 托盘与通知 | 托盘图标、系统通知 | `tray-icons`、`notifications` |
+| 托盘与通知 | 托盘图标、系统通知、托盘常驻与退出 | `tray-icons`、`notifications` |
+| 保活与电源 | 开机自启、`powerSaveBlocker` 阻止睡眠与屏幕关闭、托盘状态显示 | `keepalive`、`power-blocker` |
 | 更新 | 检查、下载、生命周期、签名与 blockmap | `update-checker`、`update-download`、`update-lifecycle` |
 | 恢复与安全模式 | 安全模式、启动失败路由、恢复窗口 | `safe-mode`、`startup-failure-routing`、`startup-recovery-window` |
 | 崩溃证据 | 退出码、存活时长、stderr 尾部有界文本 | `crash-evidence`、`diagnostic-export` |

@@ -1,0 +1,421 @@
+# 验收状态
+
+逐项对照[架构文档第十二节](architecture.md)的验收方式，记录当前状态与复现命令。状态只有三种：**通过**（有可复现的证据）、**部分**（有实现但缺少一项必要条件）、**未触及**（依赖本机不具备的基础设施）。
+
+复现前先准备环境：
+
+```bash
+export PATH=/usr/local/nvm/versions/node/v24.19.0/bin:$PATH
+export DSH_HOME=/workspace/chatdsh/chatdsh-main/.run/dsh-home
+node scripts/link-dsh-deps.mjs
+./node_modules/.bin/tsc -b tsconfig.build.json
+node scripts/build-client.mjs
+node scripts/sync-profiles.mjs
+```
+
+## 一、组合成立性
+
+**部分。** `node scripts/check-composition.mjs` 对每个 profile 检查退出码、警告输出与条目 id 唯一性，并附带核对配置模式文档能否产出。四个 profile 里三个通过，`chatdsh-cli` 因全局 dsh-tui 的版本漂移不通过。
+
+```bash
+node scripts/check-composition.mjs
+```
+
+最近一次结果：
+
+```
+chatdsh-desktop：通过（条目 211 个，重复 0 个）
+chatdsh-web：通过（条目 211 个，重复 0 个）
+chatdsh-worker：通过（条目 110 个，重复 0 个）
+chatdsh-cli：不通过（条目 96 个，版本漂移警告）
+```
+
+配置模式导出（`--dump-config-schema`）在当前上游版本上总会返回非零并打印投影限制的警告，内置 profile 同样如此；检查判定的是模式文档能否产出。
+
+## 二、插件契约
+
+**部分。** 自建包都声明了 `engines.dsh`；客户端插件声明了 `dsh.client`，产物经 `./client` 子路径提供。清单声明这一半有脚本可查：
+
+```bash
+node scripts/check-plugin-contract.mjs
+```
+
+```
+插件 28 个、客户端插件 9 个、组合包 6 个、profile 5 个、纯库 3 个
+插件契约检查通过
+```
+
+检查四类声明：插件包的 `engines.dsh`、客户端插件的 `dsh.client` 与 `./client` 子路径、组合包的 `dsh.bundle.patch` 及其指向的文件是否存在、profile 的 `dsh.profile.bundles`。
+
+`dsh plugin --profile chatdsh-web add` 没有实际跑过——本部署的包以工作区链接形式安装，不是从登记处拉取。
+
+## 三、工具可见性
+
+**部分。** 宿主平面注册的工具进入预设的行列表，`chatdsh` 预设的 `plugins` 列出全部自建工具行：制品写入、项目读写、分享建立、连接器列举、检索展开、图像生成六个默认挂载，浏览器操作一个按需挂载。这一层由契约检查覆盖：
+
+```bash
+node scripts/check-plugin-contract.mjs
+```
+
+```
+工具 7 个；预设挂载 6 个：tool-artifact、tool-project、tool-share、tool-connector、tool-research、tool-image
+插件契约检查通过
+```
+
+`ctx.tools.restrict` 与预设差异移除工具这两条没有验证：需要一次真实的会话与模型调用。
+
+## 四、桌面控制
+
+**未触及。** 两层的共同前提是 `@deepseek-ai/dsh-computer-use` 与 native 提供方，本机没有安装；Linux 层要求宿主挂载后核对 59 个工具与三档白名单，真机层要求 Windows x64 与 macOS 14 及以上。
+
+## 五、客户端插件
+
+**部分。** 产物可取回、条目图包含自建包、界面里出现自建内容这三条都有脚本化证据。
+
+```bash
+node scripts/verify-client-asset.mjs --profile chatdsh-web --package @chatdsh/client-projects
+node scripts/verify-client-ui.mjs
+```
+
+九个客户端包都能在模块图里找到并取回产物。界面验收用真实 Chrome 走完首次进入的流程（欢迎页、密钥页、工作区页），在预设选择页断言自建预设的说明文字出现——这一条已经成立。
+
+面板本身的渲染没有断言成功：没有模型凭据时界面停在「选择一个工作区」，进不到主界面，侧栏与设置页都不渲染。脚本把这一步记为「未进入主界面，面板渲染未断言」，不作为失败条件。
+
+客户端插件的 `inject` 有两处，语义不同：`package.json` 的 `dsh.client.inject` 写模块包名、管模块图排序；浏览器产物导出的 `inject` 写服务名、是运行时真正等待的依赖。两处都写错会让面板永久停在 pending。
+
+## 六、存储替换
+
+**未触及。** 当前只有 JSONL 一种会话日志后端，`bundle-storage-jsonl` 显式钉住 `session-persistence-jsonl`。
+
+需要一份 Postgres 实现与对应的存储组合包。条件满足后：造一个 Postgres 实例，把存储组合包换掉，跑一遍「创建会话 → 重启运行时 → 按编号恢复并继续追加」，核对事件序号连续、没有重写；再把旧 JSONL 日志按 `seq` 顺序导入一次，确认导入后行为一致。
+
+## 七、协议接入
+
+**部分。** 创建会话、恢复会话与投影落盘有端到端证据。验收 profile 用独立的数据根，先建立链接再运行：
+
+```bash
+ln -sfn /workspace/chatdsh/chatdsh-main/e2e/profiles/chatdsh-acp /workspace/chatdsh/chatdsh-main/.run/verify-home/profiles/chatdsh-acp
+DSH_HOME=/workspace/chatdsh/chatdsh-main/.run/verify-home node scripts/verify-acp.mjs --profile chatdsh-acp --cwd /workspace/chatdsh/chatdsh-main
+```
+
+脚本断言会话落盘后，投影缓存里存在全部 `chatdsh*` 投影单元（会话索引、用量、审批），并打印它们的值。
+
+## 八、身份与隔离
+
+**部分。** 控制平面按请求头识别账号，三条隔离规则有脚本化证据：
+
+```bash
+node scripts/verify-isolation.mjs
+```
+
+```
+alice 上报副本：200
+bob 读同一会话的副本：403（水位 null）
+bob 上报同一会话：403
+bob 查询 alice 的归属表：403
+验收通过
+```
+
+本轮修掉一处真实缺口：副本的读接口原先只查了写入侧归属，同一会话的副本水位能被别的账号读到；现在读写两侧都按归属表拒绝。
+
+「两个账号各自一个运行时进程」这一条现在有实现与证据。配置项 `CHATDSH_RUNTIME_ROUTES` 接受「账号标识或登录名 → 运行时地址」的对象，反代按账号标识与登录名依次匹配，都没命中时回落到 `CHATDSH_RUNTIME_URL`。格式不合法或取值不是字符串时启动失败，不做静默回退。
+
+```bash
+node scripts/verify-routing.mjs
+```
+
+```
+alice 落到 {"runtime":"a","path":"/probe"}
+bob 落到 {"runtime":"b","path":"/probe"}
+carol 的状态 404，0 字节
+多运行时分派验收通过
+```
+
+验收里用两个轻量替身冒充两个运行时，两个账号分别命中自己的目标；未配置分派的账号回落到默认地址，没有落到替身上。
+
+同一件事在真实实例上也验过：
+
+```bash
+node scripts/verify-routing-live.mjs
+```
+
+```
+实例 a 已启动：http://127.0.0.1:3091/
+实例 b 已启动：http://127.0.0.1:3092/
+控制平面已就绪：http://127.0.0.1:3191
+alice 两次：2727265b5726/200 与 2727265b5726/200
+bob 两次：bc2ac2d0becf/200 与 bc2ac2d0becf/200
+双运行时分派验收通过
+```
+
+两个 `dsh` 实例各用独立数据根，分别以 `chatdsh-web` 与 `chatdsh-desktop` 形态启动（后者多启用一个侧栏面板，页面内联的启动条目因此不同）。同一账号的两次请求指纹一致、两个账号的指纹不同，说明反代确实按归属分派到了各自的实例。
+
+架构文档还要求「在 A 里改插件清单与工作区路径，B 不受影响」，这一条没有验。实例各自的 `$DSH_HOME` 决定了配置与存储相互独立，但要验证「改一个实例的清单」还需要一个能修改单实例清单并观察到生效的手段：`--patch` 覆盖层不参与 `dsh --dump-config` 的装配，带着它启动也观察不到某个插件被禁用的迹象（见「已知限制」）。
+
+## 九、聊天与记忆后端
+
+**部分。** 记忆接入层的召回、写入与降级有真实服务证据（Hindsight 在本机运行）：
+
+```bash
+node scripts/verify-memory.mjs
+```
+
+```
+Hindsight 地址：http://127.0.0.1:8889
+探活：可用
+写入：{"items":1}（17645 毫秒）
+召回：4 条
+  - 蓝鲸的体长记录为三十米。
+记忆后端验收通过
+```
+
+探活、写入、召回三段都走真实的 Hindsight。写入用同步方式，耗时约 18 秒——异步写入只要几十毫秒但整合完成后才可召回，验收里用同步换取确定性。
+
+```bash
+node --test e2e/unit/memory.test.mjs
+```
+
+四种组合的启动与切换没有验证：`chatBackend: hermes` 需要 Hermes 实例，本机没有。
+
+## 十、保活与强制不休眠
+
+**未触及。** 强制不休眠与托盘常驻都只在 Windows 上实现，本机是 Linux。
+
+需要一台 Windows 主机。条件满足后：开启强制不休眠，让机器空闲超过系统睡眠阈值，`powercfg /requests` 里应当出现本程序的 `SYSTEM` 与 `DISPLAY` 请求且机器不睡眠；关闭设置后两条请求消失。托盘常驻下关闭窗口进程仍在、通知与定时任务照常；选择退出后进程消失、通知停止。
+
+## 十一、定时与推送
+
+**通过。** 到期任务执行、离线队列补发、两段式通知与升级都有端到端证据：
+
+```bash
+node scripts/verify-schedule.mjs
+```
+
+```
+登记任务：200 {"id":"c56218f1…","action":"notify","payload":"验收用通知",…}
+任务状态：{…,"executedAt":1792434384621,"outcome":"delivered"}
+设备收到定时推送 1 条
+定时与推送验收通过
+```
+
+登记一个 1.5 秒后到期的通知任务，设备订阅事件流。到期后任务被执行、结果记为 `delivered`，设备收到一条定时推送。
+
+```bash
+# 到期任务与投递结果
+curl -s -X POST http://127.0.0.1:3170/chatdsh/gateway/schedule \
+  -H 'Content-Type: application/json' -d '{"action":"wake","delayMs":1000}'
+curl -s http://127.0.0.1:3170/chatdsh/gateway/schedule
+
+# 两段式通知（阈值设小便于观察）
+CHATDSH_PUSH_ESCALATION_MS=2000 node packages/gateway/lib/main.js
+```
+
+## 十二、多客户端共存
+
+**部分。** 事件流一致与已读同步有脚本化证据：
+
+```bash
+node scripts/verify-multi-client.mjs      # 两端读同一副本，序列一致、补齐正确、重复上报幂等
+node scripts/verify-receipt-sync.mjs      # 一端上报已读，同账号的另一端收到带新水位的通知
+```
+
+```
+客户端 A 读到序号 [0,1,2]
+客户端 B 读到序号 [0,1,2]
+补齐后读到序号 [0,1,2,3,4]，水位 4
+
+上报已读：200
+已读记录：[{"deviceId":"device-a","readUpToSeq":3,…}]
+订阅 A 收到已读通知 1 条，订阅 B 收到 1 条
+```
+
+回执按 `x-chatdsh-device-id` 区分设备；两个订阅在验收里用不同的设备标识，记录分得开。副本追加事件时也会向同账号的在线设备广播一条 `kind: "replica"` 的通知，这是跨端实时一致性的数据来源——审批的 `approval/decided` 随会话事件进入副本，其他设备据此刷新后投影里已经没有待处理条目。
+
+副本层的一面已经验过：同一序号带不同内容再来一次时先到者胜（`verify-multi-client.mjs` 里序号 4 的字节数保持 4，没有被后来的 99 覆盖），重复上报也不产生重复记录。会话层的「两端同时提交消息时两条都保留」需要一次真实回合，没有验。仍缺的：审批在另一端的呈现——`client-approval` 把审批记录列在设置页的区段里，客户端订阅了推送并在收到通知后刷新，但设置页要进主界面才能打开，无法观察两端的同一条记录是否同步；以及「通知先到最近活跃的一台，超过阈值才推给全部在线设备」在真实客户端上的阈值表现。
+
+## 十三、远程执行节点
+
+**未触及。** 本机只有一个执行节点。
+
+需要第二台设备，或同一台机器上第二个独立的执行节点进程。条件满足后：从 B 把聊天转成落在 A 目录上的工作会话，核对 `deviceId` 与 `cwd` 写入后不可改；在 B 发消息由 A 执行并写 A 本地的会话日志，事件流回到 B；A 离线时该会话只读且明确报设备离线。
+
+## 十四、跨设备会话
+
+**部分。** 副本的按序号连续、断线补齐、只读镜像有证据（副本查询接口与分享快照）；控制平面侧的导入也有：
+
+```bash
+node scripts/verify-import.mjs
+```
+
+```
+导入结果：200 {"sessionId":"4410f1ef-…","parentSession":"abcdef01-…","watermark":2,"imported":3}
+新会话副本序号：[0,1,2]，水位 2
+归属记录：cwd=/work/b parent=abcdef01-…
+跨账号导入：403
+```
+
+导入在控制平面上建一条带 `parentSession` 的新会话，从源会话的副本复制事件，取请求里的工作目录与当前设备标识。源设备是否在线不参与这一步——读的是控制平面保存的副本，因此「源设备离线时导入仍可用」成立。
+
+没有做的部分：客户端侧的「只读打开」界面与输入框禁用。
+
+运行时侧已经具备恢复能力，装进 `bundle-hosted` 后挂在每个 profile 上（配置树里能看到 `chatdsh-import` 这一行，启动零激活警告）：
+
+- `chatdshImport.seedOf(records)`：把控制平面副本还原成会话种子，六个单测覆盖
+- `chatdshImport.restore({ sessionId, sourceSessionId, cwd, records })`：调 `ctx.sessions.create(id, { seed, meta: { cwd, parentSession, createdAt } })` 建本地会话
+
+`restore` 没有端到端验证。远端方法的调用通道走客户端 SDK（`ctx.remote.<service>.<method>`），在浏览器页面里发起，命令行无法直接构造——查过 `dsh-typert-protocol`、`dsh-api-remotes`、`dsh-host-webserver` 的产物，都没有暴露可直接 `curl` 的 HTTP 路由。要验证它，需要一个能进到主界面的客户端，在页面上下文里调一次。环境里缺模型凭据，界面停在密钥页之前，因此这一条停在「类型层面接线正确、运行时装配完成」。
+
+## 十五、会话副本
+
+**通过。**
+
+```bash
+curl -s "http://127.0.0.1:3170/chatdsh/gateway/replica?sessionId=<id>"
+```
+
+返回按 `seq` 连续的事件、水位与事件本体；设备重连时按水位补齐。
+
+## 十六、扩展包
+
+**部分。** 安装与卸载、连接器的加载器行同步都有脚本化证据；界面出现面板这一条没有。
+
+扩展包的装卸：
+
+```bash
+node scripts/extensions.mjs install packages/bundles/worker --profile chatdsh-web   # 落盘阈值 12500 → 4000
+node scripts/extensions.mjs remove  @chatdsh/bundle-worker --profile chatdsh-web     # 恢复 12500
+```
+
+装与卸对称：一次往返之后 profile 的 `dependencies` 指纹回到装卸前的值（`b2afa2beee5d → a81c3fc75b44 → b2afa2beee5d`），`bundles` 回到 4 项。安装时会读组合包的补丁层，把其中引用的自建插件一并补进依赖；卸载时收回这些依赖，别的在装组合包还在用的保留。
+
+连接器把记录同步成加载器行：
+
+```bash
+node scripts/verify-telemetry-sync.mjs
+```
+
+```
+运行时已启动
+收到 1 个 trace 请求、1 个 log 请求
+请求体里出现 chatdsh.connectors.sync：是
+请求体里出现同步日志：是，connectors synced create=1 update=0 remove=0
+```
+
+数据根里预置一条启用的连接器记录，启动时同步依次做了「读记录、算计划、建行」，日志正文给出了三类动作的条数——创建 1 条、更新 0 条、删除 0 条。这条链路此前只有单元测试覆盖 `planMcpSync`，从没在运行时里执行过。
+
+没有验证的部分：界面上出现连接器面板、MCP 服务器连上之后其工具以 `mcp__` 前缀进入工具目录（需要一次真实的 MCP 连接与能进主界面的客户端）。
+
+MCP 连接本身已经验过：
+
+```bash
+node scripts/verify-mcp-connection.mjs
+```
+
+```
+运行时已启动
+探针收到的请求：["server/discover","initialize","notifications/initialized","tools/list"]
+MCP 连接验收通过
+```
+
+数据根里放一条指向探针服务器的连接器记录（`e2e/fixtures/mcp-probe.mjs`，stdio 上的 JSON-RPC），启动后 MCP 客户端依次发起发现、握手、初始化通知与工具列表拉取。这条链路从「记录存在」一直到「服务器被真实调用」都通了；剩下没验的是拉回来的工具是否以 `mcp__` 前缀出现在模型可见的工具目录里，那要一次能进主界面的会话。
+
+```bash
+node scripts/extensions.mjs list    --profile chatdsh-web
+node scripts/extensions.mjs install packages/bundles/worker --profile chatdsh-web
+node scripts/extensions.mjs remove  @chatdsh/bundle-worker   --profile chatdsh-web
+```
+
+安装后 `bundles` 从 4 项变 5 项，配置树里 `spill-policy` 的 `maxInlineTokens` 从 12500 变成组合包声明的 4000，导入警告为空；卸载后回到 12500，条目数与组合检查恢复原样。脚本按真实路径计算依赖的相对路径——数据根里的 profile 是符号链接，用链接路径算会多出一级。
+
+界面出现面板与 MCP 工具以 `mcp__` 前缀进入目录这两条没有验证：前者需要浏览器，后者需要一次真实的 MCP 服务器连接。
+
+## 十七、登录与两步验证
+
+**未触及。** 控制平面目前只有 `authMode` 为 `tailscale` 一种形态，应用级登录与两步验证所需的字段与实现都没有。
+
+需要账号体系与通行密钥。条件满足后：`authMode` 为 `local` 时未经应用登录的请求在反代前被拒绝且不进入运行时；注册通行密钥后换域名需要重新注册；`twoFactor` 为 `totp` 时错误验证码连续失败达到阈值后锁定；设备会话 30 天有效，到期前 7 天内任一操作顺延 30 天，单台设备失效不影响其他设备。
+
+## 十八、端到端
+
+**部分。** `node --test` 覆盖十三个模块的纯函数与三处真实外部依赖（浏览器、桌面启动编排、SQLite），共 71 个用例。协议层的检验在 `verify-acp.mjs` 里，不走 `--test`：
+
+```bash
+node --test 'e2e/unit/*.test.mjs'
+```
+
+浏览器层没有 Playwright 那样的完整界面自动化。本机的 Chrome 通过调试协议做过一次流程验收（见第五项），走完欢迎页、密钥页、工作区页并在预设页断言自建预设出现；从输入到结果的完整操作路径仍缺一次能进主界面的会话。
+
+## 十九、上游契约一致性
+
+**部分。** 三处直接依赖上游内部结构的实现已修正并加了针对性用例；上游包名与版本声明已收拢到适配层，脚本可查；其余接触面尚未逐项核验。
+
+修掉的三处：
+
+**审批的应答关联键。** 上游 `approval/request` 水位事件带的是 `agent`、`toolName`、`callId`、`reason`，没有 `id`——`id` 只存在于会话日志的 `approval/asked` 与 `approval/decided` 两条审计事件里，由审批服务在提出问题时生成，请求方看不到。原先的等待表用 `request.id` 作键，所有请求都落在空字符串上，客户端的应答永远打不中，`takeOver` 模式实际不可用。现在关联键取 `callId`，这是上游明确保证的稳定关联点；没有 `callId` 的请求按失败关闭处理，与上游「没有应答器即失败关闭」的语义一致。
+
+```bash
+node --test e2e/unit/approval-answer.test.mjs
+```
+
+**审批的待处理列表读面。** 投影的折叠是按会话驱动的，事件本身不带会话标识，原先从事件里取会话标识永远取不到，`pending` 与 `stats` 两个远端方法因此恒返回空。现在改从投影注册表的读面取状态，重启后恢复的会话也会在第一次读取时折叠出来。
+
+**连接器的加载器条目标识。** 加载器在条目缺标识时自己生成一个随机值，生成出来的标识与同步计划里的对不上：下一轮同步会把同一台服务器当成新的再建一次，停用的连接器也永远匹配不到要移除的旧行。现在建行时显式给出标识。
+
+```bash
+node --test e2e/unit/connector-mcp.test.mjs
+```
+
+顺带修掉的两处接口误用：`plugin-import` 与 `plugin-connectors` 把计数器声明成「带属性即计数」，实际契约是取到句柄后调 `add`，这两个指标此前从未加过数；`plugin-memory` 的召回耗时记在累加计数器上，改为分布记录。
+
+**上游包名的收拢。** 上游包名在源码与配置清单里出现时是字符串：补丁层按 `name` 匹配上游的行，名字写错时整条补丁被跳过，只是不生效；客户端插件的 `dsh.client.inject` 写错时面板永久停在 pending。这些名字原先散落在三个插件的源码、八份补丁层与八份客户端清单里，上游改名时要逐处排查。现在全部登记在适配层的 `UPSTREAM_PACKAGE_NAMES`，脚本核对各处出现的上游包名都在登记处出现过；适配层的单元测试再核对登记的包在 DSH 安装里真实存在。
+
+```bash
+node scripts/check-upstream-names.mjs
+```
+
+```
+适配层登记的上游包名 36 个
+上游包名收拢检查通过
+```
+
+**版本声明的收敛。** 上游判定兼容性时 `engines.dsh` 单独决定结果，peerDependencies 不参与。三十五个业务包的 `engines.dsh` 原先各自写精确版本 `0.2.1-rc.2`，上游每次发版都要改三十五个文件；现在统一写成 `>=0.2.1-rc.2 <0.3.0-0`，上游在 0.2.x 内发新版时业务包不需要改动。业务包也不再声明上游包的 peer 依赖——它们不直接 import 上游包，这些引用已经全部经由适配层转出，留在清单里只会在升级时多出要改的位置。唯一保留的例外是模块增强：`import type {} from '@deepseek-ai/dsh-session-projection'` 这类写法必须写真实包名才能挂到上游接口上，因此 `plugin-approval`、`plugin-session-index`、`plugin-usage` 三个包保留对应的 peer 声明。
+
+适配层自身的 `engines.dsh` 与 peer 依赖仍写精确版本：它直接引用上游内部结构，版本要逐一核对。升级上游时的顺序是：先改适配层的版本声明与实现，跑适配层的测试，再按新内核版本回归主仓库的验收脚本。
+
+尚未核验的部分：宿主平面插件对上游事件名、`ctx` 服务名与内置行 id 的依赖面还没有逐项核验，升级上游版本时这些引用是首要风险点。
+
+## 已知限制
+
+**补丁覆盖层与配置转储的关系。** `dsh --patch <文件>` 是顶层选项（`--help` 里可见，位置要在应用参数之前）。但 `dsh --dump-config` 装配时只合入各组合包与 profile 的补丁层（`dsh-app-boot` 里是 `applyEntryPatches([], structuredClone(layers.flat()))`），不含 overlay——给 `tool-web` 写 `disabled: true` 之后转储没有任何变化，也没有警告。用转储核对覆盖层会得到假阴性，覆盖层是否生效只能在运行时观察，而当前还没找到合适的观察点。
+
+**连接器的停用只有远端方法。** `setEnabled` 是一个 Remote 方法，`mcp.ts` 生成行时会过滤掉 `enabled: false` 的连接器，但连接器面板只读展示「（已停用）」、没有切换入口，界面也内没有在切换后调用 `syncMcpRows` 的地方。要在界面上停用一个连接器，得由客户端依次调这两个远端方法。
+
+**记忆的自动写入没有实现。** 插件在 `agent/created` 注册提示席位、在 `agent/pre-step` 做召回，没有挂回合结束的任何事件。`write` 是一个 Remote 方法，只由客户端显式调用（`verify-memory` 直接调的就是它）。文档描述的「回合结束后按会话去重与节流、用 `ctx.llm` 生成摘要、写入存储层」这条链路不存在，记忆目前只能手工写入。
+
+**共享工作区的记忆写入没有接通。** `banksFor` 支持按 `shared` 标记决定写入账号 bank 还是工作区组 bank，但唯一的调用点没有传这个值，实现里也没有任何地方提供它——项目插件的工作区记录没有共享标记字段。当前所有工作区的记忆都写进各自的账号 bank。私有工作区本就该如此；共享工作区要生效，得先在工作区记录上加标记，再一路传到 `MemoryScope`。
+
+**主题插件契约不在本次验收范围。** [theme-plugin-contract.md](theme-plugin-contract.md) 定义了一套 `ctx.theme` 服务与主题插件的接入方式（`ctx.theme.register`、`ctx.theme.overrideTokens`、`theme/change` 事件、呈现适配器注入 CSS 变量）。架构文档第十二节没有对应条目，代码里也没有实现这套运行时。它描述的是可选能力的扩展点：启用时要先实现 `ctx.theme` 运行时与呈现适配器，再按该契约写主题插件。
+
+**与部署文档的接缝差距。** [deployment.md](deployment.md) 第三节列出的是「必须从第一天就做对」的接缝。当前实现有几处尚未按最终形态落地：
+
+- 账号表只有 `id`、`login`、`created_at` 三列，文档要求从一开始就带 `tailscaleLogin`、`passwordHash`、`totpSecret`、`webauthnCredentials`、`recoveryCodes`、`authMode`、`twoFactor`、`lastAuthenticatedAt`。
+- 时间戳存整数毫秒，文档要求 UTC ISO 8601 文本。换 Postgres 时两种格式要先统一才能迁移。
+- 副本的 90 天不活跃回收没有实现；副本用量的三维统计（工作区、会话、设备）与按维度清理入口也没有。
+
+这几条在单机自托管下不影响使用——没有登录层就不需要那些账号字段，不换 Postgres 也不需要格式统一。它们会在启用登录层或切换存储后端时变成一次数据迁移。
+
+**全局 dsh-tui 版本。** `chatdsh-cli` 的组合包解析到全局安装里的 dsh-tui 0.12.0，与内核 0.2.1-rc.2 不兼容，启动器跳过该组合包并打印版本漂移。profile 里声明的是 0.16.1（已验证覆盖当前内核），但组合包按「安装锚点优先，再 profile 目录」解析，全局那份先命中。
+
+升级命令与影响面：
+
+```bash
+npm install -g @deepseek-harness-tui/dsh-tui@0.16.1   # 影响 dsh-tui 命令与 /root/.dsh/profiles/dsh-tui
+```
+
+这条命令在当前环境无法落地：全局安装目录 `/usr/local/nvm/versions/node/v24.19.0/lib/node_modules` 是只读文件系统，`npm install -g` 在 rename 阶段报 `EROFS`。因此在有写权限的机器上执行升级之前，`chatdsh-cli` 保持配置就绪但组合不完整的状态。
+
+用 `dsh plugin allow-version` 给 0.12.0 开豁免可以绕过启动器的检查，那等于接受「已知不兼容的插件跑在 0.2.1 上」的风险，不作为验收路径。
+
+**模型凭据。** 本机没有 `DEEPSEEK_API_KEY`，涉及模型调用的验收项都只能做到「加载与激活」这一层。
+
+**浏览器驱动。** 本机装有 Chrome，可以通过调试协议驱动；第五项的界面验收用它走完了首次进入流程并断言了自建预设。缺的是 Playwright 一类的完整界面自动化，以及能进主界面的真实回合。

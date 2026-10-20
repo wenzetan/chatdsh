@@ -1,0 +1,46 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: false
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@chatdsh/bundle-hosted':
+        specifier: link:../../../packages/bundles/hosted
+        version: link:../../../packages/bundles/hosted
+      '@chatdsh/plugin-approval':
+        specifier: link:../../../packages/plugins/approval
+        version: link:../../../packages/plugins/approval
+      '@chatdsh/plugin-artifacts':
+        specifier: link:../../../packages/plugins/artifacts
+        version: link:../../../packages/plugins/artifacts
+      '@chatdsh/plugin-assistants':
+        specifier: link:../../../packages/plugins/assistants
+        version: link:../../../packages/plugins/assistants
+      '@chatdsh/plugin-connectors':
+        specifier: link:../../../packages/plugins/connectors
+        version: link:../../../packages/plugins/connectors
+      '@chatdsh/plugin-identity':
+        specifier: link:../../../packages/plugins/identity
+        version: link:../../../packages/plugins/identity
+      '@chatdsh/plugin-import':
+        specifier: link:../../../packages/plugins/import
+        version: link:../../../packages/plugins/import
+      '@chatdsh/plugin-projects':
+        specifier: link:../../../packages/plugins/projects
+        version: link:../../../packages/plugins/projects
+      '@chatdsh/plugin-push':
+        specifier: link:../../../packages/plugins/push
+        version: link:../../../packages/plugins/push
+      '@chatdsh/plugin-session-index':
+        specifier: link:../../../packages/plugins/session-index
+        version: link:../../../packages/plugins/session-index
+      '@chatdsh/plugin-telemetry':
+        specifier: link:../../../packages/plugins/telemetry
+        version: link:../../../packages/plugins/telemetry
+      '@chatdsh/plugin-usage':
+        specifier: link:../../../packages/plugins/usage
+        version: link:../../../packages/plugins/usage
