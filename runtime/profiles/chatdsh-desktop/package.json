@@ -1,0 +1,51 @@
+{
+  "name": "dsh-profile-chatdsh-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ChatDSH 的桌面 profile：Web 界面加桌面形态的组合包，由 Electron 壳托管",
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../chatdsn-adapter",
+    "@chatdsh/bundle-desktop": "link:../../packages/bundles/desktop",
+    "@chatdsh/bundle-hosted": "link:../../packages/bundles/hosted",
+    "@chatdsh/bundle-storage-jsonl": "link:../../packages/bundles/storage-jsonl",
+    "@chatdsh/client-account": "link:../../packages/clients/account",
+    "@chatdsh/client-approval": "link:../../packages/clients/approval",
+    "@chatdsh/client-artifacts": "link:../../packages/clients/artifacts",
+    "@chatdsh/client-assistants": "link:../../packages/clients/assistants",
+    "@chatdsh/client-connectors": "link:../../packages/clients/connectors",
+    "@chatdsh/client-memory": "link:../../packages/clients/memory",
+    "@chatdsh/client-projects": "link:../../packages/clients/projects",
+    "@chatdsh/client-share": "link:../../packages/clients/share",
+    "@chatdsh/client-telemetry": "link:../../packages/clients/telemetry",
+    "@chatdsh/plugin-approval": "link:../../packages/plugins/approval",
+    "@chatdsh/plugin-artifacts": "link:../../packages/plugins/artifacts",
+    "@chatdsh/plugin-assistants": "link:../../packages/plugins/assistants",
+    "@chatdsh/plugin-connectors": "link:../../packages/plugins/connectors",
+    "@chatdsh/plugin-identity": "link:../../packages/plugins/identity",
+    "@chatdsh/plugin-import": "link:../../packages/plugins/import",
+    "@chatdsh/plugin-projects": "link:../../packages/plugins/projects",
+    "@chatdsh/plugin-push": "link:../../packages/plugins/push",
+    "@chatdsh/plugin-session-index": "link:../../packages/plugins/session-index",
+    "@chatdsh/plugin-telemetry": "link:../../packages/plugins/telemetry",
+    "@chatdsh/plugin-usage": "link:../../packages/plugins/usage",
+    "@chatdsh/preset-chat": "link:../../packages/presets/chat",
+    "@chatdsh/tool-artifact": "link:../../packages/presets/tool-artifact",
+    "@chatdsh/tool-connector": "link:../../packages/presets/tool-connector",
+    "@chatdsh/tool-image": "link:../../packages/presets/tool-image",
+    "@chatdsh/tool-project": "link:../../packages/presets/tool-project",
+    "@chatdsh/tool-research": "link:../../packages/presets/tool-research",
+    "@chatdsh/tool-share": "link:../../packages/presets/tool-share"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@chatdsh/bundle-storage-jsonl",
+        "@chatdsh/bundle-hosted",
+        "@chatdsh/bundle-desktop",
+        "@chatdsh/preset-chat"
+      ]
+    }
+  }
+}

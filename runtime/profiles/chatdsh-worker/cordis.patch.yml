@@ -1,0 +1,9 @@
+# chatdsh-worker 的本部署补丁层。
+#
+# 长任务形态没有界面：依赖 Web 服务器与预设注册表的行在这里关掉，其余宿主插件照常挂载
+# （身份、会话索引、用量、制品、项目、上报）。
+- id: chatdsh-telemetry
+  disabled: true
+
+- id: chatdsh-assistants
+  disabled: true

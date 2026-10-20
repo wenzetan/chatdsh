@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# 协作者声明追加。身份来自本机 git 配置 harness.coauthor，仓库里不写死任何 harness 名称。
+#   1. 未配置 harness.coauthor 的机器不追加任何内容
+#   2. merge 与 squash 提交跳过
+#   3. 已存在同名 trailer 时不重复追加
+set -euo pipefail
+
+case "${2:-}" in
+merge | squash) exit 0 ;;
+esac
+
+if identity="$(git config --get harness.coauthor)"; then
+	git interpret-trailers --in-place --if-exists doNothing --trailer "Co-authored-by: $identity" "$1"
+fi

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# 提交前闸门。三层按成本从低到高依次执行，任一层命中即阻断本次提交。
+#   1. 凭据文件名黑名单（与内容无关，命中即拦）
+#   2. gitleaks 规则扫描暂存内容（凭据、网络标识、联系方式）
+#   3. 本机个人身份闭集比对（用户名、邮箱、主机名、tailnet 后缀等）
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+	echo "隐私防护：未找到 gitleaks，无法扫描暂存内容。" >&2
+	echo "  安装：https://github.com/gitleaks/gitleaks#installing" >&2
+	exit 1
+fi
+
+status=0
+
+# ---- 第 1 层：凭据文件名黑名单 -------------------------------------------
+if ! python3 .githooks/check-filenames.py; then
+	status=1
+fi
+
+# ---- 第 2 层：gitleaks 规则扫描 ------------------------------------------
+if ! gitleaks git --staged --redact --no-banner -c .gitleaks.toml -v; then
+	echo >&2
+	echo "隐私防护：gitleaks 在暂存内容里发现疑似凭据或隐私数据，位置见上。" >&2
+	echo "  - 属于测试夹具：在该行末尾加注释 gitleaks:allow" >&2
+	echo "  - 属于误报：把报告里的 Fingerprint 写进 .gitleaksignore" >&2
+	echo "  - 确属真实值：git restore --staged <文件>，把值改成文档约定的占位" >&2
+	status=1
+fi
+
+# ---- 第 3 层：本机个人身份闭集比对 ---------------------------------------
+if ! python3 .githooks/check-identity.py; then
+	status=1
+fi
+
+exit "$status"

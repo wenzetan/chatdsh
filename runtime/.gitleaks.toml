@@ -1,0 +1,300 @@
+# ChatDSH 凭据与隐私防护规则
+#
+# 用法：
+#   gitleaks git --staged --redact --no-banner -c .gitleaks.toml        # 提交前，只查暂存内容
+#   gitleaks git --log-opts="<range>" --redact --no-banner -c .gitleaks.toml  # 推送前，查待推送提交
+#
+# 官方默认规则集通过 extend 保留，本文件补齐三类默认规则漏掉的内容：
+#   1. 上下文型凭据（Bearer、连接串口令、带凭据的 URL、JWT、服务账号）
+#   2. 私有网络标识（Tailscale 地址、真实 tailnet 域名、私有域名）
+#   3. 联系方式与个人标识（邮箱、手机号、身份证号）
+#
+# 默认规则的实测边界：只认已知供应商前缀，对 Bearer、连接串内嵌口令、JWT、
+# service account JSON、带凭据的 URL 全部漏报；对网络标识与联系方式完全不覆盖。
+#
+# 本仓库文档约定的占位：tailnet 名写 example.ts.net，主机名写 node-a，
+# 地址用示例私网段 10.1.1.0/24 与 10.10.10.0/24。
+
+title = "ChatDSH secret and privacy guard"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "占位值、模板占位符、第三方公开域名与生成物路径，作用于全部规则"
+regexTarget = "secret"
+regexes = [
+    # your_api_key_here / changeme / example / dummy / placeholder 之类
+    '''(?i)^(?:your|you|my|our|their|the|some|any|example|sample|demo|dummy|fake|mock|test|testing|placeholder|change[_-]?me|replace[_-]?me|insert[_-]?here|fill[_-]?in|todo|tbd|undefined|null|none|nan|redacted|wh?idden|omitted|removed|not[_-]?set|unset|empty|invalid)[a-z0-9_\-./+=:]*$''',
+    # sk-xxx / key-test / token-fake 之类
+    '''(?i)^(?:sk|pk|key|keys|token|secret|apikey|api[_-]?key|accesstoken|password|passwd|auth|bearer)[-_]?(?:x+|test|tests?|dummy|fake|mock|example|sample|placeholder|your|yours|mine|abc|abcd|1234|0000|foo|bar|baz|redacted|none|null)[a-z0-9_\-]*$''',
+    # 模板占位符
+    '''\$\{[A-Za-z0-9_]+(:[-?][^}]*)?\}''',
+    '''\{\{[^}]{1,40}\}\}''',
+    '''<[A-Za-z0-9_\-. ]{1,40}>''',
+    # 点亮式占位：全是 x 星号点线
+    '''(?i)^(?:x{8,}|\*{4,}|\.{4,}|-{4,}|_{4,})$''',
+    # 夹具常用词开头且总长不超过 24 字符
+    '''(?i)^(?:abc|def|ghi|foo|bar|baz|qux|qwe|asd|zxc|sample|test|dummy|fake|mock|changeme)[a-z0-9_\-./+=]{0,16}$''',
+]
+paths = [
+    '''(^|/)node_modules/''',
+    '''(^|/)\.git/''',
+    '''(^|/)bun\.lockb?$''',
+    '''(^|/)package-lock\.json$''',
+    '''(^|/)pnpm-lock\.yaml$''',
+    '''(^|/)yarn\.lock$''',
+    '''(^|/)docs/refer_repos/''',
+    '''\.(png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|eot|mp4|mov|webm|mp3|wav|pdf|zip|tar|gz|tgz|bz2|xz|7z|so|dylib|dll|exe|node|wasm|bin|pyc|class|jar)$''',
+]
+
+# ---------------------------------------------------------------------------
+# 供应商凭据：环境变量名或配置键 + 形似真实凭据的值
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-provider-credential"
+description = "供应商凭据被赋值给环境变量或配置键"
+regex = '''(?i)[A-Za-z0-9_.\-]{0,48}(?:api[_\-]?key|apikey|_key|key|access[_\-]?key(?:[_\-]?id)?|secret[_\-]?access[_\-]?key|secret[_\-]?key|auth[_\-]?key|master[_\-]?key|private[_\-]?key|signing[_\-]?key|client[_\-]?secret|credential|credentials|passwd|password|secret|token|_pat|bearer)[A-Za-z0-9_.\-]{0,16}[ \t]{0,2}["'`]?[ \t]{0,2}[:=]>?[ \t]{0,4}["'`]?([A-Za-z0-9_\-./+=]{16,240})'''
+entropy = 3.0
+[rules.allowlist]
+description = "值实际是文件路径、环境变量引用或标识符，不是凭据本体"
+regexTarget = "secret"
+regexes = [
+    '''^(?:/|\./|~/|[A-Za-z]:[\\/])[A-Za-z0-9_\-./@]*$''',
+    '''^\$\{?[A-Za-z0-9_]+(?:[:-][^}]*)?\}?$''',
+    '''(?i)^(?:file|path|url|endpoint|host|base[_-]?url|keyring|keychain|location|directory|json|yaml|toml|env)[A-Za-z0-9_\-./:]*$''',
+    '''(?i)^(?:process|import\.meta|deno|bun|globalThis|window|self|module|env|environ|environment|config|options|params|args|ctx|context|state|store|props|this)\.[A-Za-z0-9_.\[\]"']*$''',
+    '''(?i)^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_]+\.[A-Za-z0-9_.]*$''',
+    '''(?i)^[a-z_]+(?:\.[a-z_]+)+$''',
+    '''(?i)(?:_API_KEY|_API_KEY_ID|_KEY|_KEYS|_TOKEN|_SECRET|_PAT|_CREDENTIALS|_CREDS|_ENV|_NAME|_ID|_IDS|_URL|_URI|_ENDPOINT|_HOST|_PORT|_PATH|_FILE|_DIR|_MODE|_LEVEL|_TYPE|_PROVIDER|_AGENT|_PROFILE|_REGION|_BUCKET|_PROJECT|_ACCOUNT)$''',
+    '''^[a-z][a-z_\-./+=]*$''',
+]
+
+# ---------------------------------------------------------------------------
+# sk- 前缀的网关密钥或供应商密钥
+# 默认 openai-api-key 规则只认 base64("OpenAI") 标记，抓不到 sk-proj-*、sk-sg-* 等实际形状。
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-gateway-key"
+description = "sk- 前缀的网关密钥或供应商密钥"
+regex = '''\b(sk-[A-Za-z0-9][A-Za-z0-9_\-]{19,159})'''
+entropy = 3.0
+
+# ---------------------------------------------------------------------------
+# 邮件与通知服务密钥。默认规则漏掉 SendGrid 与 Mailgun 的实际形状。
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-sendgrid-key"
+description = "SendGrid API 密钥"
+regex = '''\b(SG\.[A-Za-z0-9_\-]{20,30}\.[A-Za-z0-9_\-]{40,70})'''
+
+[[rules]]
+id = "chatdsh-mailgun-key"
+description = "Mailgun API 密钥"
+regex = '''\b(key-[0-9a-f]{32})\b'''
+entropy = 3.0
+
+# ---------------------------------------------------------------------------
+# Authorization 头中的 Bearer 令牌
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-bearer-token"
+description = "Authorization 头中的 Bearer 令牌"
+regex = '''(?i)\bauthorization["'`]?[ \t]{0,2}[:=][ \t]{0,4}["'`]?bearer[ \t]+([A-Za-z0-9\-._~+/=]{20,1000})'''
+entropy = 3.0
+
+# ---------------------------------------------------------------------------
+# 连接串内嵌口令
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-connection-string"
+description = "连接串中内嵌的用户名与口令"
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqp|amqps|mssql|sqlserver|clickhouse|kafka|zookeeper|nats|etcd|influxdb|neo4j|oracle|db2|ftp|sftp|ldap|ldaps)://[^:@/\s"'`<>]{1,64}:[^@/\s"'`<>]{4,256}@[A-Za-z0-9.\-]{3,}'''
+
+# ---------------------------------------------------------------------------
+# 服务账号与云平台密钥
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-gcp-service-account"
+description = "GCP service account JSON 的关键字段"
+regex = '''(?:"type"[ \t]{0,2}:[ \t]{0,2}"service_account"|"private_key_id"[ \t]{0,2}:[ \t]{0,2}"[0-9a-f]{32,64}"|"client_email"[ \t]{0,2}:[ \t]{0,2}"[^"]{0,64}@[A-Za-z0-9.\-]{4,}\.iam\.gserviceaccount\.com")'''
+
+[[rules]]
+id = "chatdsh-azure-storage-key"
+description = "Azure 存储账户密钥（AccountKey= 形状）"
+regex = '''(?i)AccountKey[ \t]{0,2}=[ \t]{0,2}([A-Za-z0-9+/=]{60,120})'''
+entropy = 3.0
+
+# ---------------------------------------------------------------------------
+# JWT 会话令牌
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-jwt"
+description = "JWT 会话令牌"
+regex = '''\b(eyJ[A-Za-z0-9_\-]{8,1000}\.eyJ[A-Za-z0-9_\-]{8,1000}\.[A-Za-z0-9_\-]{8,1000})'''
+entropy = 3.0
+
+# ---------------------------------------------------------------------------
+# 带凭据的 URL（含 http、ws、git、ssh、ftp 等全部协议）
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-url-credentials"
+description = "URL 中内嵌的用户名与口令"
+regex = '''\b(?:https?|wss?|git|ssh|ftps?|sftp|ldaps?|smb|rdp|telnet)://[A-Za-z0-9._%\-]{1,64}:[^@/\s"'`<>]{4,256}@[A-Za-z0-9.\-]{3,}'''
+[rules.allowlist]
+description = "文档示例里常见的占位口令"
+regexes = [
+    '''(?i):(?:password|passwd|pwd|pass|secret|changeme|change[_-]?me|your[a-z_]*|example|dummy|xxx+|\*+)@''',
+    '''(?i)://(?:user|username|someone|user1|admin|root|foo|bar)[^@/\s"'`]{0,40}@example\.(?:com|org|net)''',
+]
+
+# ---------------------------------------------------------------------------
+# 聊天与协作平台 webhook
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-chat-webhook"
+description = "聊天平台 webhook 地址"
+regex = '''https?://(?:discord(?:app)?\.com/api/webhooks/[0-9]{15,25}/[A-Za-z0-9_\-]{50,}|oapi\.dingtalk\.com/robot/send\?access_token=[A-Za-z0-9]{40,}|open\.feishu\.cn/open-apis/bot/v2/hook/[A-Za-z0-9\-]{20,}|qyapi\.weixin\.qq\.com/cgi-bin/webhook/send\?key=[A-Za-z0-9\-]{20,}|hooks\.slack\.com/services/[A-Z0-9]{8,12}/[A-Z0-9]{8,12}/[A-Za-z0-9]{20,})'''
+
+# ---------------------------------------------------------------------------
+# 高熵 base64 或十六进制值被赋值给凭据类键名
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-base64-assignment"
+description = "高熵 base64 或十六进制值被赋值给凭据类键名"
+regex = '''(?i)[A-Za-z0-9_.\-]{0,48}(?:secret|key|token|password|passwd|credential|signature|salt)[A-Za-z0-9_.\-]{0,16}[ \t]{0,2}["'`]?[ \t]{0,2}[:=][ \t]{0,4}["'`]?([A-Za-z0-9+/]{40,}={0,2})'''
+entropy = 3.4
+
+# ---------------------------------------------------------------------------
+# Tailscale 地址：100.64.0.0/10 与 fd7a:115c:a1e0::/48
+# 这是本仓库最需要守住的网络标识，避免把真实 tailnet 暴露出去。
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-tailnet-ipv4"
+description = "Tailscale 网段地址（100.64.0.0/10）"
+regex = '''\b(100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.\d{1,3}\.\d{1,3})\b'''
+[rules.allowlist]
+description = "网段本身的写法，是协议常量而非本机地址"
+regexes = [
+    '''^100\.64\.0\.0$''',
+]
+
+[[rules]]
+id = "chatdsh-tailnet-ipv6"
+description = "Tailscale IPv6 地址前缀（fd7a:115c:a1e0::/48）"
+regex = '''(?i)\b(fd7a:115c:a1e0:[0-9a-f:]{1,40})'''
+[rules.allowlist]
+description = "前缀本身的写法，是协议常量而非本机地址"
+regexes = [
+    '''^(?i)fd7a:115c:a1e0::?$''',
+]
+
+# ---------------------------------------------------------------------------
+# 真实 tailnet 域名：任何 xxx.ts.net，除约定的 example.ts.net
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-tailnet-domain"
+description = "真实 tailnet 域名"
+regex = '''\b([A-Za-z0-9][A-Za-z0-9.\-]{0,62}\.ts\.net)\b'''
+[rules.allowlist]
+description = "文档约定的占位 tailnet 名"
+regexes = [
+    '''(?i)^(?:[a-z0-9-]+\.)?example\.ts\.net$''',
+]
+
+# ---------------------------------------------------------------------------
+# 私有域名后缀
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-private-hostname"
+description = "内部专用域名后缀"
+regex = '''\b[a-zA-Z0-9][a-zA-Z0-9.\-]{0,63}\.(?:internal|intranet|corp|corporate|lan|intra|localdomain|home|local)(?::[0-9]{2,5})?\b'''
+[rules.allowlist]
+description = "常见公开域名与保留域名"
+regexes = [
+    '''(?i)\.local\b''',
+    '''(?i)example\.(?:com|org|net)''',
+    '''(?i)(?:localhost|127\.0\.0\.1)''',
+    '''(?i)^host\.docker\.internal(?::[0-9]{2,5})?$''',
+]
+
+# ---------------------------------------------------------------------------
+# RFC1918 内网地址：全局不放行。文档示例改用 RFC5737 文档专用网段，
+# 私有地址一旦出现在待提交内容里即视为泄露本机网络位置。
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-internal-ipv4"
+description = "RFC1918 内网 IPv4 地址"
+regex = '''\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b'''
+[rules.allowlist]
+description = "回环、通配地址、网络边界写法，以及 Docker 出厂默认的 docker0 网关"
+regexes = [
+    '''\b(?:127\.0\.0\.1|0\.0\.0\.0)\b''',
+    '''\b(?:10\.0\.0\.0|172\.16\.0\.0|192\.168\.0\.0)(?:/[0-9]{1,2})?\b''',
+    # Docker 默认网桥网关，任何装有 Docker 的机器都是这个值，不含本机特有信息
+    '''\b172\.17\.0\.1\b''',
+]
+
+# ---------------------------------------------------------------------------
+# 短口令：password 类键名后的值长度不足 16 时，前面的供应商规则会漏掉
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-password-assignment"
+description = "password 类键名被赋予非占位的口令值"
+regex = '''(?i)(?:password|passwd|pwd|passphrase)["'`]?[ \t]{0,2}[:=][ \t]{0,4}["'`]?([A-Za-z0-9!@#$%^&*_\-+=.]{8,64})["'`]?'''
+entropy = 2.5
+[rules.allowlist]
+description = "占位口令、环境变量引用与文件路径"
+regexTarget = "secret"
+regexes = [
+    '''(?i)^(?:password|passwd|pwd|passphrase|changeme|change[_-]?me|your[a-z_]*|example|sample|dummy|fake|mock|test|testing|placeholder|todo|tbd|redacted|none|null|undefined|x{4,}|\*{4,})$''',
+    '''^\$\{?[A-Za-z0-9_]+(?:[:-][^}]*)?\}?$''',
+    '''^(?:/|\./|~/)''',
+    '''(?i)^(?:process|env|os|ctx|config|options)\.[A-Za-z0-9_.]*$''',
+]
+
+# ---------------------------------------------------------------------------
+# 中文姓名：紧邻「姓名」「联系人」等提示词时判定，减少误伤普通词语
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-cn-name"
+description = "中文姓名"
+regex = '''(?:姓名|真实姓名|联系人|负责人|署名|收件人|收货人)[：: \t]*([\p{Han}]{2,4})'''
+
+# ---------------------------------------------------------------------------
+# 联系方式：电子邮箱
+# 排除 example 域与保留域，这些是文档与测试里的合法占位。
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-email"
+description = "电子邮箱地址"
+regex = '''\b([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,24})\b'''
+[rules.allowlist]
+description = "示例域、保留域与占位本地部分"
+regexes = [
+    '''(?i)@(?:[a-z0-9-]+\.)*example\.(?:com|org|net)$''',
+    '''(?i)@(?:[a-z0-9-]+\.)*(?:test|invalid|localhost|example|local)$''',
+    '''(?i)^(?:user|name|email|your|someone|test|noreply|no-reply|donotreply)@''',
+]
+
+# ---------------------------------------------------------------------------
+# 联系方式：手机号（中国大陆与带国家码的写法）
+# ---------------------------------------------------------------------------
+# Go RE2 不支持前后环视，改用非数字边界分组。gitleaks 取第一个捕获组作为 secret。
+[[rules]]
+id = "chatdsh-phone"
+description = "中国大陆手机号"
+regex = '''(?:^|[^\d])((?:\+?86[-\s]?)?1[3-9]\d{9})(?:[^\d]|$)'''
+
+[[rules]]
+id = "chatdsh-phone-intl"
+description = "带国家码的国际电话号码"
+regex = '''(?:^|[^\d])(\+\d{1,3}[-\s]\d{2,4}[-\s]\d{3,4}[-\s]\d{3,4})(?:[^\d]|$)'''
+
+# ---------------------------------------------------------------------------
+# 身份证件号码（中国大陆 18 位）
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "chatdsh-id-number"
+description = "中国大陆身份证号码"
+regex = '''(?:^|[^\dXx])(\d{6}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx])(?:[^\dXx]|$)'''

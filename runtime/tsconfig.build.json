@@ -1,0 +1,116 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/contracts"
+    },
+    {
+      "path": "packages/clients/approval"
+    },
+    {
+      "path": "packages/clients/artifacts"
+    },
+    {
+      "path": "packages/clients/account"
+    },
+    {
+      "path": "packages/clients/connectors"
+    },
+    {
+      "path": "packages/clients/memory"
+    },
+    {
+      "path": "packages/clients/assistants"
+    },
+    {
+      "path": "packages/clients/projects"
+    },
+    {
+      "path": "packages/clients/share"
+    },
+    {
+      "path": "packages/clients/telemetry"
+    },
+    {
+      "path": "packages/desktop"
+    },
+    {
+      "path": "packages/gateway"
+    },
+    {
+      "path": "packages/plugins/approval"
+    },
+    {
+      "path": "packages/plugins/artifacts"
+    },
+    {
+      "path": "packages/plugins/assistants"
+    },
+    {
+      "path": "packages/plugins/memory"
+    },
+    {
+      "path": "packages/plugins/connectors"
+    },
+    {
+      "path": "packages/plugins/import"
+    },
+    {
+      "path": "packages/plugins/identity"
+    },
+    {
+      "path": "packages/plugins/projects"
+    },
+    {
+      "path": "packages/plugins/push"
+    },
+    {
+      "path": "packages/plugins/session-index"
+    },
+    {
+      "path": "packages/plugins/telemetry"
+    },
+    {
+      "path": "packages/plugins/usage"
+    },
+    {
+      "path": "packages/presets/chat"
+    },
+    {
+      "path": "packages/presets/tool-artifact"
+    },
+    {
+      "path": "packages/presets/tool-browser"
+    },
+    {
+      "path": "packages/presets/tool-connector"
+    },
+    {
+      "path": "packages/presets/tool-image"
+    },
+    {
+      "path": "packages/presets/tool-project"
+    },
+    {
+      "path": "packages/presets/tool-research"
+    },
+    {
+      "path": "packages/presets/tool-share"
+    },
+    {
+      "path": "packages/bundles/desktop"
+    },
+    {
+      "path": "packages/bundles/hosted"
+    },
+    {
+      "path": "packages/bundles/memory-hindsight"
+    },
+    {
+      "path": "packages/bundles/storage-jsonl"
+    },
+    {
+      "path": "packages/bundles/worker"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "chatdsh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "build:client": "node scripts/build-client.mjs",
+    "clean": "tsc -b tsconfig.build.json --clean",
+    "typecheck": "tsc -b tsconfig.build.json",
+    "test": "node --test e2e/unit/*.test.mjs",
+    "check:telemetry": "node scripts/check-telemetry.mjs",
+    "check:composition": "node scripts/check-composition.mjs",
+    "check:profiles": "node scripts/check-profile-deps.mjs",
+    "check:plugins": "node scripts/check-plugin-contract.mjs",
+    "check:upstream-names": "node scripts/check-upstream-names.mjs",
+    "verify:client-asset": "node scripts/verify-client-asset.mjs --profile chatdsh-web --package @chatdsh/client-projects",
+    "verify:acp": "node scripts/verify-acp.mjs --profile chatdsh-acp --cwd .",
+    "verify:client-ui": "node scripts/verify-client-ui.mjs",
+    "verify:isolation": "node scripts/verify-isolation.mjs",
+    "verify:multi-client": "node scripts/verify-multi-client.mjs",
+    "verify:receipt-sync": "node scripts/verify-receipt-sync.mjs",
+    "verify:import": "node scripts/verify-import.mjs",
+    "verify:routing": "node scripts/verify-routing.mjs",
+    "verify:routing-live": "node scripts/verify-routing-live.mjs",
+    "verify:mcp-connection": "node scripts/verify-mcp-connection.mjs",
+    "verify:telemetry-sync": "node scripts/verify-telemetry-sync.mjs",
+    "verify:schedule": "node scripts/verify-schedule.mjs",
+    "verify:memory": "node scripts/verify-memory.mjs",
+    "profiles:sync": "node scripts/sync-profiles.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "typescript": "5.9.3"
+  }
+}

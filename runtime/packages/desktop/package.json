@@ -1,0 +1,23 @@
+{
+  "name": "@chatdsh/desktop",
+  "version": "0.1.0",
+  "description": "ChatDSH 桌面载体：启动编排（单实例锁、中立启动根、控制平面与运行时就绪等待）",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  }
+}
