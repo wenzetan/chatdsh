@@ -1,0 +1,28 @@
+# 测量中间结果与容器内数据根的落盘位置
+.verify/
+
+# 本次工作的测量中间结果（依赖解包、原生库、测试安装）
+.tmp/
+
+# UI 方向探索的候选页、截图与评审记录
+ui-explore/
+
+# 依赖、构建产物与增量编译信息
+node_modules/
+lib/
+*.tsbuildinfo
+
+# DSH 安装内依赖的本地投影（符号链接，由 scripts/link-dsh-deps.mjs 生成）
+.dsh-deps/
+
+# 本地开发用的数据根与运行记录
+.run/
+
+# 开发环境容器编排的变量文件
+dev/.env
+
+# 打包产物
+*.tgz
+
+# 参考项目快照，不纳入本仓库版本管理
+refer_repos/
