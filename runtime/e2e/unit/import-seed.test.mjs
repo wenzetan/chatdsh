@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSeed } from '../../packages/plugins/import/lib/seed.js';
+import { buildSeed } from '../../packages/host/import/lib/seed.js';
 
 const record = (seq, payload) => ({ seq, kind: payload?.type ?? 'unknown', time: payload?.time ?? seq, payload });
 

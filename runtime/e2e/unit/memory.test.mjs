@@ -8,8 +8,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { banksFor, dedupeHits } from '../../packages/plugins/memory/lib/rules.js';
-import { createMemoryClient } from '../../packages/plugins/memory/lib/client.js';
+import { banksFor, dedupeHits } from '../../packages/host/memory/lib/rules.js';
+import { createMemoryClient } from '../../packages/host/memory/lib/client.js';
 
 const HINDSIGHT = process.env.HINDSIGHT_URL ?? 'http://127.0.0.1:8889';
 

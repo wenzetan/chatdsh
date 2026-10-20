@@ -28,6 +28,45 @@ export const SESSION_EVENTS = {
 /** 会话事件名的取值集合。 */
 export type SessionEventName = typeof SESSION_EVENTS[keyof typeof SESSION_EVENTS];
 
+/**
+ * 模型调用事件。
+ *
+ * `stream` 是 waterfall：拦截者可以观察请求选项与块流，返回值即最终流。
+ * 请求头由适配器自己发出，这一层改不到 HTTP 请求。
+ */
+export const LLM_EVENTS = {
+  /** 模型调用 waterfall：`(this, options, next) => AsyncIterable<StreamChunk>`。 */
+  stream: 'llm/stream',
+  /** 适配器路由变化。 */
+  adaptersUpdated: 'llm/adapters-updated',
+  /** 一次发现请求被拒绝。 */
+  modelDiscoveryRejected: 'llm/model-discovery-rejected',
+  /** 一次重试落盘为会话事件。 */
+  retry: 'llm/retry',
+  /** 一次重试开始。 */
+  retryStarted: 'llm/retry-started',
+} as const;
+
+/** 模型调用事件名的取值集合。 */
+export type LlmEventName = typeof LLM_EVENTS[keyof typeof LLM_EVENTS];
+
+/** 压缩事件，落进会话日志。 */
+export const COMPACTION_EVENTS = {
+  /** 压缩开始。 */
+  start: 'compaction/start',
+  /** 压缩产出的摘要。 */
+  summary: 'compaction/summary',
+  /** 压缩结束。 */
+  end: 'compaction/end',
+  /** 裁剪被移除的事件。 */
+  prune: 'compaction/prune',
+  /** 压缩失败。 */
+  summaryError: 'compaction/summary-error',
+} as const;
+
+/** 压缩事件名的取值集合。 */
+export type CompactionEventName = typeof COMPACTION_EVENTS[keyof typeof COMPACTION_EVENTS];
+
 /** 审批事件。 */
 export const APPROVAL_EVENTS = {
   /** 一次审批请求：waterfall，返回结果即认领该请求。 */

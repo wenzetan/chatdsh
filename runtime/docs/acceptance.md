@@ -6,7 +6,7 @@
 
 ```bash
 export PATH=/usr/local/nvm/versions/node/v24.19.0/bin:$PATH
-export DSH_HOME=/workspace/chatdsh/chatdsh-main/.run/dsh-home
+export DSH_HOME=/workspace/chatdsh/runtime/.run/dsh-home
 node scripts/link-dsh-deps.mjs
 ./node_modules/.bin/tsc -b tsconfig.build.json
 node scripts/build-client.mjs
@@ -94,8 +94,8 @@ node scripts/verify-client-ui.mjs
 **部分。** 创建会话、恢复会话与投影落盘有端到端证据。验收 profile 用独立的数据根，先建立链接再运行：
 
 ```bash
-ln -sfn /workspace/chatdsh/chatdsh-main/e2e/profiles/chatdsh-acp /workspace/chatdsh/chatdsh-main/.run/verify-home/profiles/chatdsh-acp
-DSH_HOME=/workspace/chatdsh/chatdsh-main/.run/verify-home node scripts/verify-acp.mjs --profile chatdsh-acp --cwd /workspace/chatdsh/chatdsh-main
+ln -sfn /workspace/chatdsh/runtime/e2e/profiles/chatdsh-acp /workspace/chatdsh/runtime/.run/verify-home/profiles/chatdsh-acp
+DSH_HOME=/workspace/chatdsh/runtime/.run/verify-home node scripts/verify-acp.mjs --profile chatdsh-acp --cwd /workspace/chatdsh/runtime
 ```
 
 脚本断言会话落盘后，投影缓存里存在全部 `chatdsh*` 投影单元（会话索引、用量、审批），并打印它们的值。
@@ -207,7 +207,7 @@ curl -s -X POST http://127.0.0.1:3170/chatdsh/gateway/schedule \
 curl -s http://127.0.0.1:3170/chatdsh/gateway/schedule
 
 # 两段式通知（阈值设小便于观察）
-CHATDSH_PUSH_ESCALATION_MS=2000 node packages/gateway/lib/main.js
+CHATDSH_PUSH_ESCALATION_MS=2000 node gateway/lib/main.js
 ```
 
 ## 十二、多客户端共存
@@ -282,7 +282,7 @@ curl -s "http://127.0.0.1:3170/chatdsh/gateway/replica?sessionId=<id>"
 扩展包的装卸：
 
 ```bash
-node scripts/extensions.mjs install packages/bundles/worker --profile chatdsh-web   # 落盘阈值 12500 → 4000
+node scripts/extensions.mjs install packages/bundle/worker --profile chatdsh-web   # 落盘阈值 12500 → 4000
 node scripts/extensions.mjs remove  @chatdsh/bundle-worker --profile chatdsh-web     # 恢复 12500
 ```
 
@@ -321,7 +321,7 @@ MCP 连接验收通过
 
 ```bash
 node scripts/extensions.mjs list    --profile chatdsh-web
-node scripts/extensions.mjs install packages/bundles/worker --profile chatdsh-web
+node scripts/extensions.mjs install packages/bundle/worker --profile chatdsh-web
 node scripts/extensions.mjs remove  @chatdsh/bundle-worker   --profile chatdsh-web
 ```
 
@@ -365,7 +365,7 @@ node --test e2e/unit/approval-answer.test.mjs
 node --test e2e/unit/connector-mcp.test.mjs
 ```
 
-顺带修掉的两处接口误用：`plugin-import` 与 `plugin-connectors` 把计数器声明成「带属性即计数」，实际契约是取到句柄后调 `add`，这两个指标此前从未加过数；`plugin-memory` 的召回耗时记在累加计数器上，改为分布记录。
+顺带修掉的两处接口误用：`host-import` 与 `host-connectors` 把计数器声明成「带属性即计数」，实际契约是取到句柄后调 `add`，这两个指标此前从未加过数；`host-memory` 的召回耗时记在累加计数器上，改为分布记录。
 
 **上游包名的收拢。** 上游包名在源码与配置清单里出现时是字符串：补丁层按 `name` 匹配上游的行，名字写错时整条补丁被跳过，只是不生效；客户端插件的 `dsh.client.inject` 写错时面板永久停在 pending。这些名字原先散落在三个插件的源码、八份补丁层与八份客户端清单里，上游改名时要逐处排查。现在全部登记在适配层的 `UPSTREAM_PACKAGE_NAMES`，脚本核对各处出现的上游包名都在登记处出现过；适配层的单元测试再核对登记的包在 DSH 安装里真实存在。
 
@@ -378,9 +378,9 @@ node scripts/check-upstream-names.mjs
 上游包名收拢检查通过
 ```
 
-**版本声明的收敛。** 上游判定兼容性时 `engines.dsh` 单独决定结果，peerDependencies 不参与。三十五个业务包的 `engines.dsh` 原先各自写精确版本 `0.2.1-rc.2`，上游每次发版都要改三十五个文件；现在统一写成 `>=0.2.1-rc.2 <0.3.0-0`，上游在 0.2.x 内发新版时业务包不需要改动。业务包也不再声明上游包的 peer 依赖——它们不直接 import 上游包，这些引用已经全部经由适配层转出，留在清单里只会在升级时多出要改的位置。唯一保留的例外是模块增强：`import type {} from '@deepseek-ai/dsh-session-projection'` 这类写法必须写真实包名才能挂到上游接口上，因此 `plugin-approval`、`plugin-session-index`、`plugin-usage` 三个包保留对应的 peer 声明。
+**版本声明的收敛。** 上游判定兼容性时 `engines.dsh` 单独决定结果，peerDependencies 不参与。三十五个业务包的 `engines.dsh` 原先各自写精确版本 `0.2.1-rc.2`，上游每次发版都要改三十五个文件；现在统一写成 `>=0.2.1-rc.2 <0.3.0-0`，上游在 0.2.x 内发新版时业务包不需要改动。业务包也不再声明上游包的 peer 依赖——它们不直接 import 上游包，这些引用已经全部经由适配层转出，留在清单里只会在升级时多出要改的位置。唯一保留的例外是模块增强：`import type {} from '@deepseek-ai/dsh-session-projection'` 这类写法必须写真实包名才能挂到上游接口上，因此 `host-approval`、`core-session-index`、`host-usage` 三个包保留对应的 peer 声明。
 
-适配层自身的 `engines.dsh` 与 peer 依赖仍写精确版本：它直接引用上游内部结构，版本要逐一核对。升级上游时的顺序是：先改适配层的版本声明与实现，跑适配层的测试，再按新内核版本回归主仓库的验收脚本。
+适配层自身的 `engines.dsh` 与 peer 依赖仍写精确版本：它直接引用上游内部结构，版本要逐一核对。升级上游时的顺序是：先改适配层的版本声明与实现，跑适配层的测试，再按新内核版本回归 `runtime` 的验收脚本。
 
 尚未核验的部分：宿主平面插件对上游事件名、`ctx` 服务名与内置行 id 的依赖面还没有逐项核验，升级上游版本时这些引用是首要风险点。
 

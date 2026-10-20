@@ -2,115 +2,115 @@
   "files": [],
   "references": [
     {
-      "path": "packages/contracts"
+      "path": "packages/core/contracts"
     },
     {
-      "path": "packages/clients/approval"
+      "path": "packages/client/approval"
     },
     {
-      "path": "packages/clients/artifacts"
+      "path": "packages/client/artifacts"
     },
     {
-      "path": "packages/clients/account"
+      "path": "packages/client/account"
     },
     {
-      "path": "packages/clients/connectors"
+      "path": "packages/client/connectors"
     },
     {
-      "path": "packages/clients/memory"
+      "path": "packages/client/memory"
     },
     {
-      "path": "packages/clients/assistants"
+      "path": "packages/client/assistants"
     },
     {
-      "path": "packages/clients/projects"
+      "path": "packages/client/projects"
     },
     {
-      "path": "packages/clients/share"
+      "path": "packages/client/share"
     },
     {
-      "path": "packages/clients/telemetry"
+      "path": "packages/client/telemetry"
     },
     {
-      "path": "packages/desktop"
+      "path": "desktop"
     },
     {
-      "path": "packages/gateway"
+      "path": "gateway"
     },
     {
-      "path": "packages/plugins/approval"
+      "path": "packages/host/approval"
     },
     {
-      "path": "packages/plugins/artifacts"
+      "path": "packages/host/artifacts"
     },
     {
-      "path": "packages/plugins/assistants"
+      "path": "packages/host/assistants"
     },
     {
-      "path": "packages/plugins/memory"
+      "path": "packages/host/memory"
     },
     {
-      "path": "packages/plugins/connectors"
+      "path": "packages/host/connectors"
     },
     {
-      "path": "packages/plugins/import"
+      "path": "packages/host/import"
     },
     {
-      "path": "packages/plugins/identity"
+      "path": "packages/core/identity"
     },
     {
-      "path": "packages/plugins/projects"
+      "path": "packages/host/projects"
     },
     {
-      "path": "packages/plugins/push"
+      "path": "packages/host/push"
     },
     {
-      "path": "packages/plugins/session-index"
+      "path": "packages/core/session-index"
     },
     {
-      "path": "packages/plugins/telemetry"
+      "path": "packages/core/telemetry"
     },
     {
-      "path": "packages/plugins/usage"
+      "path": "packages/host/usage"
     },
     {
-      "path": "packages/presets/chat"
+      "path": "packages/preset/chat"
     },
     {
-      "path": "packages/presets/tool-artifact"
+      "path": "packages/tool/artifact"
     },
     {
-      "path": "packages/presets/tool-browser"
+      "path": "packages/tool/browser"
     },
     {
-      "path": "packages/presets/tool-connector"
+      "path": "packages/tool/connector"
     },
     {
-      "path": "packages/presets/tool-image"
+      "path": "packages/tool/image"
     },
     {
-      "path": "packages/presets/tool-project"
+      "path": "packages/tool/project"
     },
     {
-      "path": "packages/presets/tool-research"
+      "path": "packages/tool/research"
     },
     {
-      "path": "packages/presets/tool-share"
+      "path": "packages/tool/share"
     },
     {
-      "path": "packages/bundles/desktop"
+      "path": "packages/bundle/desktop"
     },
     {
-      "path": "packages/bundles/hosted"
+      "path": "packages/bundle/hosted"
     },
     {
-      "path": "packages/bundles/memory-hindsight"
+      "path": "packages/bundle/memory-hindsight"
     },
     {
-      "path": "packages/bundles/storage-jsonl"
+      "path": "packages/bundle/storage-jsonl"
     },
     {
-      "path": "packages/bundles/worker"
+      "path": "packages/bundle/worker"
     }
   ]
 }

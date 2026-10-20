@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { tempHome } from '../../scripts/lib/cleanup.mjs';
-import { launchBrowser } from '../../packages/presets/tool-browser/lib/cdp.js';
-import { expressionOf } from '../../packages/presets/tool-browser/lib/expressions.js';
+import { launchBrowser } from '../../packages/tool/browser/lib/cdp.js';
+import { expressionOf } from '../../packages/tool/browser/lib/expressions.js';
 
 const CHROME = '/usr/bin/google-chrome';
 const ROOT = resolve(import.meta.dirname, '..', '..');

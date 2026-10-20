@@ -1,27 +1,27 @@
 # ChatDSH 工作区
 
-以 DSH（deepseek-harness）为运行内核的自托管 ChatGPT 对应物的开发工作区。这个目录本身不是一个 Git 仓库，下面的每个子目录各自独立。
+以 DSH（deepseek-harness）为运行内核的自托管 ChatGPT 对应物的开发工作区。这个目录是唯一的 Git 仓库，运行时与适配层是仓库根下的同级目录；参考项目快照也放在这里，不纳入版本管理。
 
 ## 目录构成
 
-| 目录 | 内容 | 版本管理 |
-|---|---|---|
-| [`chatdsh-main/`](chatdsh-main/) | 主仓库：插件、组合包、预设、客户端插件、控制平面服务、部署 profile、文档与校验脚本 | 独立 Git 仓库 |
-| [`chatdsn-adapter/`](chatdsn-adapter/) | 适配层 `@chatdsh/adapter`：DSH 内部 API 的唯一接触面 | 独立 Git 仓库 |
-| [`refer_repos/`](refer_repos/) | 参考项目快照，本地检索用 | 各项目自带 Git 仓库，不纳入本项目版本管理 |
+| 目录 | 内容 |
+|---|---|
+| [`runtime/`](runtime/) | 运行时侧全部内容：六个角色的包（core、host、tool、client、bundle、preset）、控制平面服务、桌面壳、部署 profile、文档、脚本与校验、调试容器、验收测试 |
+| [`dsh-adapter/`](dsh-adapter/) | 适配层 `@chatdsh/adapter`：DSH 内部 API 的唯一接触面 |
+| [`refer_repos/`](refer_repos/) | 参考项目快照，本地检索用，不纳入版本管理 |
 
-两个仓库同级的目录层级有实际约束：主仓库的 profile 目录以 `link:` 协议引用适配层，链接目标按同级关系解析，改动目录层级会让 profile 装不出依赖。容器环境也按同样的结构复制仓库，见 [`chatdsh-main/dev/README.md`](chatdsh-main/dev/README.md)。
+`runtime` 与 `dsh-adapter` 的同级层级有实际约束：`runtime/profiles` 下的 profile 以 `link:` 协议引用适配层，链接目标按同级关系解析，改动目录层级会让 profile 装不出依赖。容器环境也按同样的结构复制仓库，见 [`runtime/dev/README.md`](runtime/dev/README.md)。
 
 ## 从哪里开始读
 
-- 主仓库的总体设计与各子系统设计：[`chatdsh-main/docs/architecture.md`](chatdsh-main/docs/architecture.md)
-- 适配层的设计与版本约定：[`chatdsn-adapter/README.md`](chatdsn-adapter/README.md)
-- 逐项验收状态：[`chatdsh-main/docs/acceptance.md`](chatdsh-main/docs/acceptance.md)
-- 后续清单与解锁条件：[`chatdsh-main/docs/next-steps.md`](chatdsh-main/docs/next-steps.md)
+- 总体设计与各子系统设计：[`runtime/docs/architecture.md`](runtime/docs/architecture.md)
+- 适配层的设计与版本约定：[`dsh-adapter/README.md`](dsh-adapter/README.md)
+- 逐项验收状态：[`runtime/docs/acceptance.md`](runtime/docs/acceptance.md)
+- 后续清单与解锁条件：[`runtime/docs/next-steps.md`](runtime/docs/next-steps.md)
 
 ## 本机的开发调试环境
 
-调试用的 dsh 运行时、Hermes、Hindsight 各自跑在独立容器里，端口与宿主上已经在跑的实例错开，两套环境可以并存。编排文件在 [`chatdsh-main/dev/`](chatdsh-main/dev/)，说明见 [`chatdsh-main/dev/README.md`](chatdsh-main/dev/README.md)。
+调试用的 dsh 运行时、Hermes、Hindsight 各自跑在独立容器里，端口与宿主上已经在跑的实例错开，两套环境可以并存。编排文件在 [`runtime/dev/`](runtime/dev/)，说明见 [`runtime/dev/README.md`](runtime/dev/README.md)。
 
 ## 参考项目
 

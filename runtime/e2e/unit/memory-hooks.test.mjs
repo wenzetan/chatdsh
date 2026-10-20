@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lastUserText, renderRecallSection } from '../../packages/plugins/memory/lib/rules.js';
+import { lastUserText, renderRecallSection } from '../../packages/host/memory/lib/rules.js';
 
 test('取最后一条带文本的用户消息', () => {
   const messages = [

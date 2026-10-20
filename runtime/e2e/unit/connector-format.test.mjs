@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeConnectors } from '../../packages/presets/tool-connector/lib/format.js';
+import { describeConnectors } from '../../packages/tool/connector/lib/format.js';
 
 test('没有连接器时给出一句说明', () => {
   assert.equal(describeConnectors([]), '还没有登记外部连接器。');

@@ -1,0 +1,51 @@
+{
+  "name": "@chatdsh/gateway",
+  "version": "0.1.0",
+  "description": "ChatDSH 控制平面：账号与会话归属、反向代理与身份注入",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "bin": {
+    "chatdsh-gateway": "lib/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.gateway.auth.failed"
+      ],
+      "spans": [
+        "chatdsh.gateway.http",
+        "chatdsh.gateway.identity",
+        "chatdsh.gateway.proxy",
+        "chatdsh.gateway.replica.append",
+        "chatdsh.gateway.schedule.run",
+        "chatdsh.gateway.share.render"
+      ],
+      "metrics": [
+        "chatdsh_http_request_duration_seconds",
+        "chatdsh_http_requests_total",
+        "chatdsh_push_deliveries_total",
+        "chatdsh_schedule_runs_total"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/core-contracts": "workspace:*",
+    "@chatdsh/core-telemetry": "workspace:*"
+  }
+}

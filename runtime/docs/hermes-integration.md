@@ -61,17 +61,17 @@ DSH 承载不依赖任何外部服务，是这条形态能够「无 Hermes 也�
 
 **存储层**是真正保存与检索记忆的地方，只有两种：外部 Hindsight 服务，或 Hermes 内置记忆。两者都不由 ChatDSH 实现，ChatDSH 不重新发明记忆存储。
 
-**接入层**是 `@chatdsh/plugin-memory`，它负责三件事：在 `agent/pre-step` 里按当前问题发起召回并注入；在回合结束后按会话去重与节流，用 `ctx.llm` 生成适合长期记忆的摘要，写入存储层；按工作区与会话类型决定召回与写入哪些 bank。它不持有记忆数据，只做编排与规则。
+**接入层**是 `@chatdsh/host-memory`，它负责三件事：在 `agent/pre-step` 里按当前问题发起召回并注入；在回合结束后按会话去重与节流，用 `ctx.llm` 生成适合长期记忆的摘要，写入存储层；按工作区与会话类型决定召回与写入哪些 bank。它不持有记忆数据，只做编排与规则。
 
 `memoryBackend` 选中的是存储层。接入层在存储层为 `hindsight` 时启用，在存储层为 `hermes` 时由 Hermes 内部的记忆提供方接管聊天会话的记忆，接入层只处理 DSH 执行的工作会话，在存储层为 `none` 时整体不启用。
 
 ### 3.2 Hindsight 独立部署（`memoryBackend: hindsight`）
 
-Hindsight 由用户自行部署，ChatDSH 不打包它、不托管它的进程、不替用户启动容器。`@chatdsh/plugin-memory` 在这个后端下本质是一个配置层加定期摘要处理：它提供 Hindsight 的连接配置、bank 命名规则与探活，按规则把会话摘要写进记忆，按规则召回并注入。用户填好 Hindsight 的地址与凭据、把服务跑起来，记忆就生效；服务不可达时插件报告不可用，记忆功能显示为「未启用（Hindsight 不可达）」，不静默退化成本地假记忆。
+Hindsight 由用户自行部署，ChatDSH 不打包它、不托管它的进程、不替用户启动容器。`@chatdsh/host-memory` 在这个后端下本质是一个配置层加定期摘要处理：它提供 Hindsight 的连接配置、bank 命名规则与探活，按规则把会话摘要写进记忆，按规则召回并注入。用户填好 Hindsight 的地址与凭据、把服务跑起来，记忆就生效；服务不可达时插件报告不可用，记忆功能显示为「未启用（Hindsight 不可达）」，不静默退化成本地假记忆。
 
 Hindsight 的部署形态由用户决定，可以是本机、可以是另一台机器。单机部署时的实测参数记在[部署形态与兼容接缝](deployment.md)第八节：嵌入模型经 OmniRoute 用 `sfc/Qwen/Qwen3-Embedding-8B`（4096 维），超过 pgvector 的 HNSW 上界 2000，因此数据库要用带 `vchord` 扩展的 Postgres（`tensorchord/vchord-postgres:pg18-v1.1.1`，`shared_preload_libraries=vchord,vector`），配 `HINDSIGHT_API_DATABASE_URL` 与 `HINDSIGHT_API_VECTOR_EXTENSION=vchord`，就绪判定用 `GET /version` 返回 200。
 
-接入层需要的配置项：服务地址、凭据、嵌入模型与维度、`bank_id_template` 的取值、`mirror_to_own_bank` 开关、额外召回 bank 的优先级。这些配置由控制平面写入 `@chatdsh/plugin-memory` 的配置行，凭据走环境变量名引用，不作为配置值落盘。
+接入层需要的配置项：服务地址、凭据、嵌入模型与维度、`bank_id_template` 的取值、`mirror_to_own_bank` 开关、额外召回 bank 的优先级。这些配置由控制平面写入 `@chatdsh/host-memory` 的配置行，凭据走环境变量名引用，不作为配置值落盘。
 
 ### 3.3 Hermes 内置记忆（`memoryBackend: hermes`）
 
@@ -128,9 +128,9 @@ Hermes 自带一套内置记忆存储，`memory.provider` 取空值、`default`�
 | 三 | `hermes` | `hermes` | Hermes | 仅聊天会话，走 Hermes 内置存储 |
 | 四 | `hermes` | `hindsight` | Hermes | 聊天走 Hermes 的 Hindsight 提供方，工作会话走接入层，共用 bank |
 
-**组合一：无 Hermes，有 Hindsight。** 聊天由 DSH 承载，工作会话也由 DSH 执行，两者都经 `@chatdsh/plugin-memory` 召回并写入 Hindsight。接入层此时是纯配置层加定期摘要处理：用户部署 Hindsight、填连接配置，插件按 bank 规则把会话摘要写进记忆、按问题召回注入。Hermes 相关的渠道、审批桥接、定时任务都不加载，界面不出现 Hermes 的入口。
+**组合一：无 Hermes，有 Hindsight。** 聊天由 DSH 承载，工作会话也由 DSH 执行，两者都经 `@chatdsh/host-memory` 召回并写入 Hindsight。接入层此时是纯配置层加定期摘要处理：用户部署 Hindsight、填连接配置，插件按 bank 规则把会话摘要写进记忆、按问题召回注入。Hermes 相关的渠道、审批桥接、定时任务都不加载，界面不出现 Hermes 的入口。
 
-**组合二：无 Hermes，无 Hindsight。** 聊天与工作会话都由 DSH 执行，记忆功能不启用。`@chatdsh/plugin-memory` 不加载，界面不出现记忆管理、工作区记忆组关联等入口（这些入口在记忆不可用时本就不展示，见[架构设计](architecture.md) 第八节）。这是最轻的形态，只需要 DSH 内核与本地存储，不依赖任何外部服务。
+**组合二：无 Hermes，无 Hindsight。** 聊天与工作会话都由 DSH 执行，记忆功能不启用。`@chatdsh/host-memory` 不加载，界面不出现记忆管理、工作区记忆组关联等入口（这些入口在记忆不可用时本就不展示，见[架构设计](architecture.md) 第八节）。这是最轻的形态，只需要 DSH 内核与本地存储，不依赖任何外部服务。
 
 **组合三：有 Hermes，无 Hindsight。** 聊天由 Hermes 承载，记忆走 Hermes 内置存储，只覆盖聊天会话。DSH 执行的工作会话没有记忆能力，界面在记忆设置里说明这一范围限制。这个组合不要求用户部署任何额外服务，Hermes 与 DSH 装好即可。
 
@@ -184,7 +184,7 @@ Hermes 自带一套内置记忆存储，`memory.provider` 取空值、`default`�
 
 审批卡片改为自建四层，全部跟随渠道会话。
 
-**事件层**：`@chatdsh/plugin-approval-bridge` 用 `appendPluginRecord` 往渠道会话写 `plugin:` 记录，载荷含 Hermes 的 `run_id`、`request_id`、可选值列表、命令摘要、状态迁移与最终结果。
+**事件层**：`@chatdsh/host-approval` 用 `appendPluginRecord` 往渠道会话写 `plugin:` 记录，载荷含 Hermes 的 `run_id`、`request_id`、可选值列表、命令摘要、状态迁移与最终结果。
 
 **投影层**：注册一个自建投影键（`chatdshApprovals`），折叠这些记录。`SessionProjectionMap` 是可合并接口，值必须是纯 JSON 以便投影缓存持久化，因此刷新后可以从缓存重建卡片。
 

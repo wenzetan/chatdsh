@@ -1,8 +1,9 @@
 packages:
-  - packages/contracts
-  - packages/plugins/*
-  - packages/presets/*
-  - packages/clients/*
-  - packages/bundles/*
-  - packages/gateway
-  - packages/desktop
+  - packages/core/*
+  - packages/host/*
+  - packages/tool/*
+  - packages/client/*
+  - packages/bundle/*
+  - packages/preset/*
+  - gateway
+  - desktop

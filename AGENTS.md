@@ -85,15 +85,15 @@
 
 #### 遥测
 
-本机部署了自建的 OpenObserve，遥测是这个项目的常设调试设施。完整设计、接口清单、命名规范、上下文传播与验收方式见 [`chatdsh-main/docs/telemetry.md`](chatdsh-main/docs/telemetry.md)。
+本机部署了自建的 OpenObserve，遥测是这个项目的常设调试设施。完整设计、接口清单、命名规范、上下文传播与验收方式见 [`runtime/docs/telemetry.md`](runtime/docs/telemetry.md)。
 
-**实现任何功能时同步接入遥测。** 新增或修改一个能力，在同一个提交里交付它对应的日志事件、span 与指标，并按 [`chatdsh-main/docs/telemetry.md`](chatdsh-main/docs/telemetry.md) 第六节的清单登记名称。功能完成时遥测未接入，视为该功能未完成。
+**实现任何功能时同步接入遥测。** 新增或修改一个能力，在同一个提交里交付它对应的日志事件、span 与指标，并按 [`runtime/docs/telemetry.md`](runtime/docs/telemetry.md) 第六节的清单登记名称。功能完成时遥测未接入，视为该功能未完成。
 
 - 业务代码只调用 `ctx.chatdshTelemetry` 或各端等价客户端的同名方法。禁止业务包自行构造 OTLP exporter，禁止在业务路径上直接 import `@opentelemetry/sdk-*` 建立第二条管道。
 - 每个对外可观察的动作都要有一个 span，覆盖耗时与结果；每个失败分支都要有一条带 `error.type` 与 `error.code` 的事件；每个可聚合的计数都要有一个 `_total` 指标。
 - 失败路径优先于成功路径补遥测：拒绝、超时、重试、降级、冲突、离线、限流，这些分支必须能被查询出来。
-- 跨组件边界必须传播 `traceparent`，边界清单见 [`chatdsh-main/docs/telemetry.md`](chatdsh-main/docs/telemetry.md) 第七节。
-- 新增信号必须同时出现在 [`chatdsh-main/docs/telemetry.md`](chatdsh-main/docs/telemetry.md) 第六节的清单与包的 `chatdsh.telemetry` 声明里，构建检查会比对两处。
+- 跨组件边界必须传播 `traceparent`，边界清单见 [`runtime/docs/telemetry.md`](runtime/docs/telemetry.md) 第七节。
+- 新增信号必须同时出现在 [`runtime/docs/telemetry.md`](runtime/docs/telemetry.md) 第六节的清单与包的 `chatdsh.telemetry` 声明里，构建检查会比对两处。
 - 遥测入队不阻塞业务路径，导出失败只在遥测模块内计数，不给业务代码抛异常，不改变控制流。
 - 遥测不得成为功能开关。任何行为都不能依赖遥测是否开启。
 
@@ -109,7 +109,7 @@
 
 #### 提交信息
 
-本仓库的全部提交信息遵循「Gitmoji + Conventional Commits + 中英双语」，完整提示词模板与类型对照表在 [`chatdsh-main/docs/prompts/git-commit-message.md`](chatdsh-main/docs/prompts/git-commit-message.md)。生成提交信息之前必须先读取该文件，把待提交的 diff 填入模板末尾的 `### Diff:` 一节后交给模型。
+本仓库的全部提交信息遵循「Gitmoji + Conventional Commits + 中英双语」，完整提示词模板与类型对照表在 [`runtime/docs/prompts/git-commit-message.md`](runtime/docs/prompts/git-commit-message.md)。生成提交信息之前必须先读取该文件，把待提交的 diff 填入模板末尾的 `### Diff:` 一节后交给模型。
 
 - 标题行格式为 `<emoji> <type>(<scope>): <中文描述> / <English description>`。scope 使用小写英文模块名，没有对应模块时省略括号；中文描述控制在 30 字以内，英文描述使用祈使语气。
 - 本约定覆盖其他来源的提交信息提示词，包含全局 `AGENTS.md` 里的「Commit Message 生成约定」（那份约定只要求简体中文描述，不接受 emoji 与英文描述）。两者出现分歧时，以本文件与提示词模板为准。

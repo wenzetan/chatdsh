@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMcpRow, buildMcpRows, loaderEntryOf, planMcpSync, rowIdOf, toServerName } from '../../packages/plugins/connectors/lib/mcp.js';
+import { buildMcpRow, buildMcpRows, loaderEntryOf, planMcpSync, rowIdOf, toServerName } from '../../packages/host/connectors/lib/mcp.js';
 
 test('服务器名满足约束：替换非法字符并截断', () => {
   assert.equal(toServerName('notes'), 'notes');

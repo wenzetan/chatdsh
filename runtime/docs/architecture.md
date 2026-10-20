@@ -147,7 +147,7 @@ DSH 自带一套绑定 DeepSeek 平台账号的登录、余额与充值接缝：
 
 DSH 自带的 `@deepseek-ai/dsh-otel` 只提供两条日志通道：`createEventReporter` 与 `createSessionLogReporter`。前者用于普通事件，后者按字节上限批量上送会话日志。`session-telemetry-otel` 只在用户提交反馈时采集会话日志，`desktop-product-telemetry` 只在 profile 名为 `desktop` 时启用。两者都不覆盖追踪与指标。
 
-ChatDSH 的遥测自成一套：唯一的出口 `@chatdsh/plugin-telemetry` 在宿主平面注册 `ctx.chatdshTelemetry`，内部用 DSH 安装里的 OpenTelemetry 包自建三条管道，直发本机 OpenObserve。上游两行的关闭语义沿用：`DSH_TELEMETRY_DISABLED` 取任何非空值时整体关闭。信号清单、命名规范、上下文传播与关闭入口见[遥测与调试接口](telemetry.md)。
+ChatDSH 的遥测自成一套：唯一的出口 `@chatdsh/core-telemetry` 在宿主平面注册 `ctx.chatdshTelemetry`，内部用 DSH 安装里的 OpenTelemetry 包自建三条管道，直发本机 OpenObserve。上游两行的关闭语义沿用：`DSH_TELEMETRY_DISABLED` 取任何非空值时整体关闭。信号清单、命名规范、上下文传播与关闭入口见[遥测与调试接口](telemetry.md)。
 
 ## 三、总体架构
 
@@ -205,37 +205,68 @@ flowchart TB
 
 ## 四、仓库与包结构
 
+仓库只有一个 Git 根 `/workspace/chatdsh`。运行时侧的代码全部在 `runtime/` 下；适配层与参考项目快照是仓库根下的同级目录。
+
+```mermaid
+flowchart TB
+  ROOT["/workspace/chatdsh（唯一 Git 仓库根）"]
+  ROOT --> RT["runtime/"]
+  ROOT --> AD["dsh-adapter/  @chatdsh/adapter"]
+  ROOT --> HA["hermes-adapter/"]
+  ROOT --> HI["hindsight-adapter/"]
+  ROOT --> FB["forge-bridge/"]
+  ROOT --> RR["refer_repos/"]
+  RT --> PK["packages/"]
+  RT --> GW["gateway/  @chatdsh/gateway"]
+  RT --> DT["desktop/  @chatdsh/desktop"]
+  RT --> PFD["profiles/"]
+  RT --> DOC["docs/"]
+  RT --> SCR["scripts/"]
+  RT --> DEV["dev/"]
+  RT --> E2E["e2e/"]
+  PK --> CORE["core/"]
+  PK --> HOST["host/"]
+  PK --> TOOL["tool/"]
+  PK --> CLIENT["client/"]
+  PK --> BUNDLE["bundle/"]
+  PK --> PRESET["preset/"]
 ```
-/workspace/chatdsh
-  README.md                     工作区说明：目录构成与阅读入口
-  chatdsh-main/
-    packages/contracts/          @chatdsh/contracts
-    packages/plugins/            @chatdsh/plugin-*
-    packages/presets/            @chatdsh/preset-* 与 @chatdsh/tool-*
-    packages/clients/            @chatdsh/client-*
-    packages/bundles/            @chatdsh/bundle-*
-    packages/gateway/            @chatdsh/gateway
-    packages/desktop/            @chatdsh/desktop
-    profiles/                    各 profile 的 package.json 与 cordis.patch.yml
-    e2e/                         验收测试
-    dev/                         调试用的容器环境：dsh 运行时、Hermes、Hindsight
-  chatdsn-adapter/               @chatdsh/adapter，独立仓库
-  refer_repos/                   参考仓库快照，不纳入版本管理
-```
+
+| 目录 | 内容 |
+|---|---|
+| `packages/core/` | 契约包 `@chatdsh/core-contracts`，以及宿主侧基础设施服务 `@chatdsh/core-identity`、`@chatdsh/core-session-index`、`@chatdsh/core-telemetry` |
+| `packages/host/` | 宿主平面业务插件 `@chatdsh/host-*` |
+| `packages/tool/` | 会话平面工具插件 `@chatdsh/tool-*` |
+| `packages/client/` | 浏览器侧客户端插件 `@chatdsh/client-*` |
+| `packages/bundle/` | 组合包 `@chatdsh/bundle-*` |
+| `packages/preset/` | agent preset 声明，当前为 `@chatdsh/preset-chat` |
+| `gateway/` | 控制平面服务 `@chatdsh/gateway` |
+| `desktop/` | Electron 桌面壳 `@chatdsh/desktop` |
+| `profiles/` | 各 profile 的 package.json 与 cordis.patch.yml |
+| `docs/` | 设计文档与验收记录 |
+| `scripts/` | 构建、组合校验、依赖投影与验收脚本 |
+| `dev/` | 调试用的容器环境：dsh 运行时、Hermes、Hindsight |
+| `e2e/` | 验收测试 |
+| `dsh-adapter/` | 适配层 `@chatdsh/adapter`，与 `runtime` 同级，profile 以 `link:` 引用 |
+| `refer_repos/` | 参考仓库快照，不纳入版本管理 |
+
+`hermes-adapter/`、`hindsight-adapter/`、`forge-bridge/` 是本次设计确定的目标结构，同样位于仓库根下与 `runtime` 同级，当前尚未创建。
+
+同级目录的层级有实际约束：`runtime/profiles` 下的 profile 以 `link:` 协议引用 `../dsh-adapter`，链接目标按同级关系解析，改动目录层级会让 profile 装不出依赖。
 
 命令行形态不另设包：交互由全局安装的 `dsh-tui` 承担，`chatdsh-cli` 只提供 profile 与组合包选择。移动端见[桌面与移动端载体](desktop-mobile.md)。
 
-依赖方向单向：`contracts` 无内部依赖；`plugin-*`、`tool-*` 依赖 `contracts` 与外部仓库 `@chatdsh/adapter`；`bundle-*` 依赖插件；profile 的 `dsh.profile.bundles` 列出组合包。插件之间通过 `ctx` 服务名互相发现，不互相 import 实现。DSH 内置包只允许 `@chatdsh/adapter` 直接引用，本仓库其余包一律经由适配层。
+依赖方向单向：`core-contracts` 无内部依赖；`core-*`、`host-*`、`tool-*` 依赖 `core-contracts` 与适配层 `@chatdsh/adapter`；`bundle-*` 依赖插件；profile 的 `dsh.profile.bundles` 列出组合包。插件之间通过 `ctx` 服务名互相发现，不互相 import 实现。DSH 内置包只允许 `@chatdsh/adapter` 直接引用，本仓库其余包一律经由适配层。
 
 ### 4.1 契约包
 
-`@chatdsh/contracts` 只含类型与校验 schema：Remote 方法名与参数、会话事件扩展字段、审批记录的 `plugin:` 类型与载荷、附件与制品元数据、错误码、身份头部名。版本按主版本号发布。
+`@chatdsh/core-contracts` 只含类型与校验 schema：Remote 方法名与参数、会话事件扩展字段、审批记录的 `plugin:` 类型与载荷、附件与制品元数据、错误码、身份头部名。版本按主版本号发布。
 
 ### 4.1.1 适配层
 
-`@chatdsh/adapter` 是 DSH 内部 API 的唯一接触面，独立成库（仓库 `chatdsn-adapter`），有自己的版本号。上游 1.93 天一版，内部 API 的引用面越散，升级时要改的位置越多；这一层把引用面收在一个包里，业务包从这里取能力。
+`@chatdsh/adapter` 是 DSH 内部 API 的唯一接触面，独立成库（仓库根下的 `dsh-adapter` 目录），有自己的版本号。上游 1.93 天一版，内部 API 的引用面越散，升级时要改的位置越多；这一层把引用面收在一个包里，业务包从这里取能力。
 
-独立成库的理由是版本节奏解耦：上游发新版时适配层跟一版，业务包按需跟进，两边不必绑在同一次发布上。本仓库以 `link:` 依赖引用它，本地开发不需要先发版。
+独立成库的理由是版本节奏解耦：上游发新版时适配层跟一版，业务包按需跟进，两边不必绑在同一次发布上。`runtime/profiles` 下的 profile 以 `link:` 依赖引用同级目录 `dsh-adapter`，本地开发不需要先发版。
 
 收拢四类引用：
 
@@ -254,7 +285,7 @@ flowchart TB
 
 **版本声明的收敛。** 上游判定兼容性的规则是：`engines.dsh` 存在时它单独决定兼容性，peerDependencies 不参与；没有 `engines.dsh` 时才逐条检查 peerDependencies 里的 `@deepseek-ai/dsh*` 范围。判定用 `semver.satisfies(runtimeVersion, range, { includePrerelease: true })`。
 
-本仓库的全部业务包把 `engines.dsh` 写成 `>=0.2.1-rc.2 <0.3.0-0`：上游在 0.2.x 内发新版时，这些包不需要改动；跨到 0.3.0 才是需要一次显式回归的改动。业务包不再声明上游包的 peer 依赖——它们不直接 import 上游包，那些引用已经全部经由适配层转出。唯一保留的例外是模块增强：`import type {} from '@deepseek-ai/dsh-session-projection'` 这类写法必须写真实包名，因此 `plugin-approval`、`plugin-session-index`、`plugin-usage` 三个包保留对应的 peer 声明，且版本写精确值。
+本仓库的全部业务包把 `engines.dsh` 写成 `>=0.2.1-rc.2 <0.3.0-0`：上游在 0.2.x 内发新版时，这些包不需要改动；跨到 0.3.0 才是需要一次显式回归的改动。业务包不再声明上游包的 peer 依赖——它们不直接 import 上游包，那些引用已经全部经由适配层转出。唯一保留的例外是模块增强：`import type {} from '@deepseek-ai/dsh-session-projection'` 这类写法必须写真实包名，因此 `host-approval`、`core-session-index`、`host-usage` 三个包保留对应的 peer 声明，且版本写精确值。
 
 适配层自身的 `engines.dsh` 与 peer 依赖写精确版本：它直接引用上游内部结构，版本必须逐一核对。
 
@@ -286,29 +317,31 @@ flowchart TB
 
 ### 4.3 宿主平面插件
 
+表中 `core-*` 三个包位于 `packages/core/`，`host-*` 位于 `packages/host/`，两者都在宿主平面注册服务。
+
 | 包 | 职责 | 注册点 |
 |---|---|---|
-| `@chatdsh/plugin-identity` | 从控制平面注入的头部取身份，供运行时的分派与审计使用 | `ctx.provide` |
-| `@chatdsh/plugin-session-index` | 注册会话读模型投影，供列表、检索、用量视图 | `ctx.sessionProjections` |
-| `@chatdsh/plugin-llm-router` | 模型适配器，转发到控制平面的模型入口，在 `stream()` 入口做额度检查 | `ctx.llm.registerAdapter` |
-| `@chatdsh/plugin-projects` | 在工作区注册表之上扩展标题、指令、模型默认值 | `ctx.storageDomain`、`dsh-agent-instructions` |
-| `@chatdsh/plugin-artifacts` | 制品存储与版本，制品虚拟文件系统 | `ctx.storageDomain`、`ctx.attachments` |
-| `@chatdsh/plugin-memory` | 记忆接入层：向存储层召回并注入、定期摘要写入，按工作区与会话类型决定召回哪些 bank；`memoryBackend` 为 `none` 时不加载 | `agent/pre-step` |
-| `@chatdsh/plugin-assistants` | 自定义助手写入 preset 声明并注册 | `dsh-agent-preset-registry` |
-| `@chatdsh/plugin-connectors` | 按用户生成 MCP 服务器配置与凭据 | MCP 客户端行、`ctx.authorization.registerFlow` |
-| `@chatdsh/plugin-approval-bridge` | 把 Hermes 的审批请求写成 `plugin:` 记录，接收应答并回传；`chatBackend` 为 `hermes` 时加载 | `appendPluginRecord`、自建 Remote 方法 |
-| `@chatdsh/plugin-usage` | 取每轮用量并上报控制平面 | `ctx.sessionProjections` |
-| `@chatdsh/plugin-push` | 把会话事件（回合结束、待审批）上报控制平面 | `ctx.schedule` 之外的自建上报 |
-| `@chatdsh/plugin-voice` | 语音识别，复用内置实验性接口 | `dsh-experimental-api-speech-to-text` 行 |
-| `@chatdsh/plugin-images` | 图像生成与编辑工具的服务端部分 | `ctx.tools`、`ctx.attachments` |
+| `@chatdsh/core-identity` | 从控制平面注入的头部取身份，供运行时的分派与审计使用 | `ctx.provide` |
+| `@chatdsh/core-session-index` | 注册会话读模型投影，供列表、检索、用量视图 | `ctx.sessionProjections` |
+| `@chatdsh/host-llm-router` | 模型适配器，转发到控制平面的模型入口，在 `stream()` 入口做额度检查 | `ctx.llm.registerAdapter` |
+| `@chatdsh/host-projects` | 在工作区注册表之上扩展标题、指令、模型默认值 | `ctx.storageDomain`、`dsh-agent-instructions` |
+| `@chatdsh/host-artifacts` | 制品存储与版本，制品虚拟文件系统 | `ctx.storageDomain`、`ctx.attachments` |
+| `@chatdsh/host-memory` | 记忆接入层：向存储层召回并注入、定期摘要写入，按工作区与会话类型决定召回哪些 bank；`memoryBackend` 为 `none` 时不加载 | `agent/pre-step` |
+| `@chatdsh/host-assistants` | 自定义助手写入 preset 声明并注册 | `dsh-agent-preset-registry` |
+| `@chatdsh/host-connectors` | 按用户生成 MCP 服务器配置与凭据 | MCP 客户端行、`ctx.authorization.registerFlow` |
+| `@chatdsh/host-approval` | 把 Hermes 的审批请求写成 `plugin:` 记录，接收应答并回传；`chatBackend` 为 `hermes` 时加载 | `appendPluginRecord`、自建 Remote 方法 |
+| `@chatdsh/host-usage` | 取每轮用量并上报控制平面 | `ctx.sessionProjections` |
+| `@chatdsh/host-push` | 把会话事件（回合结束、待审批）上报控制平面 | `ctx.schedule` 之外的自建上报 |
+| `@chatdsh/host-voice` | 语音识别，复用内置实验性接口 | `dsh-experimental-api-speech-to-text` 行 |
+| `@chatdsh/host-images` | 图像生成与编辑工具的服务端部分 | `ctx.tools`、`ctx.attachments` |
 | `@chatdsh/mcp-server` | 把工具目录暴露为 MCP 服务端 | 独立子系统，见 4.4 |
-| `@chatdsh/plugin-telemetry` | 唯一遥测出口：`ctx.chatdshTelemetry`、开关、脱敏、浏览器与移动端中继、自监控指标 | `ctx.provide`、`ctx.webServer.register`、`dsh-session-telemetry-otel` 行 |
+| `@chatdsh/core-telemetry` | 唯一遥测出口：`ctx.chatdshTelemetry`、开关、脱敏、浏览器与移动端中继、自监控指标 | `ctx.provide`、`ctx.webServer.register`、`dsh-session-telemetry-otel` 行 |
 
 ### 4.4 MCP 服务端
 
 `@chatdsh/mcp-server` 是独立子系统，不是一行路由注册。它要自建协议会话初始化、能力协商、`tools/list`、`tools/call`、错误码与流式响应，并定义鉴权模型：新开的协议入口不经过 `remoteAccess.decide()`，工具目录的可见性要按控制平面的会话归属过滤后再生效。
 
-上面这张清单是宿主平面的设计集合，当前实现的是其中十二个：`plugin-identity`、`plugin-session-index`、`plugin-usage`、`plugin-assistants`、`plugin-artifacts`、`plugin-projects`、`plugin-push`、`plugin-telemetry`、`plugin-memory`、`plugin-approval`（对应表中的 approval-bridge）、`plugin-connectors`、`plugin-import`。`plugin-llm-router`、`plugin-voice`、`plugin-images` 与 `@chatdsh/mcp-server` 没有实现：模型调用走内置的 DeepSeek 适配器，图像能力由会话平面的 `tool-image` 承担，语音与 MCP 服务端留待后续。
+上面这张清单是宿主平面的设计集合，当前实现的是其中十二个：`core-identity`、`core-session-index`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`core-telemetry`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。`host-llm-router`、`host-voice`、`host-images` 与 `@chatdsh/mcp-server` 没有实现：模型调用走内置的 DeepSeek 适配器，图像能力由会话平面的 `tool-image` 承担，语音与 MCP 服务端留待后续。
 
 ### 4.5 会话平面插件
 
@@ -331,8 +364,8 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 | 包 | 内容 |
 |---|---|
 | `@chatdsh/bundle-hosted` | 宿主平面插件行、会话平面 preset 行、客户端插件行 |
-| `@chatdsh/bundle-memory-hindsight` | `@chatdsh/plugin-memory` 行与 Hindsight 连接配置、bank 规则；`memoryBackend` 为 `hindsight` 时由 profile 加入 |
-| `@chatdsh/bundle-chat-hermes` | Hermes 承载聊天所需的渠道插件、`plugin-approval-bridge` 与 `memoryBackend: hermes` 时的内置记忆对接；`chatBackend` 为 `hermes` 时由 profile 加入 |
+| `@chatdsh/bundle-memory-hindsight` | `@chatdsh/host-memory` 行与 Hindsight 连接配置、bank 规则；`memoryBackend` 为 `hindsight` 时由 profile 加入 |
+| `@chatdsh/bundle-chat-hermes` | Hermes 承载聊天所需的渠道插件、`host-approval` 与 `memoryBackend: hermes` 时的内置记忆对接；`chatBackend` 为 `hermes` 时由 profile 加入 |
 | `@chatdsh/bundle-storage-jsonl` | 会话日志 JSONL 后端与控制平面的 SQLite 实现 |
 | `@chatdsh/bundle-storage-postgres` | 会话日志 Postgres 后端与控制平面的 Postgres 实现 |
 | `@chatdsh/bundle-desktop` | 桌面原生桥行、本地审批呈现、`ui-sidebar-browser` 补回 |
@@ -421,9 +454,9 @@ Electron 主进程承担原生能力与运行时编排，控制平面、运行�
 
 ### 6.4 移动端
 
-这一节描述首期 Android 方案，当前没有对应实现（没有 `packages/mobile`，下文提到的 `plugin-voice` 同样没有实现）。方案保留作为设计参考。
+这一节描述首期 Android 方案，当前没有对应实现（没有 `packages/mobile`，下文提到的 `host-voice` 同样没有实现）。方案保留作为设计参考。
 
-应用连控制平面，不直连运行时。会话列表与内容走控制平面的冷读接口，实时更新走 WebSocket；发消息与回答审批两类动作经控制平面转给对应运行时。语音上传到 `plugin-voice` 暴露的转写接口，拍照与相册走附件上传。送达分三档：应用在前台走长连接，后台由 Android 前台服务发本地通知，应用被系统回收后的送达需要厂商推送通道，排在后续。首期只做 Android。
+应用连控制平面，不直连运行时。会话列表与内容走控制平面的冷读接口，实时更新走 WebSocket；发消息与回答审批两类动作经控制平面转给对应运行时。语音上传到 `host-voice` 暴露的转写接口，拍照与相册走附件上传。送达分三档：应用在前台走长连接，后台由 Android 前台服务发本地通知，应用被系统回收后的送达需要厂商推送通道，排在后续。首期只做 Android。
 
 离线队列只接受发消息，审批在离线时明确拒绝并保留卡片，因为审批的应答时窗有限：`chatBackend` 为 `hermes` 时由 Hermes 决定，为 `dsh` 时由 DSH 审批服务决定。
 
@@ -475,7 +508,7 @@ Electron 主进程承担原生能力与运行时编排，控制平面、运行�
 
 ### 7.3 额度与用量
 
-模型调用统一经控制平面的模型入口，额度检查在 `@chatdsh/plugin-llm-router` 的 `stream()` 入口完成。额度拒绝使用独立错误码并禁止进入请求失败的恢复路径，否则会被当作可恢复失败触发重试与压缩。
+模型调用统一经控制平面的模型入口，额度检查在 `@chatdsh/host-llm-router` 的 `stream()` 入口完成。额度拒绝使用独立错误码并禁止进入请求失败的恢复路径，否则会被当作可恢复失败触发重试与压缩。
 
 单机形态下用户也可以用 `llm-pi-ai` 的 `providers` 或 `llm-deepseek-api-key` 直接配模型路由，那条路径的额度是事后统计而非事前拦截，账本仍然记录。
 
@@ -594,7 +627,7 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 两类能力分属不同节点，风险等级也不同。
 
-**浏览器操作。** 通过 CDP 控制 Chromium，读取页面的可访问性树并把元素压成短引用，模型据此点击、填表、导航、截图、提取内容。实现放在执行节点上，作为会话平面的工具 `@chatdsh/tool-browser`，直接使用 CDP。本机装了 Chrome，可用调试协议驱动；无头节点同样可用，只要该节点装了 Chromium。实现见 `packages/presets/tool-browser`，端到端测试见 `e2e/unit/browser-cdp.test.mjs`。
+**浏览器操作。** 通过 CDP 控制 Chromium，读取页面的可访问性树并把元素压成短引用，模型据此点击、填表、导航、截图、提取内容。实现放在执行节点上，作为会话平面的工具 `@chatdsh/tool-browser`，直接使用 CDP。本机装了 Chrome，可用调试协议驱动；无头节点同样可用，只要该节点装了 Chromium。实现见 `packages/tool/browser`，端到端测试见 `e2e/unit/browser-cdp.test.mjs`。
 
 节点能力声明里记 `browser` 一项。工作区绑定节点时据此提示「该节点不能执行浏览器操作」，避免会话创建之后才发现工具不可用。
 
@@ -674,24 +707,24 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 **工作区之间的记忆共享靠手动关联。** 默认每个工作区独立，记忆写入并召回 `ws:<workspaceId>`。用户可以把两个工作区关联成一个记忆组，关联后两者共用 `ws:<memoryGroupId>`，在一台设备的工作区里积累的记忆可以在另一台设备的关联工作区里召回。关联是双向的，一个工作区同时只属于一个组；它只影响记忆的写入与召回目标，不改变会话归属、项目指令、会话列表与助手设置，这些仍按各自的工作区记录。
 
-关联入口只在记忆能力开启时出现：`memoryBackend` 为 `none`、`@chatdsh/plugin-memory` 未启用或 Hindsight 不可达时，界面不展示关联操作，因为它不产生任何效果。解除关联后两个工作区各自回到自己的 `ws:<workspaceId>`，此前写入组 bank 的记忆留在原处不迁移。
+关联入口只在记忆能力开启时出现：`memoryBackend` 为 `none`、`@chatdsh/host-memory` 未启用或 Hindsight 不可达时，界面不展示关联操作，因为它不产生任何效果。解除关联后两个工作区各自回到自己的 `ws:<workspaceId>`，此前写入组 bank 的记忆留在原处不迁移。
 
 ## 九、ChatGPT 能力映射
 
 | 能力 | 实现位置 |
 |---|---|
 | 对话与流式输出 | 内置会话与 `/api` 通道，自建客户端插件呈现 |
-| 会话历史与检索 | `plugin-session-index` 的投影加 `session-query` |
+| 会话历史与检索 | `core-session-index` 的投影加 `session-query` |
 | Projects | 内置 `ctx.workspaceRegistry` 之上扩展标题、指令与模型默认值 |
-| 自定义助手 | `plugin-assistants` 写 preset 声明并注册 |
-| Artifacts 与 Canvas | `plugin-artifacts` 存储与制品文件系统，`client-artifacts` 挂在右侧停靠席位 |
+| 自定义助手 | `host-assistants` 写 preset 声明并注册 |
+| Artifacts 与 Canvas | `host-artifacts` 存储与制品文件系统，`client-artifacts` 挂在右侧停靠席位 |
 | Deep Research | `bundle-worker` 上的长任务，用 `ctx.subagents` 展开并行检索 |
 | 语音输入 | 上游的 `dsh-experimental-voice-input-bundle`，本部署未纳入 |
 | 语音输出 | 未实现 |
 | 图像生成与编辑 | `@chatdsh/tool-image` 把生成请求发给外部供应方，凭据经控制平面 |
 | 分享链接 | 控制平面按会话副本渲染只读快照，签名令牌、匿名可访问 |
 | 记忆 | 外部 Hindsight 的 bank 或 Hermes 内置记忆，由 `memoryBackend` 决定，见[聊天后端与记忆接入](hermes-integration.md) |
-| Connectors | `plugin-connectors` 生成 MCP 条目，凭据走 `ctx.authorization` |
+| Connectors | `host-connectors` 生成 MCP 条目，凭据走 `ctx.authorization` |
 | 助手与插件市场 | `dsh-plugin-market` 与 `dsh-plugin-market-index` 的索引格式 |
 | 团队与工作区 | 控制平面的成员表与进程边界 |
 | 定时任务 | 控制平面统一调度，动作分唤醒运行时与直接推送 |
@@ -704,7 +737,7 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 ## 十一、风险与取舍
 
-**对 0.2.x 的版本依赖。** 自建插件依赖 Remote 方法契约、`ctx` 服务名与补丁行 id，升级会带来回归。取舍分两层：业务包的 `engines.dsh` 覆盖整个 0.2.x，0.2.x 内发版不需要改业务包；适配层写精确版本，升级上游时只改它一处，改完跑适配层的测试与主仓库的验收脚本。跨到 0.3.0 是一次需要人工回归的显式改动。
+**对 0.2.x 的版本依赖。** 自建插件依赖 Remote 方法契约、`ctx` 服务名与补丁行 id，升级会带来回归。取舍分两层：业务包的 `engines.dsh` 覆盖整个 0.2.x，0.2.x 内发版不需要改业务包；适配层写精确版本，升级上游时只改它一处，改完跑适配层的测试与 `runtime` 的验收脚本。跨到 0.3.0 是一次需要人工回归的显式改动。
 
 **dsh-tui 的版本由内核版本决定，不能独立选择。** dsh-tui 的 `peerDependencies` 范围比它的 `UPSTREAM_VALIDATED_VERSIONS` 清单宽，安装能通过但不代表验证支持。取舍是把 DSH 内核与 dsh-tui 作为一条链一起升级：内核固定后才选清单覆盖该内核的 dsh-tui；内核升级到清单外的新版本时启动页会报版本漂移，必须先确认新版 dsh-tui 已把该内核列入清单再升级，不做跨清单版本的运行。
 
@@ -740,7 +773,7 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 身份与隔离：两个账号各自一个运行时进程，控制平面按归属表拒绝跨账号的会话访问；运行时侧始终以 owner 身份运行。
 
-聊天与记忆后端：四种组合各自能启动并就绪。`chatBackend: dsh`、`memoryBackend: none` 时不加载 Hermes、不加载 `plugin-memory`，聊天与工作会话都能执行；`memoryBackend: hindsight` 且 Hindsight 可达时召回返回命中并写入成功，Hindsight 停掉后召回返回空、写入进本地待写队列并显示降级；`chatBackend: hermes` 时聊天经 Hermes 的 `api_server` 往返成功，`memoryBackend: hermes` 时聊天记忆写进 Hermes 内置存储；`chatBackend: hermes`、`memoryBackend: hindsight` 时聊天与工作会话写入同一批 bank。切换 `memoryBackend` 后旧后端记忆不出现在新后端，界面在切换前给出说明。
+聊天与记忆后端：四种组合各自能启动并就绪。`chatBackend: dsh`、`memoryBackend: none` 时不加载 Hermes、不加载 `host-memory`，聊天与工作会话都能执行；`memoryBackend: hindsight` 且 Hindsight 可达时召回返回命中并写入成功，Hindsight 停掉后召回返回空、写入进本地待写队列并显示降级；`chatBackend: hermes` 时聊天经 Hermes 的 `api_server` 往返成功，`memoryBackend: hermes` 时聊天记忆写进 Hermes 内置存储；`chatBackend: hermes`、`memoryBackend: hindsight` 时聊天与工作会话写入同一批 bank。切换 `memoryBackend` 后旧后端记忆不出现在新后端，界面在切换前给出说明。
 
 保活与强制不休眠：开启强制不休眠后让 Windows 空闲超过系统睡眠阈值，`powercfg /requests` 出现本程序的 `SYSTEM` 与 `DISPLAY` 请求且机器不睡眠；关闭设置后两条请求消失。托盘常驻下关闭窗口进程仍在、通知与定时任务照常；选择退出后进程消失、通知停止。
 

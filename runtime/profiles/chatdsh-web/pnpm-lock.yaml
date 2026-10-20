@@ -8,87 +8,90 @@ importers:
 
   .:
     dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../dsh-adapter
+        version: link:../../../dsh-adapter
       '@chatdsh/bundle-hosted':
-        specifier: link:../../packages/bundles/hosted
-        version: link:../../packages/bundles/hosted
+        specifier: link:../../packages/bundle/hosted
+        version: link:../../packages/bundle/hosted
       '@chatdsh/client-account':
-        specifier: link:../../packages/clients/account
-        version: link:../../packages/clients/account
+        specifier: link:../../packages/client/account
+        version: link:../../packages/client/account
       '@chatdsh/client-approval':
-        specifier: link:../../packages/clients/approval
-        version: link:../../packages/clients/approval
+        specifier: link:../../packages/client/approval
+        version: link:../../packages/client/approval
       '@chatdsh/client-artifacts':
-        specifier: link:../../packages/clients/artifacts
-        version: link:../../packages/clients/artifacts
+        specifier: link:../../packages/client/artifacts
+        version: link:../../packages/client/artifacts
       '@chatdsh/client-assistants':
-        specifier: link:../../packages/clients/assistants
-        version: link:../../packages/clients/assistants
+        specifier: link:../../packages/client/assistants
+        version: link:../../packages/client/assistants
       '@chatdsh/client-connectors':
-        specifier: link:../../packages/clients/connectors
-        version: link:../../packages/clients/connectors
+        specifier: link:../../packages/client/connectors
+        version: link:../../packages/client/connectors
       '@chatdsh/client-memory':
-        specifier: link:../../packages/clients/memory
-        version: link:../../packages/clients/memory
+        specifier: link:../../packages/client/memory
+        version: link:../../packages/client/memory
       '@chatdsh/client-projects':
-        specifier: link:../../packages/clients/projects
-        version: link:../../packages/clients/projects
+        specifier: link:../../packages/client/projects
+        version: link:../../packages/client/projects
       '@chatdsh/client-share':
-        specifier: link:../../packages/clients/share
-        version: link:../../packages/clients/share
+        specifier: link:../../packages/client/share
+        version: link:../../packages/client/share
       '@chatdsh/client-telemetry':
-        specifier: link:../../packages/clients/telemetry
-        version: link:../../packages/clients/telemetry
-      '@chatdsh/plugin-approval':
-        specifier: link:../../packages/plugins/approval
-        version: link:../../packages/plugins/approval
-      '@chatdsh/plugin-artifacts':
-        specifier: link:../../packages/plugins/artifacts
-        version: link:../../packages/plugins/artifacts
-      '@chatdsh/plugin-assistants':
-        specifier: link:../../packages/plugins/assistants
-        version: link:../../packages/plugins/assistants
-      '@chatdsh/plugin-connectors':
-        specifier: link:../../packages/plugins/connectors
-        version: link:../../packages/plugins/connectors
-      '@chatdsh/plugin-identity':
-        specifier: link:../../packages/plugins/identity
-        version: link:../../packages/plugins/identity
-      '@chatdsh/plugin-import':
-        specifier: link:../../packages/plugins/import
-        version: link:../../packages/plugins/import
-      '@chatdsh/plugin-projects':
-        specifier: link:../../packages/plugins/projects
-        version: link:../../packages/plugins/projects
-      '@chatdsh/plugin-push':
-        specifier: link:../../packages/plugins/push
-        version: link:../../packages/plugins/push
-      '@chatdsh/plugin-session-index':
-        specifier: link:../../packages/plugins/session-index
-        version: link:../../packages/plugins/session-index
-      '@chatdsh/plugin-telemetry':
-        specifier: link:../../packages/plugins/telemetry
-        version: link:../../packages/plugins/telemetry
-      '@chatdsh/plugin-usage':
-        specifier: link:../../packages/plugins/usage
-        version: link:../../packages/plugins/usage
+        specifier: link:../../packages/client/telemetry
+        version: link:../../packages/client/telemetry
+      '@chatdsh/core-identity':
+        specifier: link:../../packages/core/identity
+        version: link:../../packages/core/identity
+      '@chatdsh/core-session-index':
+        specifier: link:../../packages/core/session-index
+        version: link:../../packages/core/session-index
+      '@chatdsh/core-telemetry':
+        specifier: link:../../packages/core/telemetry
+        version: link:../../packages/core/telemetry
+      '@chatdsh/host-approval':
+        specifier: link:../../packages/host/approval
+        version: link:../../packages/host/approval
+      '@chatdsh/host-artifacts':
+        specifier: link:../../packages/host/artifacts
+        version: link:../../packages/host/artifacts
+      '@chatdsh/host-assistants':
+        specifier: link:../../packages/host/assistants
+        version: link:../../packages/host/assistants
+      '@chatdsh/host-connectors':
+        specifier: link:../../packages/host/connectors
+        version: link:../../packages/host/connectors
+      '@chatdsh/host-import':
+        specifier: link:../../packages/host/import
+        version: link:../../packages/host/import
+      '@chatdsh/host-projects':
+        specifier: link:../../packages/host/projects
+        version: link:../../packages/host/projects
+      '@chatdsh/host-push':
+        specifier: link:../../packages/host/push
+        version: link:../../packages/host/push
+      '@chatdsh/host-usage':
+        specifier: link:../../packages/host/usage
+        version: link:../../packages/host/usage
       '@chatdsh/preset-chat':
-        specifier: link:../../packages/presets/chat
-        version: link:../../packages/presets/chat
+        specifier: link:../../packages/preset/chat
+        version: link:../../packages/preset/chat
       '@chatdsh/tool-artifact':
-        specifier: link:../../packages/presets/tool-artifact
-        version: link:../../packages/presets/tool-artifact
+        specifier: link:../../packages/tool/artifact
+        version: link:../../packages/tool/artifact
       '@chatdsh/tool-connector':
-        specifier: link:../../packages/presets/tool-connector
-        version: link:../../packages/presets/tool-connector
+        specifier: link:../../packages/tool/connector
+        version: link:../../packages/tool/connector
       '@chatdsh/tool-image':
-        specifier: link:../../packages/presets/tool-image
-        version: link:../../packages/presets/tool-image
+        specifier: link:../../packages/tool/image
+        version: link:../../packages/tool/image
       '@chatdsh/tool-project':
-        specifier: link:../../packages/presets/tool-project
-        version: link:../../packages/presets/tool-project
+        specifier: link:../../packages/tool/project
+        version: link:../../packages/tool/project
       '@chatdsh/tool-research':
-        specifier: link:../../packages/presets/tool-research
-        version: link:../../packages/presets/tool-research
+        specifier: link:../../packages/tool/research
+        version: link:../../packages/tool/research
       '@chatdsh/tool-share':
-        specifier: link:../../packages/presets/tool-share
-        version: link:../../packages/presets/tool-share
+        specifier: link:../../packages/tool/share
+        version: link:../../packages/tool/share

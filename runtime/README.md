@@ -17,7 +17,7 @@
 | [telemetry.md](docs/telemetry.md) | 遥测与调试接口：信号清单、命名规范、上下文传播、关闭开关、内容边界、验收方式 |
 | [secret-guard.md](docs/secret-guard.md) | 凭据与隐私防护：钩子、规则、占位约定、历史泄露清理 |
 | [prompts/git-commit-message.md](docs/prompts/git-commit-message.md) | 提交信息提示词模板 |
-| [../chatdsn-adapter/README.md](../chatdsn-adapter/README.md) | 适配层 `@chatdsh/adapter`：上游内部 API 的唯一接触面，独立仓库 |
+| [../dsh-adapter/README.md](../dsh-adapter/README.md) | 适配层 `@chatdsh/adapter`：上游内部 API 的唯一接触面，位于仓库根下与 `runtime` 同级 |
 
 ## 开始之前
 
@@ -46,7 +46,7 @@ dsh --profile chatdsh-web --no-open   # 启动单机 Web 形态
 浏览器侧的插件产物要单独打包：
 
 ```sh
-node scripts/build-client.mjs        # 把 packages/clients 下每个包打成 window.__ModuleLoader__ 形态
+node scripts/build-client.mjs        # 把 packages/client 下每个包打成 window.__ModuleLoader__ 形态
 ```
 
 调试用的容器环境在 [`dev/`](dev/)，编排与说明见 [dev/README.md](dev/README.md)。dsh 运行时、Hermes、Hindsight 各自跑在独立容器里，端口与宿主上已经在跑的实例错开。
@@ -94,7 +94,7 @@ node scripts/telemetry-probe.mjs            # 向本机 OpenObserve 写日志、
 
 ```sh
 node scripts/extensions.mjs list    --profile chatdsh-web
-node scripts/extensions.mjs install packages/bundles/worker --profile chatdsh-web
+node scripts/extensions.mjs install packages/bundle/worker --profile chatdsh-web
 node scripts/extensions.mjs remove  @chatdsh/bundle-worker   --profile chatdsh-web
 ```
 

@@ -8,7 +8,7 @@
 // 覆盖三处：
 //   1. 源码里的字符串字面量（`packages/**/src/**`）
 //   2. 补丁层里的 `name:` 字段（`packages/**/cordis.patch.yml`、`profiles/**/cordis.patch.yml`）
-//   3. 客户端插件的 `dsh.client.inject` 列表（`packages/clients/**/package.json`）
+//   3. 客户端插件的 `dsh.client.inject` 列表（`packages/client/**/package.json`）
 //
 // 适配层自身的源码不参与检查：它就是登记处。
 //
@@ -19,7 +19,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const ADAPTER = resolve(ROOT, '..', 'chatdsn-adapter');
+const ADAPTER = resolve(ROOT, '..', 'dsh-adapter');
 
 /** 上游包名的形状：@deepseek-ai/ 后跟小写字母与连字符。 */
 const UPSTREAM_NAME = /@deepseek-ai\/[a-z][a-z0-9-]*/g;
@@ -33,7 +33,7 @@ const UPSTREAM_NAME = /@deepseek-ai\/[a-z][a-z0-9-]*/g;
 async function readRegistry() {
   const file = join(ADAPTER, 'lib', 'upstream.js');
   if (!existsSync(file)) {
-    throw new Error(`适配层尚未编译，找不到 ${file}；先在 chatdsn-adapter 目录执行 npm run build`);
+    throw new Error(`适配层尚未编译，找不到 ${file}；先在 dsh-adapter 目录执行 npm run build`);
   }
   const module = await import(file);
   const names = module.UPSTREAM_PACKAGE_NAMES;
@@ -85,7 +85,7 @@ for (const dir of [join(ROOT, 'packages'), join(ROOT, 'profiles'), join(ROOT, 'e
 }
 
 // 3. 客户端插件的 inject 列表
-for (const file of filesUnder(join(ROOT, 'packages', 'clients'), (path) => path.endsWith('package.json'))) {
+for (const file of filesUnder(join(ROOT, 'packages', 'client'), (path) => path.endsWith('package.json'))) {
   checkText(file, readFileSync(file, 'utf8'));
 }
 

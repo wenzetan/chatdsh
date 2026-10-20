@@ -7,7 +7,7 @@
 
 # 上报在这一形态里照常工作，但把间隔压短，端到端验证不必等待默认的 2 秒。
 - id: chatdsh-push
-  name: '@chatdsh/plugin-push'
+  name: '@chatdsh/host-push'
   config:
     enabled: true
     gatewayUrl: http://127.0.0.1:3170

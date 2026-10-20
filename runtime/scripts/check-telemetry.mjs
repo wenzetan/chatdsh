@@ -50,7 +50,7 @@ async function collectSources(dir) {
   return out;
 }
 
-// 包可以嵌套在 packages 的子目录下（例如 packages/plugins/<name>），因此按目录递归找清单文件。
+// 包可以嵌套在 packages 的子目录下（例如 packages/host/<name>），因此按目录递归找清单文件。
 async function collectManifests(dir) {
   const out = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {

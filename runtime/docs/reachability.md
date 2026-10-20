@@ -87,7 +87,7 @@ Tailscale Serve 在转发的请求上注入来源身份头部。从 tailnet 内�
 
 接口需要提供四件事：对外可达的地址、TLS 材料（或说明由外部终止）、请求来源的身份（可能为空）、以及与诊断相关的状态。控制平面在启动时按配置选择实现，客户端配置由控制平面下发，用户不需要为每种方案各配一遍。
 
-已落地的部分：`@chatdsh/contracts` 里的 `AccessProvider` 接口与两个实现（`tailscaleProvider`、`manualProvider`），控制平面通过 `CHATDSH_ACCESS_PROVIDER` 选择，缺省为 `tailscale`。`manual` 用于用户自备反代、没有 Serve 注入头部的场景，此时所有请求都归到 `local` 账号。接 easytier 或 zerotier 时实现同一个接口，判定逻辑不用动。
+已落地的部分：`@chatdsh/core-contracts` 里的 `AccessProvider` 接口与两个实现（`tailscaleProvider`、`manualProvider`），控制平面通过 `CHATDSH_ACCESS_PROVIDER` 选择，缺省为 `tailscale`。`manual` 用于用户自备反代、没有 Serve 注入头部的场景，此时所有请求都归到 `local` 账号。接 easytier 或 zerotier 时实现同一个接口，判定逻辑不用动。
 
 ## 六、域名解析与反代约束
 

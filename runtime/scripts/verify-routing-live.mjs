@@ -72,7 +72,7 @@ try {
   const bootB = await startRuntime(runtimes[1]);
   console.log(`实例 b 已启动：${bootB.split('?')[0]}`);
 
-  gateway = spawn(process.execPath, [resolve(ROOT, 'packages/gateway/lib/main.js')], {
+  gateway = spawn(process.execPath, [resolve(ROOT, 'gateway/lib/main.js')], {
     env: {
       ...process.env,
       DSH_HOME: GATEWAY_HOME,

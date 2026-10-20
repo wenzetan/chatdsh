@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { correlationKeyOf } from '../../packages/plugins/approval/lib/types.js';
+import { correlationKeyOf } from '../../packages/host/approval/lib/types.js';
 
 test('关联键取工具调用标识', () => {
   assert.equal(correlationKeyOf({ callId: 'call-1' }), 'call-1');

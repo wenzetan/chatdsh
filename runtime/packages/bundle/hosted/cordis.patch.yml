@@ -1,0 +1,49 @@
+# @chatdsh/bundle-hosted 的补丁层。
+#
+# 这些行插入在 dsh-base 与 dsh-web-app 之后，因此可以覆盖它们已有的行（补丁按行 id 生效，
+# 后写的层胜出），也可以用 insert 追加新行。行 id 在整个组合里必须唯一：insert 不做去重。
+#
+# 宿主平面插件的注册点在架构文档 4.3 节；会话平面 preset 与客户端插件行在后续阶段加入。
+
+- insert:
+    # 身份：从控制平面注入的请求头部取出账号、工作区、设备与请求标识。
+    - id: chatdsh-identity
+      name: '@chatdsh/core-identity'
+
+    # 遥测：唯一的遥测出口，注册 ctx.chatdshTelemetry、状态端点、自检端点与浏览器中继。
+    # 平台形态与端点由本部署的 profile 补丁层给出。
+    - id: chatdsh-telemetry
+      name: '@chatdsh/core-telemetry'
+
+    # 会话读模型：列表排序、检索与用量视图都读这两个投影。
+    - id: chatdsh-session-index
+      name: '@chatdsh/core-session-index'
+
+    - id: chatdsh-usage
+      name: '@chatdsh/host-usage'
+
+    # 自定义助手：记录落在结构化存储里，启动时装配成 agent preset。
+    - id: chatdsh-assistants
+      name: '@chatdsh/host-assistants'
+
+    # 制品：可版本化的产出文件，内容在产品数据目录，元数据在结构化存储。
+    - id: chatdsh-artifacts
+      name: '@chatdsh/host-artifacts'
+
+    # 项目：按工作目录记录标题、项目说明与默认模型，说明注入会话上下文。
+    - id: chatdsh-projects
+      name: '@chatdsh/host-projects'
+
+    # 上报：把会话事件信封推给控制平面，形成只读副本。
+    - id: chatdsh-push
+      name: '@chatdsh/host-push'
+
+    # 审批投影：把审计事件折叠成可查询的待处理列表与最近结果。
+    - id: chatdsh-approval
+      name: '@chatdsh/host-approval'
+
+    # 外部连接器的记录。
+    - id: chatdsh-connectors
+      name: '@chatdsh/host-connectors'
+    - id: chatdsh-import
+      name: '@chatdsh/host-import'

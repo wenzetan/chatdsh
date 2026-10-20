@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildImageRequest, firstImageOf, SIZES } from '../../packages/presets/tool-image/lib/request.js';
+import { buildImageRequest, firstImageOf, SIZES } from '../../packages/tool/image/lib/request.js';
 
 test('不给尺寸时取 1024x1024', () => {
   const { request, mode } = buildImageRequest({ prompt: '一只猫' });

@@ -148,8 +148,8 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-  CONTR["@chatdsh/contracts<br/>只有类型与校验 schema"]
-  PLUG["@chatdsh/plugin-*<br/>注册 ctx 服务与加载器行"]
+  CONTR["@chatdsh/core-contracts<br/>只有类型与校验 schema"]
+  PLUG["@chatdsh/core-* 与 @chatdsh/host-*<br/>注册 ctx 服务与加载器行"]
   PRESET["@chatdsh/preset-* 与 @chatdsh/tool-*<br/>会话平面挂载的工具"]
   CLIN["@chatdsh/client-*<br/>声明 dsh.client"]
   BUND["@chatdsh/bundle-*<br/>声明 dsh.bundle.patch"]
@@ -170,19 +170,18 @@ flowchart TB
 ```mermaid
 flowchart TB
   subgraph HOST["宿主平面：随进程加载一次"]
-    H1["plugin-identity 注册 ctx.provide，取身份供分派与审计"]
-    H2["plugin-telemetry 注册 ctx.chatdshTelemetry，唯一遥测出口"]
-    H3["plugin-session-index 写 ctx.sessionProjections"]
-    H4["plugin-projects 扩展 ctx.storageDomain"]
-    H5["plugin-artifacts 用 ctx.storageDomain 与 ctx.attachments"]
-    H6["plugin-assistants 写 dsh-agent-preset-registry"]
-    H7["plugin-connectors 生成 MCP 客户端行并注册授权流"]
-    H8["plugin-push 上报会话事件"]
-    H9["plugin-usage 取每轮用量"]
-    H10["plugin-approval 折叠审批投影"]
-    H11["plugin-import 提供导入恢复的远端方法"]
-    H12["plugin-memory 在 agent/pre-step 召回与写入"]
-    H13["plugin-approval-bridge 写 plugin 记录并回传应答"]
+    H1["core-identity 注册 ctx.provide，取身份供分派与审计"]
+    H2["core-telemetry 注册 ctx.chatdshTelemetry，唯一遥测出口"]
+    H3["core-session-index 写 ctx.sessionProjections"]
+    H4["host-projects 扩展 ctx.storageDomain"]
+    H5["host-artifacts 用 ctx.storageDomain 与 ctx.attachments"]
+    H6["host-assistants 写 dsh-agent-preset-registry"]
+    H7["host-connectors 生成 MCP 客户端行并注册授权流"]
+    H8["host-push 上报会话事件"]
+    H9["host-usage 取每轮用量"]
+    H10["host-approval 折叠审批投影，写 plugin 记录并回传应答"]
+    H11["host-import 提供导入恢复的远端方法"]
+    H12["host-memory 在 agent/pre-step 召回与写入"]
   end
   subgraph SESS["会话平面：随会话挂载 preset"]
     S1["tool-bash 或 tool-pwsh，按平台二选一"]

@@ -16,7 +16,7 @@ const index = argv.indexOf('--port');
 const PORT = index < 0 ? 3189 : Number.parseInt(argv[index + 1], 10);
 const HOME = tempHome('import-home');
 
-const child = spawn(process.execPath, [resolve(ROOT, 'packages/gateway/lib/main.js')], {
+const child = spawn(process.execPath, [resolve(ROOT, 'gateway/lib/main.js')], {
   env: { ...process.env, DSH_HOME: HOME, CHATDSH_GATEWAY_PORT: String(PORT) },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

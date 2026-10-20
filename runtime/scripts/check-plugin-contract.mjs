@@ -64,21 +64,25 @@ for (const dir of dirs) {
     else if (bundles.some((name) => typeof name !== 'string')) failures.push(`${where} 的 bundles 里有非字符串项`);
   }
 
-  // 宿主平面插件与工具：带 dsh 字段（或位于 plugins/presets 下）的包要有 engines.dsh。
-  const isPlugin = (dsh.bundle === undefined && dsh.profile === undefined) && (dsh.client !== undefined || relative(ROOT, dir).startsWith('packages/plugins') || relative(ROOT, dir).startsWith('packages/presets'));
-  if (isPlugin) {
-    counts.plugin += 1;
+  // 角色目录：packages/<角色>/<对象> 一律声明 engines.dsh，包名前缀必须与角色目录一致。
+  const where_ = relative(ROOT, dir).split('\\').join('/');
+  const roleMatch = where_.match(/^packages\/([a-z]+)\/([^/]+)$/);
+  if (roleMatch !== null) {
+    const [, role, objectName] = roleMatch;
     if (manifest.engines?.dsh === undefined) failures.push(`${where} 缺少 engines.dsh`);
+    const expected = `@chatdsh/${role}-${objectName}`;
+    if (manifest.name !== expected) failures.push(`${where} 的包名应为 ${expected}，实际 ${manifest.name}`);
+    if (dsh.bundle === undefined && dsh.profile === undefined && dsh.client === undefined) counts.plugin += 1;
   } else if (dsh.bundle === undefined && dsh.profile === undefined && dsh.client === undefined) {
     counts.library += 1;
   }
 }
 
-// 工具包与预设挂载：每个 tool-* 包注册一个工具，预设挂载除浏览器外的六个。
+// 工具包与预设挂载：packages/tool/<对象> 每个注册一个工具，预设挂载除浏览器外的六个。
 const toolNames = new Map();
 for (const dir of dirs) {
-  const name = relative(ROOT, dir);
-  if (!name.startsWith('packages/presets/tool-')) continue;
+  const name = relative(ROOT, dir).split('\\').join('/');
+  if (!name.startsWith('packages/tool/')) continue;
   const entry = join(dir, 'src', 'index.ts');
   if (!existsSync(entry)) continue;
   const registered = [...readFileSync(entry, 'utf8').matchAll(/name: '([a-z_]+)'/g)]
@@ -90,7 +94,7 @@ for (const dir of dirs) {
 }
 counts.tool = toolNames.size;
 
-const presetFile = join(ROOT, 'packages/presets/chat/cordis.patch.yml');
+const presetFile = join(ROOT, 'packages/preset/chat/cordis.patch.yml');
 if (existsSync(presetFile)) {
   const presetText = readFileSync(presetFile, 'utf8');
   const mounted = [...new Set([...presetText.matchAll(/'(@chatdsh\/tool-[a-z]+)'/g)].map((match) => match[1]))];
@@ -159,6 +163,8 @@ for (const dir of dirs) {
     }
   };
   scan(join(ROOT, 'packages'));
+  scan(join(ROOT, 'gateway'));
+  scan(join(ROOT, 'desktop'));
   failures.push(...offenders);
 }
 

@@ -95,7 +95,7 @@ flowchart TB
 | `flush(deadlineMs)` | 有界刷新，超时后返回，不抛出 |
 | `shutdown()` | 释放 exporter 与 HTTP 代理，由所属 fiber 的销毁路径调用 |
 
-三个约束在实现里固定。入队不等待网络，业务路径不 `await` 导出。关闭状态下全部方法退化为空操作，不构造 SDK 对象，不创建 socket。入队失败与导出失败只在 `@chatdsh/plugin-telemetry` 内部计数，业务代码不捕获遥测异常。
+三个约束在实现里固定。入队不等待网络，业务路径不 `await` 导出。关闭状态下全部方法退化为空操作，不构造 SDK 对象，不创建 socket。入队失败与导出失败只在 `@chatdsh/core-telemetry` 内部计数，业务代码不捕获遥测异常。
 
 语义化包装器优先于直接调用。一次工具执行写成一个 `runSpan('chatdsh.tool.execute', …)`，内部依次记录开始事件、结果事件与耗时直方图，失败时设置 `error.code` 与 `outcome=failure` 并让 span 状态为 `ERROR`。
 
@@ -111,7 +111,6 @@ flowchart TB
 | 桌面主进程 | `chatdsh-desktop` | `@chatdsh/desktop` |
 | 命令行 | `chatdsh-cli` | 全局 `dsh-tui`，不另设包 |
 | 长任务 | `chatdsh-worker` | 包名 |
-| MCP 服务端 | `chatdsh-mcp` | `@chatdsh/mcp-server` |
 
 名称形状统一为三段式：日志事件 `chatdsh.<domain>.<fact>`，span `chatdsh.<domain>.<operation>`，指标 `chatdsh_<domain>_<measure><后缀>`。`domain` 取 `gateway`、`runtime`、`session`、`tool`、`llm`、`memory`、`mcp`、`client`、`desktop`、`mobile`、`cli`、`sync`、`share`、`push`、`schedule`、`telemetry`。
 
@@ -357,9 +356,9 @@ flowchart TB
 - 状态端点报告 `enabled: false` 与关闭原因，界面显示「遥测已关闭」。
 - 进程在观测窗口内没有任何到 OpenObserve 的出站连接。
 
-运行时切换由 `@chatdsh/plugin-telemetry` 的控制器承担。关闭时先停止新记录，再以 3 秒为界刷新并销毁 provider；开启时重建 provider 并立即写一条 `chatdsh.telemetry.enabled` 事件。切换不重启进程，不影响进行中的会话与工具调用。
+运行时切换由 `@chatdsh/core-telemetry` 的控制器承担。关闭时先停止新记录，再以 3 秒为界刷新并销毁 provider；开启时重建 provider 并立即写一条 `chatdsh.telemetry.enabled` 事件。切换不重启进程，不影响进行中的会话与工具调用。
 
-`--no-telemetry` 与 `CHATDSH_TELEMETRY=off` 落在启动器解析阶段，先于任何插件加载生效。设置文件与设置页的切换落在 `@chatdsh/plugin-telemetry` 的配置重载路径。
+`--no-telemetry` 与 `CHATDSH_TELEMETRY=off` 落在启动器解析阶段，先于任何插件加载生效。设置文件与设置页的切换落在 `@chatdsh/core-telemetry` 的配置重载路径。
 
 ## 九、内容边界与脱敏
 
@@ -367,7 +366,7 @@ flowchart TB
 
 允许记录的是长度、数量、类型、状态、耗时、枚举值与登记过的标识。错误只记 `error.type` 与 `error.code`；`error.message` 默认不记，调试模式下可以记录，但必须经过 `redactMessage` 处理：截断到 200 字符，替换绝对路径、URL 查询串、形似凭据的片段。
 
-脱敏在唯一的出口做。`@chatdsh/plugin-telemetry` 提供 `createRedactor(rules)`，规则按属性键与值的形状匹配；业务侧只传登记过的键，未登记的键在关闭调试模式时被丢弃并计数。这条限制让「忘记脱敏」变成一个可观测的丢弃计数，不依赖评审记忆。
+脱敏在唯一的出口做。`@chatdsh/core-telemetry` 提供 `createRedactor(rules)`，规则按属性键与值的形状匹配；业务侧只传登记过的键，未登记的键在关闭调试模式时被丢弃并计数。这条限制让「忘记脱敏」变成一个可观测的丢弃计数，不依赖评审记忆。
 
 凭据读取只记录 `credential.name` 与 `outcome`，值不进入任何信号。模型请求只记录 token 计数与耗时，消息内容不进入遥测。
 
@@ -433,7 +432,7 @@ limit 200
 
 ## 十二、实现要求
 
-`@chatdsh/plugin-telemetry` 是唯一的遥测出口，注册 `ctx.chatdshTelemetry`、状态端点、浏览器与移动端中继端点，并负责开关判定、脱敏、采样、批量与自监控指标。它声明 `inject: ["otel", "webServer", "settings"]`，缺少任一服务时启动失败并给出缺失项。
+`@chatdsh/core-telemetry` 是唯一的遥测出口，注册 `ctx.chatdshTelemetry`、状态端点、浏览器与移动端中继端点，并负责开关判定、脱敏、采样、批量与自监控指标。它声明 `inject: ["otel", "webServer", "settings"]`，缺少任一服务时启动失败并给出缺失项。
 
 每个新增包在 `package.json` 里声明遥测面，供评审与构建检查比对：
 

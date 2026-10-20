@@ -18,92 +18,70 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  packages/bundles/desktop: {}
+  desktop: {}
 
-  packages/bundles/hosted: {}
-
-  packages/bundles/memory-hindsight: {}
-
-  packages/bundles/storage-jsonl: {}
-
-  packages/bundles/worker: {}
-
-  packages/clients/account: {}
-
-  packages/clients/approval: {}
-
-  packages/clients/artifacts: {}
-
-  packages/clients/assistants: {}
-
-  packages/clients/connectors: {}
-
-  packages/clients/memory: {}
-
-  packages/clients/projects: {}
-
-  packages/clients/share: {}
-
-  packages/clients/telemetry: {}
-
-  packages/contracts: {}
-
-  packages/desktop: {}
-
-  packages/gateway:
+  gateway:
     dependencies:
-      '@chatdsh/contracts':
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../packages/core/contracts
+      '@chatdsh/core-telemetry':
+        specifier: workspace:*
+        version: link:../packages/core/telemetry
+
+  packages/bundle/desktop: {}
+
+  packages/bundle/hosted: {}
+
+  packages/bundle/memory-hindsight: {}
+
+  packages/bundle/storage-jsonl: {}
+
+  packages/bundle/worker: {}
+
+  packages/client/account: {}
+
+  packages/client/approval: {}
+
+  packages/client/artifacts: {}
+
+  packages/client/assistants: {}
+
+  packages/client/connectors: {}
+
+  packages/client/memory: {}
+
+  packages/client/projects: {}
+
+  packages/client/share: {}
+
+  packages/client/telemetry: {}
+
+  packages/core/contracts: {}
+
+  packages/core/identity:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
         specifier: workspace:*
         version: link:../contracts
-      '@chatdsh/plugin-telemetry':
+
+  packages/core/session-index:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/core/telemetry:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
         specifier: workspace:*
-        version: link:../plugins/telemetry
-
-  packages/plugins/approval:
-    dependencies:
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
-
-  packages/plugins/artifacts: {}
-
-  packages/plugins/assistants:
-    dependencies:
-      '@chatdsh/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
-
-  packages/plugins/connectors:
-    dependencies:
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
-
-  packages/plugins/identity:
-    dependencies:
-      '@chatdsh/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
-
-  packages/plugins/import: {}
-
-  packages/plugins/memory: {}
-
-  packages/plugins/projects: {}
-
-  packages/plugins/push:
-    dependencies:
-      '@chatdsh/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
-
-  packages/plugins/session-index: {}
-
-  packages/plugins/telemetry:
-    dependencies:
-      '@chatdsh/contracts':
-        specifier: workspace:*
-        version: link:../../contracts
+        version: link:../contracts
       '@opentelemetry/api':
         specifier: 1.9.1
         version: 1.9.1
@@ -129,23 +107,115 @@ importers:
         specifier: 2.11.0
         version: 2.11.0(@opentelemetry/api@1.9.1)
 
-  packages/plugins/usage: {}
+  packages/host/approval:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
-  packages/presets/chat: {}
+  packages/host/artifacts:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
 
-  packages/presets/tool-artifact: {}
+  packages/host/assistants:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
 
-  packages/presets/tool-browser: {}
+  packages/host/connectors:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
-  packages/presets/tool-connector: {}
+  packages/host/import:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
 
-  packages/presets/tool-image: {}
+  packages/host/memory:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
 
-  packages/presets/tool-project: {}
+  packages/host/projects:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
 
-  packages/presets/tool-research: {}
+  packages/host/push:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
 
-  packages/presets/tool-share: {}
+  packages/host/usage:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/preset/chat: {}
+
+  packages/tool/artifact:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/tool/browser:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/tool/connector:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/tool/image:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/tool/project:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/tool/research:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/tool/share:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
 
 packages:
 

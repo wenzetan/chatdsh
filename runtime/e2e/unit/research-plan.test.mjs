@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_ANGLES, mergeFindings, planResearch } from '../../packages/presets/tool-research/lib/plan.js';
+import { MAX_ANGLES, mergeFindings, planResearch } from '../../packages/tool/research/lib/plan.js';
 
 test('不给角度时按事实、对比、风险三个角度展开', () => {
   const plan = planResearch('  某个问题  ');

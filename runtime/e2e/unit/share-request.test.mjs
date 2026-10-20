@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildShareRequest } from '../../packages/presets/tool-share/lib/request.js';
+import { buildShareRequest } from '../../packages/tool/share/lib/request.js';
 
 test('只给会话标识时省略可选字段', () => {
   assert.deepEqual(buildShareRequest({ sessionId: 's1' }), { sessionId: 's1' });

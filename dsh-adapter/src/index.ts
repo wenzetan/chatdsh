@@ -49,27 +49,69 @@ export type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry';
 // 加载器条目的配置形状，用于把连接器记录同步成 MCP 客户端行。
 export type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader';
 
+// ── 模型调用 ────────────────────────────────────────────────────
+// 适配器基类与请求、块流、用量、模型元数据的类型。业务包实现自定义 provider 时
+// 继承 `LlmAdapter`，从模型接入层到这里的路径只有这一条。
+export { LlmAdapter } from '@deepseek-ai/dsh-llm';
+export type {
+  GenerateOptions,
+  LlmConfigurableProvider,
+  LlmModelInfo,
+  LlmProviderInfo,
+  LlmResolvedModelInfo,
+  StreamChunk,
+  TokenUsage,
+} from '@deepseek-ai/dsh-llm';
+
+// ── 子代理 ──────────────────────────────────────────────────────
+// 提供方契约与运行句柄。进程外后端实现 `SubagentProvider` 后注册进 `ctx.subagents`。
+export type { SubagentProvider, SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent';
+
+// ── 工作树 ──────────────────────────────────────────────────────
+// 创建工作树的请求与结果形状。该能力来自实验包，缺失时调用方必须显式失败。
+export type { CreatedWorktree, CreateWorktreeRequest } from '@deepseek-ai/dsh-experimental-worktree';
+
 // ── 类型声明补齐 ────────────────────────────────────────────────
 // 下面这些包只提供类型增强（事件表、服务面），运行时不需要它们的导出。
 // 引入它们是为了让 `ctx` 上的服务名与事件名在类型层面可解析。
 import type {} from '@deepseek-ai/dsh-agent';
 import type {} from '@deepseek-ai/dsh-agent-preset-registry';
+import type {} from '@deepseek-ai/dsh-experimental-worktree';
 import type {} from '@deepseek-ai/dsh-host-webserver';
+import type {} from '@deepseek-ai/dsh-llm';
 import type {} from '@deepseek-ai/dsh-otel';
+import type {} from '@deepseek-ai/dsh-schedule';
 import type {} from '@deepseek-ai/dsh-session-persistence';
 import type {} from '@deepseek-ai/dsh-session-projection';
 import type {} from '@deepseek-ai/dsh-settings';
+import type {} from '@deepseek-ai/dsh-skill';
 import type {} from '@deepseek-ai/dsh-storage-domain';
+import type {} from '@deepseek-ai/dsh-subagent';
 import type {} from '@deepseek-ai/dsh-system-prompt';
 import type {} from '@deepseek-ai/dsh-user-approval';
 import type {} from '@deepseek-ai/cordis-plugin-loader';
 
-export { AGENT_EVENTS, SESSION_EVENTS, APPROVAL_EVENTS, SESSION_EVENT_TYPES } from './events.ts';
-export type { AgentEventName, SessionEventName, ApprovalEventName, SessionEventType } from './events.ts';
+export {
+  AGENT_EVENTS,
+  APPROVAL_EVENTS,
+  COMPACTION_EVENTS,
+  LLM_EVENTS,
+  SESSION_EVENTS,
+  SESSION_EVENT_TYPES,
+} from './events.ts';
+export type {
+  AgentEventName,
+  ApprovalEventName,
+  CompactionEventName,
+  LlmEventName,
+  SessionEventName,
+  SessionEventType,
+} from './events.ts';
 export {
   UPSTREAM_AGENT_ROWS,
   UPSTREAM_APPROVAL_TYPES,
   UPSTREAM_BUNDLES,
+  UPSTREAM_CAPABILITY_PACKAGES,
   UPSTREAM_CLIENT_UI,
   UPSTREAM_MCP_CLIENT,
   UPSTREAM_PACKAGE_NAMES,
@@ -80,14 +122,19 @@ export {
 export {
   agentPresetsOf,
   hostWebServerOf,
+  llmOf,
   loaderOf,
   otelOf,
+  scheduleOf,
   sessionPersistenceOf,
   sessionProjectionsOf,
   sessionsOf,
   settingsOf,
+  skillsOf,
   storageDomainOf,
+  subagentsOf,
   systemPromptOf,
   toolsOf,
   telemetryOf,
+  worktreesOf,
 } from './services.ts';

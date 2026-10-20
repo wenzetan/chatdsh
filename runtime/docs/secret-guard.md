@@ -4,7 +4,7 @@
 
 ## 一、安装
 
-钩子随仓库分发，但 `core.hooksPath` 是本地配置，克隆之后需要执行一次：
+钩子随仓库分发，但 `core.hooksPath` 是本地配置，克隆之后需要执行一次（在 `runtime` 目录下执行，脚本以仓库根为基准工作）：
 
 ```sh
 bash scripts/install-hooks.sh
@@ -122,14 +122,14 @@ git cat-file -t <旧提交哈希>       # 应当报 Not a valid object name
 
 **默认规则集已覆盖的不要重复。** AWS、Stripe、GitHub、Slack、Google 等有固定前缀的供应商密钥已在默认规则里。新增规则之前先确认默认规则是否漏报，避免同一条内容被两条规则重复报告。
 
-**加规则后必须跑两个方向的验证。** 用一个含各类真实形状的探针文件确认能命中，再用 `docs/` 全量扫描确认零误报。只测命中不测误报，规则一上线就会拦住正常提交。
+**加规则后必须跑两个方向的验证。** 用一个含各类真实形状的探针文件确认能命中，再用 `runtime/docs/` 全量扫描确认零误报。只测命中不测误报，规则一上线就会拦住正常提交。gitleaks 配置在仓库根，下面两条命令从仓库根执行：
 
 ```sh
 # 命中验证
 gitleaks dir <探针目录> -c .gitleaks.toml --no-banner -f json -r out.json
 
 # 误报验证
-gitleaks dir docs -c .gitleaks.toml --no-banner -f json -r out.json
+gitleaks dir runtime/docs -c .gitleaks.toml --no-banner -f json -r out.json
 ```
 
 ## 七、已知边界

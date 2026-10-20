@@ -40,7 +40,7 @@ docker compose --env-file dev/.env -f dev/docker/compose.yaml up -d
 ```
 
 第一次启动时，dsh 运行时容器会在容器内完成这些事：把宿主仓库复制到容器内的可写目录、
-安装 profile 与工作区的依赖、投影 DSH 的依赖链接、构建同级的 `chatdsn-adapter` 与自建包、
+安装 profile 与工作区的依赖、投影 DSH 的依赖链接、构建同级目录 `dsh-adapter` 与自建包、
 打包浏览器侧产物、把仓库的 profile 接到容器内的数据根，最后启动 dsh。
 这一段大约需要几分钟，日志里能看到每一步的进度。
 
@@ -94,7 +94,7 @@ docker compose --env-file dev/.env -f dev/docker/compose.yaml down -v
   compose 把模型网关的地址、密钥与模型名以环境变量的形式传进容器，便于调试时引用。
 - 仓库代码在容器内被复制到 `/work`，容器里的改动不会回到宿主。宿主上删除文件后，
   容器里的旧副本仍在，需要 `docker compose down -v` 后重新启动才会同步。
-- 同级仓库 `chatdsn-adapter` 是独立仓库，容器内会单独构建它。它的构建产物是自建包类型检查的依赖，
-  宿主的 adapter 仓库改动后需要重启容器才会生效。
-- 容器内的包管理器用 `https://registry.npmmirror.com`，与仓库根的 `.npmrc` 一致；
+- 同级目录 `dsh-adapter` 在容器内单独构建。它的构建产物是自建包类型检查的依赖，
+  宿主上改动 `dsh-adapter` 之后需要重启容器才会生效。
+- 容器内的包管理器用 `https://registry.npmmirror.com`，与 `runtime` 根目录的 `.npmrc` 一致；
   换源时用 `NPM_REGISTRY` 覆盖。

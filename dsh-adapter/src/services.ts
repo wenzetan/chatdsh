@@ -21,6 +21,11 @@ import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry
 import type { SystemPrompt } from '@deepseek-ai/dsh-system-prompt';
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver';
 import type { SettingsForms } from '@deepseek-ai/dsh-settings';
+import type { LlmRuntime } from '@deepseek-ai/dsh-llm';
+import type { SkillRegistry } from '@deepseek-ai/dsh-skill';
+import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent';
+import type { ScheduleService } from '@deepseek-ai/dsh-schedule';
+import type { WorktreeService } from '@deepseek-ai/dsh-experimental-worktree';
 
 /** 工具注册表：`ctx.tools`。 */
 export function toolsOf(ctx: Context): ToolRuntime {
@@ -70,6 +75,31 @@ export function hostWebServerOf(ctx: Context): WebServer {
 /** 设置面：`ctx.settings`。 */
 export function settingsOf(ctx: Context): SettingsForms {
   return ctx.settings;
+}
+
+/** 模型运行时：`ctx.llm`，提供适配器注册与流式调用。 */
+export function llmOf(ctx: Context): LlmRuntime {
+  return ctx.llm;
+}
+
+/** 技能目录：`ctx.skills`。 */
+export function skillsOf(ctx: Context): SkillRegistry {
+  return ctx.skills;
+}
+
+/** 子代理运行时：`ctx.subagents`，命名提供方注册表。 */
+export function subagentsOf(ctx: Context): SubagentRuntime {
+  return ctx.subagents;
+}
+
+/** 定时任务：`ctx.schedule`。 */
+export function scheduleOf(ctx: Context): ScheduleService {
+  return ctx.schedule;
+}
+
+/** 工作树服务：`ctx.worktrees`。 */
+export function worktreesOf(ctx: Context): WorktreeService {
+  return ctx.worktrees;
 }
 
 /**

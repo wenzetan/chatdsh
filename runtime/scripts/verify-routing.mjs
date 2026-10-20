@@ -32,7 +32,7 @@ function startRuntime(name, port) {
 const runtimeA = await startRuntime('a', 3301);
 const runtimeB = await startRuntime('b', 3302);
 
-const child = spawn(process.execPath, [resolve(ROOT, 'packages/gateway/lib/main.js')], {
+const child = spawn(process.execPath, [resolve(ROOT, 'gateway/lib/main.js')], {
   env: {
     ...process.env,
     DSH_HOME: HOME,

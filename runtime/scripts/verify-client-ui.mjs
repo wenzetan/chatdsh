@@ -12,7 +12,7 @@ import { mkdirSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tempHome } from './lib/cleanup.mjs';
 import { dshCommand } from './lib/dsh.mjs';
-import { launchBrowser } from '../packages/presets/tool-browser/lib/cdp.js';
+import { launchBrowser } from '../packages/tool/browser/lib/cdp.js';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const argv = process.argv.slice(2);

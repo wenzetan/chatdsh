@@ -72,6 +72,79 @@ export const UPSTREAM_PROJECTION_TYPES = '@deepseek-ai/dsh-session-projection';
 export const UPSTREAM_APPROVAL_TYPES = '@deepseek-ai/dsh-user-approval';
 
 /**
+ * 上游的能力包：模型接入与计量、压缩、技能、MCP 资源、子代理、定时、工作树、沙箱与 ACP。
+ *
+ * 这些包由 profile 按形态选择装入，或者被业务包以契约类型引用。名字登记在这里，
+ * 升级时校验脚本按登记表核对各处清单。
+ */
+export const UPSTREAM_CAPABILITY_PACKAGES = {
+  /** 模型运行时与适配器契约。 */
+  llm: '@deepseek-ai/dsh-llm',
+  /** 库支撑的模型适配器，支持 baseURL 与静态请求头。 */
+  llmPiAi: '@deepseek-ai/dsh-llm-pi-ai',
+  /** 重试策略，产生 `llm/retry` 事件。 */
+  llmRetry: '@deepseek-ai/dsh-llm-retry',
+  /** 令牌计量与上下文投影。 */
+  tokenMeter: '@deepseek-ai/dsh-token-meter',
+  /** 上下文压缩。 */
+  compaction: '@deepseek-ai/dsh-compaction',
+  /** 技能目录。 */
+  skill: '@deepseek-ai/dsh-skill',
+  /** 办公文档技能。 */
+  skillOffice: '@deepseek-ai/dsh-skill-office',
+  /** 技能面板。 */
+  clientUiSkill: '@deepseek-ai/dsh-client-ui-skill',
+  /** MCP 资源。 */
+  mcpResources: '@deepseek-ai/dsh-mcp-resources',
+  /** 子代理接缝。 */
+  subagent: '@deepseek-ai/dsh-subagent',
+  /** 进程内新建子代理后端。 */
+  subagentSpawnInProcess: '@deepseek-ai/dsh-subagent-spawn-in-process',
+  /** 进程内分叉子代理后端。 */
+  subagentForkInProcess: '@deepseek-ai/dsh-subagent-fork-in-process',
+  /** Codex 提供方组合包。 */
+  subagentCodex: '@deepseek-ai/dsh-subagent-codex',
+  /** Claude Code 提供方组合包。 */
+  subagentClaudeCode: '@deepseek-ai/dsh-subagent-claude-code',
+  /** ACP 提供方组合包。 */
+  subagentAcp: '@deepseek-ai/dsh-subagent-acp',
+  /** DSH SDK 提供方组合包。 */
+  subagentDshSdk: '@deepseek-ai/dsh-subagent-dsh-sdk',
+  /** 委托工具。 */
+  toolSubagent: '@deepseek-ai/dsh-tool-subagent',
+  /** 子代理控制工具。 */
+  toolSubagentControl: '@deepseek-ai/dsh-tool-subagent-control',
+  /** 子代理面板。 */
+  clientUiSubagent: '@deepseek-ai/dsh-client-ui-subagent',
+  /** 子代理设置区段。 */
+  clientUiSettingsSubagent: '@deepseek-ai/dsh-client-ui-settings-subagent',
+  /** agent 循环。 */
+  agentLoop: '@deepseek-ai/dsh-agent-loop',
+  /** 循环设置区段。 */
+  clientUiSettingsAgentLoop: '@deepseek-ai/dsh-client-ui-settings-agent-loop',
+  /** 宿主级定时任务。 */
+  schedule: '@deepseek-ai/dsh-schedule',
+  /** 定时任务工具。 */
+  toolSchedule: '@deepseek-ai/dsh-tool-schedule',
+  /** 定时任务管理页。 */
+  clientUiSchedule: '@deepseek-ai/dsh-client-ui-schedule',
+  /** 工作树服务，实验性。 */
+  worktree: '@deepseek-ai/dsh-experimental-worktree',
+  /** 沙箱接缝。 */
+  sandbox: '@deepseek-ai/dsh-sandbox',
+  /** 本地沙箱后端。 */
+  sandboxLocal: '@deepseek-ai/dsh-sandbox-local',
+  /** 沙箱策略。 */
+  sandboxPolicy: '@deepseek-ai/dsh-sandbox-policy',
+  /** 子进程接缝。 */
+  subprocess: '@deepseek-ai/dsh-subprocess',
+  /** 本地子进程后端。 */
+  subprocessLocal: '@deepseek-ai/dsh-subprocess-local',
+  /** ACP 服务端。 */
+  acp: '@deepseek-ai/dsh-acp',
+} as const;
+
+/**
  * 补丁层与 profile 里引用到的上游行：行 id → 包名。
  *
  * 补丁层按 `id` 与 `name` 成对匹配上游的行：`name` 写错时整条补丁被跳过，改名的行
@@ -116,5 +189,6 @@ export const UPSTREAM_PACKAGE_NAMES: readonly string[] = [
   UPSTREAM_MCP_CLIENT,
   UPSTREAM_PROJECTION_TYPES,
   UPSTREAM_APPROVAL_TYPES,
+  ...Object.values(UPSTREAM_CAPABILITY_PACKAGES),
   ...Object.values(UPSTREAM_ROWS),
 ];

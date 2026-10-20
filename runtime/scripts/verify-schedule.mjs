@@ -17,7 +17,7 @@ const index = argv.indexOf('--port');
 const PORT = index < 0 ? 3192 : Number.parseInt(argv[index + 1], 10);
 const HOME = tempHome('schedule-home');
 
-const child = spawn(process.execPath, [resolve(ROOT, 'packages/gateway/lib/main.js')], {
+const child = spawn(process.execPath, [resolve(ROOT, 'gateway/lib/main.js')], {
   env: {
     ...process.env,
     DSH_HOME: HOME,

@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyApprovalEvent } from '../../packages/plugins/approval/lib/types.js';
+import { applyApprovalEvent } from '../../packages/host/approval/lib/types.js';
 
 const initial = { pending: [], askedCount: 0 };
 

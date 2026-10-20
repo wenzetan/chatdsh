@@ -5,7 +5,7 @@
 // 这个形状；宿主提供的包（react 与其余客户端插件）保持外部依赖，不重复打包。
 //
 // 用法：node scripts/build-client.mjs [包目录 ...]
-//   不带参数时打包 packages/clients 下的全部包。
+//   不带参数时打包 packages/client 下的全部包。
 // 输出：<包目录>/lib/client.js 与 sourcemap。
 
 import { build } from 'esbuild';
@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const CLIENTS = join(ROOT, 'packages', 'clients');
+const CLIENTS = join(ROOT, 'packages', 'client');
 
 /** 宿主在浏览器侧提供的包，必须保持外部依赖。 */
 const HOST_PROVIDED = ['react', 'react/*', 'react-dom', 'react-dom/*', '@deepseek-ai/*'];

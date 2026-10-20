@@ -19,7 +19,7 @@ const HOME = tempHome('receipt-home');
 
 mkdirSync(HOME, { recursive: true });
 
-const child = spawn(process.execPath, [resolve(ROOT, 'packages/gateway/lib/main.js')], {
+const child = spawn(process.execPath, [resolve(ROOT, 'gateway/lib/main.js')], {
   env: {
     ...process.env,
     DSH_HOME: HOME,
