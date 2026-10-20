@@ -44,7 +44,7 @@ paths = [
     '''(^|/)package-lock\.json$''',
     '''(^|/)pnpm-lock\.yaml$''',
     '''(^|/)yarn\.lock$''',
-    '''(^|/)docs/refer_repos/''',
+    '''(^|/)refer_repos/''',
     '''\.(png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|eot|mp4|mov|webm|mp3|wav|pdf|zip|tar|gz|tgz|bz2|xz|7z|so|dylib|dll|exe|node|wasm|bin|pyc|class|jar)$''',
 ]
 
