@@ -1,0 +1,10 @@
+# 依赖、构建产物与增量编译信息
+node_modules/
+lib/
+*.tsbuildinfo
+
+# DSH 安装内依赖的本地投影（符号链接，由 scripts/link-dsh-deps.mjs 生成）
+.dsh-deps/
+
+# 打包产物
+*.tgz

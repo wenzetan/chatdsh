@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "outDir": "lib",
+    "rootDir": "src",
+    "typeRoots": ["./.dsh-deps/@types"],
+    "types": ["node"],
+    "paths": {
+      "@deepseek-ai/*": ["./.dsh-deps/@deepseek-ai/*"],
+      "@opentelemetry/*": ["./.dsh-deps/@opentelemetry/*"],
+      "zod": ["./.dsh-deps/zod"],
+      "zod/*": ["./.dsh-deps/zod/*"]
+    }
+  }
+}
