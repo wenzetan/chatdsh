@@ -4,7 +4,7 @@
   "private": true,
   "description": "ChatDSH 的桌面 profile：Web 界面加桌面形态的组合包，由 Electron 壳托管",
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../chatdsn-adapter",
+    "@chatdsh/adapter": "link:../../../dsh-adapter",
     "@chatdsh/bundle-desktop": "link:../../packages/bundles/desktop",
     "@chatdsh/bundle-hosted": "link:../../packages/bundles/hosted",
     "@chatdsh/bundle-storage-jsonl": "link:../../packages/bundles/storage-jsonl",

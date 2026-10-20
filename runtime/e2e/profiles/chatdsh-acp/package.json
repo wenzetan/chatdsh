@@ -3,7 +3,7 @@
   "private": true,
   "description": "端到端验收用的 ACP 形态 profile：dsh-base 加自建宿主平面组合包，用于脚本化创建会话并核对投影",
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../../chatdsn-adapter",
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
     "@chatdsh/bundle-hosted": "link:../../../packages/bundles/hosted",
     "@chatdsh/plugin-approval": "link:../../../packages/plugins/approval",
     "@chatdsh/plugin-artifacts": "link:../../../packages/plugins/artifacts",

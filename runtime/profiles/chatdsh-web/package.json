@@ -4,7 +4,7 @@
   "private": true,
   "description": "ChatDSH 的单机 Web profile：内置 dsh-base 与 dsh-web-app，叠加自建宿主平面组合包",
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../chatdsn-adapter",
+    "@chatdsh/adapter": "link:../../../dsh-adapter",
     "@chatdsh/bundle-hosted": "link:../../packages/bundles/hosted",
     "@chatdsh/client-account": "link:../../packages/clients/account",
     "@chatdsh/client-approval": "link:../../packages/clients/approval",

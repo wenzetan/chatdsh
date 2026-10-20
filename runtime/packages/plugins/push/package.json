@@ -32,7 +32,7 @@
     }
   },
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../../chatdsn-adapter",
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
     "@chatdsh/contracts": "workspace:*"
   }
 }

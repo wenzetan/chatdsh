@@ -4,7 +4,7 @@
   "private": true,
   "description": "ChatDSH 的长任务 profile：headless 运行，没有界面，由控制平面按任务驱动",
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../chatdsn-adapter",
+    "@chatdsh/adapter": "link:../../../dsh-adapter",
     "@chatdsh/bundle-hosted": "link:../../packages/bundles/hosted",
     "@chatdsh/bundle-memory-hindsight": "link:../../packages/bundles/memory-hindsight",
     "@chatdsh/bundle-worker": "link:../../packages/bundles/worker",

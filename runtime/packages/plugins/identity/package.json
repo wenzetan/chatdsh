@@ -21,7 +21,7 @@
     "dsh": ">=0.2.1-rc.2 <0.3.0-0"
   },
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../../chatdsn-adapter",
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
     "@chatdsh/contracts": "workspace:*"
   }
 }
