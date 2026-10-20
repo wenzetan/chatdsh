@@ -67,6 +67,17 @@ import type {} from '@deepseek-ai/cordis-plugin-loader';
 export { AGENT_EVENTS, SESSION_EVENTS, APPROVAL_EVENTS, SESSION_EVENT_TYPES } from './events.ts';
 export type { AgentEventName, SessionEventName, ApprovalEventName, SessionEventType } from './events.ts';
 export {
+  UPSTREAM_AGENT_ROWS,
+  UPSTREAM_APPROVAL_TYPES,
+  UPSTREAM_BUNDLES,
+  UPSTREAM_CLIENT_UI,
+  UPSTREAM_MCP_CLIENT,
+  UPSTREAM_PACKAGE_NAMES,
+  UPSTREAM_PROJECTION_TYPES,
+  UPSTREAM_ROWS,
+  UPSTREAM_TOOL_ROWS,
+} from './upstream.ts';
+export {
   agentPresetsOf,
   hostWebServerOf,
   loaderOf,

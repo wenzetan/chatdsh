@@ -15,19 +15,24 @@
       "types": "./lib/events.d.ts",
       "default": "./lib/events.js"
     },
+    "./upstream": {
+      "types": "./lib/upstream.d.ts",
+      "default": "./lib/upstream.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "lib/**/*.js",
     "lib/**/*.d.ts"
   ],
+  "sideEffects": false,
   "engines": {
     "dsh": "0.2.1-rc.2"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5",
     "@deepseek-ai/schemastery": "~3.18.5",
-    "@deepseek-ai/cordis-plugin-loader": "0.2.1-rc.2",
+    "@deepseek-ai/cordis-plugin-loader": "~1.0.6",
     "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
     "@deepseek-ai/dsh-agent-preset-registry": "0.2.1-rc.2",
     "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.2",
