@@ -24,7 +24,7 @@ const failures = [];
 /** 角色目录允许的自建依赖。 */
 const ALLOWED = {
   core: [/^@chatdsh\/core-/, /^@chatdsh\/adapter$/],
-  host: [/^@chatdsh\/core-/, /^@chatdsh\/adapter$/],
+  host: [/^@chatdsh\/core-/, /^@chatdsh\/adapter$/, /^@chatdsh\/hindsight-adapter$/],
   tool: [/^@chatdsh\/core-/, /^@chatdsh\/adapter$/],
   client: [/^@chatdsh\/core-/],
   bundle: [/^@chatdsh\//],
@@ -73,10 +73,23 @@ for (const name of ['gateway', 'desktop']) {
   }
 }
 
+// 与 runtime 同级的适配器目录：只允许依赖 @chatdsh/core-*，不得依赖宿主或工具包。
+for (const name of ['hermes-adapter', 'hindsight-adapter', 'forge-bridge']) {
+  const manifestPath = join(REPO, name, 'package.json');
+  if (!existsSync(manifestPath)) continue;
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  for (const dep of Object.keys(depsOf(manifest))) {
+    if (!dep.startsWith('@chatdsh/')) continue;
+    if (!/^@chatdsh\/core-/.test(dep)) failures.push(`${name} 依赖了 ${dep}，同级适配器只允许依赖 core 包`);
+  }
+}
+
 const adapterManifest = join(REPO, 'dsh-adapter', 'package.json');
 if (existsSync(adapterManifest)) {
   const manifest = JSON.parse(readFileSync(adapterManifest, 'utf8'));
   for (const dep of Object.keys(depsOf(manifest))) {
+    // 唯一豁免是契约包：适配器转出上游类型时必须引用契约里的类型，且契约包不含任何实现。
+    if (dep === '@chatdsh/core-contracts') continue;
     if (dep.startsWith('@chatdsh/')) failures.push(`dsh-adapter 依赖了自建运行时包 ${dep}`);
   }
 }

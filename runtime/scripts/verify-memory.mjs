@@ -6,7 +6,6 @@
 // 用法：node scripts/verify-memory.mjs [--url http://127.0.0.1:8889]
 // 退出码 0 表示探活通过、写入返回成功、召回返回至少一条命中。
 
-import { resolve } from 'node:path';
 import { createMemoryClient } from '../packages/host/memory/lib/client.js';
 
 const argv = process.argv.slice(2);

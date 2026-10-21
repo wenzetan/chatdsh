@@ -35,6 +35,7 @@
     }
   },
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../../dsh-adapter"
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/hindsight-adapter": "link:../../../../hindsight-adapter"
   }
 }

@@ -1,0 +1,7 @@
+# 依赖、构建产物与增量编译信息
+node_modules/
+lib/
+*.tsbuildinfo
+
+# 包管理器锁文件
+pnpm-lock.yaml

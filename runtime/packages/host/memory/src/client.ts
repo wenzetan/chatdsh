@@ -1,12 +1,17 @@
 /**
- * Hindsight 的 HTTP 客户端。
+ * 记忆存储层的客户端门面。
  *
- * 只用两条接口：`GET /version` 探活、`POST /v1/default/banks/{bank}/memories/recall`
- * 召回、`POST /v1/default/banks/{bank}/memories` 写入。这一层不依赖运行时，遥测通过
- * 可选的回调接入，因此可以脱离 DSH 单独验证。
+ * 真正的 HTTP 细节在 `@chatdsh/hindsight-adapter`，本模块只把适配器包成接入层用到的
+ * 形状：按 bank 列表召回、按一条内容写入、探活。接入层不关心适配器内部的错误类型，
+ * 因此错误原样抛出，由接入层在失败分支上记录降级事件。
  * @module @chatdsh/host-memory/client
  */
 
+import {
+  createHindsightMemoryBackend,
+  HindsightUnavailableError,
+  type HindsightConfig,
+} from '@chatdsh/hindsight-adapter';
 import { dedupeHits, type MemoryHit } from './rules.ts';
 
 /** 配置。 */
@@ -44,22 +49,8 @@ export interface MemoryClient {
   write(bank: string, options: WriteOptions): Promise<{ items: number; operationId?: string }>;
 }
 
-/** 记忆服务不可用。 */
-export class MemoryUnavailableError extends Error {
-  constructor(detail: string) {
-    super(`记忆服务不可用：${detail}`);
-    this.name = 'MemoryUnavailableError';
-  }
-}
-
-/** 一条召回结果在接口里的形状。 */
-interface RecallItem {
-  id: string;
-  text: string;
-  type?: string;
-  tags?: string[];
-  scores?: { semantic?: number };
-}
+/** 记忆服务不可用；保留旧名字，接入层与验收脚本按它判断降级。 */
+export { HindsightUnavailableError as MemoryUnavailableError };
 
 /**
  * 建立客户端。
@@ -68,74 +59,60 @@ interface RecallItem {
  * @returns 客户端。
  */
 export function createMemoryClient(config: MemoryClientConfig, onFailure?: (operation: string, error: unknown) => void): MemoryClient {
-  const endpoint = config.hindsightUrl.replace(/\/+$/, '');
-  const key = config.apiKeyEnv === undefined ? undefined : process.env[config.apiKeyEnv];
-  const headers: Record<string, string> = key === undefined
-    ? { 'Content-Type': 'application/json' }
-    : { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` };
+  const adapterConfig: HindsightConfig = {
+    baseUrl: config.hindsightUrl,
+    ...(config.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.apiKeyEnv }),
+    requestTimeoutMs: config.requestTimeoutMs,
+    maxTokens: config.maxTokens,
+  };
+  const backend = createHindsightMemoryBackend(adapterConfig);
 
-  async function call(operation: string, path: string, init: RequestInit): Promise<unknown> {
-    try {
-      const response = await fetch(`${endpoint}${path}`, {
-        ...init,
-        headers,
-        signal: AbortSignal.timeout(config.requestTimeoutMs),
-      });
-      if (!response.ok) throw new MemoryUnavailableError(`${operation}返回 ${response.status}`);
-      return await response.json();
-    } catch (error) {
-      onFailure?.(operation, error);
-      throw error;
-    }
+  /** 适配器的结果没有元数据字段，接入层只需要文本与来源。 */
+  function toHits(bank: string, hits: readonly { readonly text: string; readonly source?: string; readonly score?: number }[]): MemoryHit[] {
+    return hits.map((hit) => ({
+      id: hit.source ?? bank,
+      text: hit.text,
+      type: 'world',
+      ...(hit.score === undefined ? {} : { score: hit.score }),
+    }));
   }
 
   return {
     async probe(): Promise<boolean> {
-      try {
-        const response = await fetch(`${endpoint}/version`, {
-          headers,
-          signal: AbortSignal.timeout(config.requestTimeoutMs),
-        });
-        return response.ok;
-      } catch {
-        return false;
-      }
+      const state = await backend.health({});
+      return state.ok;
     },
 
     async recall(banks: readonly string[], options: RecallOptions): Promise<MemoryHit[]> {
       const collected: MemoryHit[] = [];
       for (const bank of banks) {
-        const body: Record<string, unknown> = {
-          query: options.query,
-          max_tokens: options.maxTokens ?? config.maxTokens,
-        };
-        if (options.tags !== undefined) body.tags = [...options.tags];
-        const payload = (await call('召回', `/v1/default/banks/${encodeURIComponent(bank)}/memories/recall`, {
-          method: 'POST',
-          body: JSON.stringify(body),
-        })) as { results?: RecallItem[] };
-        for (const item of payload.results ?? []) {
-          collected.push({
-            id: item.id,
-            text: item.text,
-            type: item.type ?? 'world',
-            tags: item.tags,
-            score: item.scores?.semantic,
-          });
+        try {
+          const hits = await backend.recall({
+            banks: [bank],
+            text: options.query,
+            ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+          }, {});
+          collected.push(...toHits(bank, hits));
+        } catch (error) {
+          onFailure?.('召回', error);
+          throw error;
         }
       }
       return dedupeHits(collected);
     },
 
     async write(bank: string, options: WriteOptions): Promise<{ items: number; operationId?: string }> {
-      const item: Record<string, unknown> = { content: options.content };
-      if (options.context !== undefined) item.context = options.context;
-      if (options.tags !== undefined) item.tags = [...options.tags];
-      const payload = (await call('写入', `/v1/default/banks/${encodeURIComponent(bank)}/memories`, {
-        method: 'POST',
-        body: JSON.stringify({ items: [item], async: options.async ?? true }),
-      })) as { items_count?: number; operation_id?: string };
-      return { items: payload.items_count ?? 1, operationId: payload.operation_id };
+      try {
+        const written = await backend.writeWithOperation({
+          bank,
+          text: options.content,
+          ...(options.context === undefined ? {} : { metadata: { kind: options.context } }),
+        }, {});
+        return written.operationId === undefined ? { items: 1 } : { items: 1, operationId: written.operationId };
+      } catch (error) {
+        onFailure?.('写入', error);
+        throw error;
+      }
     },
   };
 }

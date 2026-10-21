@@ -250,7 +250,7 @@ flowchart TB
 | `dsh-adapter/` | 适配层 `@chatdsh/adapter`，与 `runtime` 同级，profile 以 `link:` 引用 |
 | `refer_repos/` | 参考仓库快照，不纳入版本管理 |
 
-`hermes-adapter/`、`hindsight-adapter/`、`forge-bridge/` 是本次设计确定的目标结构，同样位于仓库根下与 `runtime` 同级，当前尚未创建。
+`hermes-adapter/` 与 `hindsight-adapter/` 位于仓库根下与 `runtime` 同级，各自只依赖 `@chatdsh/core-contracts`：前者把 Hermes 的 `api_server` 翻译成聊天后端契约，后者把 Hindsight 的 HTTP 接口翻译成记忆后端契约。`runtime/packages/host/memory` 通过门面调用 `hindsight-adapter`，不再自己持有 HTTP 细节。`forge-bridge/` 同样位于仓库根下，供控制平面的 webhook 路由把外部投递规范成自动化事件。
 
 同级目录的层级有实际约束：`runtime/profiles` 下的 profile 以 `link:` 协议引用 `../dsh-adapter`，链接目标按同级关系解析，改动目录层级会让 profile 装不出依赖。
 
