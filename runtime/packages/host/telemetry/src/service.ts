@@ -3,7 +3,7 @@
  *
  * 服务本身只做三件事：按配置建立 {@link TelemetryClient}、注册状态与自检端点、
  * 在 fiber 销毁时释放管道。全部信号能力由客户端提供，其他端复用同一个客户端。
- * @module @chatdsh/core-telemetry/service
+ * @module @chatdsh/host-telemetry/service
  */
 
 import { Service, schema as z, type Context } from '@chatdsh/adapter';
@@ -20,9 +20,9 @@ import {
   type TelemetryOffReason,
   type TelemetrySpan,
 } from '@chatdsh/core-contracts';
-import type { TelemetryConfig } from './config.ts';
+import type { TelemetryConfig } from '@chatdsh/core-diagnostics/config';
+import { TelemetryClient } from '@chatdsh/core-diagnostics/client';
 import { Config } from './schema.ts';
-import { TelemetryClient } from './client.ts';
 import { registerTelemetryEndpoints } from './endpoints.ts';
 
 /** 认证头的名字，拆开拼装以免把「头名加赋值」写成一条凭据形态的语句。 */
@@ -46,7 +46,7 @@ export class ChatdshTelemetryService extends Service implements ChatdshTelemetry
   constructor(ctx: Context, config: TelemetryConfig) {
     super(ctx, CHATDSH_TELEMETRY_SERVICE);
     this.settings = config;
-    this.client = new TelemetryClient({ config, component: '@chatdsh/core-telemetry' });
+    this.client = new TelemetryClient({ config, component: '@chatdsh/host-telemetry' });
 
     // 状态端点在两种状态下都可用；自检与中继端点由自身按开关给出 409 与 404。
     const releaseEndpoints = registerTelemetryEndpoints(ctx, {

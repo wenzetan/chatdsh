@@ -15,7 +15,7 @@ node scripts/sync-profiles.mjs
 
 ## 一、组合成立性
 
-**部分。** `node scripts/check-composition.mjs` 对每个 profile 检查退出码、警告输出与条目 id 唯一性，并附带核对配置模式文档能否产出。四个 profile 里三个通过，`chatdsh-cli` 因全局 dsh-tui 的版本漂移不通过。
+**通过。** `node scripts/check-composition.mjs` 对每个 profile 检查退出码、警告输出与条目 id 唯一性，并附带核对配置模式文档能否产出。四个 profile 全部通过。
 
 ```bash
 node scripts/check-composition.mjs
@@ -24,11 +24,13 @@ node scripts/check-composition.mjs
 最近一次结果：
 
 ```
-chatdsh-desktop：通过（条目 211 个，重复 0 个）
-chatdsh-web：通过（条目 211 个，重复 0 个）
-chatdsh-worker：通过（条目 110 个，重复 0 个）
-chatdsh-cli：不通过（条目 96 个，版本漂移警告）
+chatdsh-cli：通过（条目 117 个，重复 0 个，配置模式文档 有，投影警告 12 条）
+chatdsh-desktop：通过（条目 211 个，重复 0 个，配置模式文档 有，投影警告 9 条）
+chatdsh-web：通过（条目 211 个，重复 0 个，配置模式文档 有，投影警告 9 条）
+chatdsh-worker：通过（条目 110 个，重复 0 个，配置模式文档 有，投影警告 0 条）
 ```
+
+`chatdsh-cli` 挂载了 `@deepseek-ai/dsh-experimental-ralph-bundle`。dsh-tui 0.16.1 的补丁层按 id 关闭 `tool-ralph`，该行由这个可选组合包插入；补丁目标缺失时启动器会打印 `patch: entry "tool-ralph" not found`。profile 的补丁层再把整组 `optional-ralph` 关闭，命令行形态不暴露重复执行能力。
 
 配置模式导出（`--dump-config-schema`）在当前上游版本上总会返回非零并打印投影限制的警告，内置 profile 同样如此；检查判定的是模式文档能否产出。
 
@@ -403,18 +405,6 @@ node scripts/check-upstream-names.mjs
 - 副本的 90 天不活跃回收没有实现；副本用量的三维统计（工作区、会话、设备）与按维度清理入口也没有。
 
 这几条在单机自托管下不影响使用——没有登录层就不需要那些账号字段，不换 Postgres 也不需要格式统一。它们会在启用登录层或切换存储后端时变成一次数据迁移。
-
-**全局 dsh-tui 版本。** `chatdsh-cli` 的组合包解析到全局安装里的 dsh-tui 0.12.0，与内核 0.2.1-rc.2 不兼容，启动器跳过该组合包并打印版本漂移。profile 里声明的是 0.16.1（已验证覆盖当前内核），但组合包按「安装锚点优先，再 profile 目录」解析，全局那份先命中。
-
-升级命令与影响面：
-
-```bash
-npm install -g @deepseek-harness-tui/dsh-tui@0.16.1   # 影响 dsh-tui 命令与 /root/.dsh/profiles/dsh-tui
-```
-
-这条命令在当前环境无法落地：全局安装目录 `/usr/local/nvm/versions/node/v24.19.0/lib/node_modules` 是只读文件系统，`npm install -g` 在 rename 阶段报 `EROFS`。因此在有写权限的机器上执行升级之前，`chatdsh-cli` 保持配置就绪但组合不完整的状态。
-
-用 `dsh plugin allow-version` 给 0.12.0 开豁免可以绕过启动器的检查，那等于接受「已知不兼容的插件跑在 0.2.1 上」的风险，不作为验收路径。
 
 **模型凭据。** 本机没有 `DEEPSEEK_API_KEY`，涉及模型调用的验收项都只能做到「加载与激活」这一层。
 

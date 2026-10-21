@@ -5,8 +5,9 @@
  * 管道只在遥测开启时构造；关闭时不构造任何 provider、exporter 与 HTTP 代理。
  *
  * 自监控信号在本文件内维护：入队计数给出队列深度，导出回调给出失败计数与导出耗时，
- * 队列满时的丢弃由 {@link Pipelines.recordDropped} 计入。
- * @module @chatdsh/core-telemetry/pipelines
+ * 队列满时的丢弃由 {@link Pipelines.recordDropped} 计入。最近导出失败只保存
+ * signal、status、at 三项元数据，放在固定容量 32 的有界环形缓冲里，不保存载荷原文。
+ * @module @chatdsh/core-diagnostics/pipelines
  */
 
 import {
@@ -41,6 +42,7 @@ import {
 import { resourceFromAttributes, type Resource } from '@opentelemetry/resources';
 import type { Counter, Histogram, Meter } from '@opentelemetry/api';
 import type { TelemetryConfig, TelemetryOverrides } from './config.ts';
+import { createBoundedRingBuffer, type BoundedRingBuffer } from './ring-buffer.ts';
 
 /** 信号分类，自监控指标的 `signal` 属性取值。 */
 export type TelemetrySignal = 'logs' | 'traces' | 'metrics';
@@ -50,6 +52,19 @@ export interface ExportResultLike {
   code: number;
   error?: Error;
 }
+
+/** 一次导出失败的元数据；不包含任何载荷内容。 */
+export interface ExportFailure {
+  /** 信号类别。 */
+  readonly signal: TelemetrySignal;
+  /** OTLP 导出结果码。 */
+  readonly status: string;
+  /** 失败发生时刻的毫秒时间戳。 */
+  readonly at: number;
+}
+
+/** 最近导出失败的环形缓冲容量。 */
+const EXPORT_FAILURE_CAPACITY = 32;
 
 /** 认证头的名字，拆开拼装以免把「头名加赋值」写成一条凭据形态的语句。 */
 const AUTH_HEADER_NAME = ['Author', 'ization'].join('');
@@ -92,7 +107,10 @@ class SelfMonitor {
   private durationHistogram: Histogram | undefined;
   private exportedAt: number | undefined;
 
-  constructor(private readonly depth: DepthCounter) {}
+  constructor(
+    private readonly depth: DepthCounter,
+    private readonly exportFailures: BoundedRingBuffer<ExportFailure>,
+  ) {}
 
   /** 从就绪的 meter 取全部自监控句柄。 */
   attach(meter: Meter, version: string): void {
@@ -121,16 +139,26 @@ class SelfMonitor {
     this.droppedCounter?.add(1, { signal, reason });
   }
 
-  /** 计入一次导出结果。 */
+  /** 计入一次导出结果；失败时只把元数据写入有界环形缓冲。 */
   recordExport(signal: TelemetrySignal, status: string | undefined, durationSeconds: number): void {
     this.durationHistogram?.record(durationSeconds, { signal });
-    if (status !== undefined) this.failuresCounter?.add(1, { signal, status });
+    if (status !== undefined) {
+      this.failuresCounter?.add(1, { signal, status });
+      if (this.exportFailures.push({ signal, status, at: Date.now() })) {
+        this.drop(signal, 'export-failure-buffer-overflow');
+      }
+    }
     this.exportedAt = Date.now();
   }
 
   /** 最近一次导出的时刻。 */
   lastExportAt(): number | undefined {
     return this.exportedAt;
+  }
+
+  /** 最近导出失败的有界快照，按从旧到新排列。 */
+  recentExportFailures(): readonly ExportFailure[] {
+    return this.exportFailures.snapshot();
   }
 }
 
@@ -250,6 +278,8 @@ export interface Pipelines {
   queueDepth(signal: TelemetrySignal): number;
   /** 最近一次导出的时刻；从未导出时为 `undefined`。 */
   lastExportAt(): number | undefined;
+  /** 最近 32 次导出失败，按从旧到新排列；只含 signal、status、at。 */
+  recentExportFailures(): readonly ExportFailure[];
   /** 计入一次丢弃，出现在丢弃计数指标上。 */
   recordDropped(signal: TelemetrySignal, reason: string): void;
   /** 有界刷新，超时后返回，不抛出。 */
@@ -311,7 +341,8 @@ export function createPipelines(options: PipelineOptions): Pipelines {
   });
 
   const depth = new DepthCounter();
-  const monitor = new SelfMonitor(depth);
+  const exportFailures = createBoundedRingBuffer<ExportFailure>(EXPORT_FAILURE_CAPACITY);
+  const monitor = new SelfMonitor(depth, exportFailures);
 
   const metricExporter = new JsonExporter(
     'metrics',
@@ -391,6 +422,9 @@ export function createPipelines(options: PipelineOptions): Pipelines {
     },
     lastExportAt(): number | undefined {
       return monitor.lastExportAt();
+    },
+    recentExportFailures(): readonly ExportFailure[] {
+      return monitor.recentExportFailures();
     },
     recordDropped(signal: TelemetrySignal, reason: string): void {
       monitor.drop(signal, reason);

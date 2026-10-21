@@ -3,7 +3,7 @@
  *
  * 业务侧只传登记过的键，未登记的键在非调试模式被丢弃并计数，因此「忘记脱敏」表现为
  * 一个可观测的丢弃计数，而不依赖评审记忆。消息一律经 {@link redactMessage} 处理。
- * @module @chatdsh/core-telemetry/redact
+ * @module @chatdsh/core-diagnostics/redact
  */
 
 import {

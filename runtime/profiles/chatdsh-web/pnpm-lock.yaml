@@ -47,9 +47,6 @@ importers:
       '@chatdsh/core-session-index':
         specifier: link:../../packages/core/session-index
         version: link:../../packages/core/session-index
-      '@chatdsh/core-telemetry':
-        specifier: link:../../packages/core/telemetry
-        version: link:../../packages/core/telemetry
       '@chatdsh/host-approval':
         specifier: link:../../packages/host/approval
         version: link:../../packages/host/approval
@@ -71,6 +68,9 @@ importers:
       '@chatdsh/host-push':
         specifier: link:../../packages/host/push
         version: link:../../packages/host/push
+      '@chatdsh/host-telemetry':
+        specifier: link:../../packages/host/telemetry
+        version: link:../../packages/host/telemetry
       '@chatdsh/host-usage':
         specifier: link:../../packages/host/usage
         version: link:../../packages/host/usage

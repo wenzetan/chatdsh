@@ -5,12 +5,14 @@
   "description": "ChatDSH 的命令行 profile：dsh-base 加 dsh-tui，交互全部在终端里",
   "dependencies": {
     "@chatdsh/adapter": "link:../../../dsh-adapter",
+    "@deepseek-ai/dsh-experimental-ralph-bundle": "0.2.1-rc.2",
     "@deepseek-harness-tui/dsh-tui": "0.16.1"
   },
   "dsh": {
     "profile": {
       "bundles": [
         "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-experimental-ralph-bundle",
         "@deepseek-harness-tui/dsh-tui"
       ]
     }

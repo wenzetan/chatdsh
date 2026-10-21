@@ -46,6 +46,6 @@
   },
   "dependencies": {
     "@chatdsh/core-contracts": "workspace:*",
-    "@chatdsh/core-telemetry": "workspace:*"
+    "@chatdsh/core-diagnostics": "workspace:*"
   }
 }

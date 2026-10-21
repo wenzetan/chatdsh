@@ -13,7 +13,7 @@
     # 遥测：唯一的遥测出口，注册 ctx.chatdshTelemetry、状态端点、自检端点与浏览器中继。
     # 平台形态与端点由本部署的 profile 补丁层给出。
     - id: chatdsh-telemetry
-      name: '@chatdsh/core-telemetry'
+      name: '@chatdsh/host-telemetry'
 
     # 会话读模型：列表排序、检索与用量视图都读这两个投影。
     - id: chatdsh-session-index

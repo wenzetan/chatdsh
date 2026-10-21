@@ -3,7 +3,7 @@
  *
  * schema 依赖 schemastery，只在宿主平面（配置树由 DSH 装载）使用；独立进程用
  * `defaultTelemetryConfig` 取得同一组默认值，因此配置模块本身不依赖 schemastery。
- * @module @chatdsh/core-telemetry/schema
+ * @module @chatdsh/host-telemetry/schema
  */
 
 import { schema as z } from '@chatdsh/adapter';
@@ -13,7 +13,7 @@ import {
   DEFAULT_ORGANIZATION,
   DEFAULT_TRACE_STREAM,
   type TelemetryConfig,
-} from './config.ts';
+} from '@chatdsh/core-diagnostics/config';
 
 /** 配置 schema。 */
 export const Config: z<TelemetryConfig> = z.object({

@@ -1,7 +1,7 @@
 {
-  "name": "@chatdsh/core-telemetry",
+  "name": "@chatdsh/core-diagnostics",
   "version": "0.1.0",
-  "description": "ChatDSH 的唯一遥测出口：ctx.chatdshTelemetry、开关、脱敏、浏览器中继与自监控指标",
+  "description": "可复用的诊断客户端与 OTLP 管道：开关、脱敏、自建 W3C 链路上下文、有界环形缓冲与自监控",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -25,6 +25,14 @@
     "./redact": {
       "types": "./lib/redact.d.ts",
       "default": "./lib/redact.js"
+    },
+    "./trace-context": {
+      "types": "./lib/trace-context.d.ts",
+      "default": "./lib/trace-context.js"
+    },
+    "./ring-buffer": {
+      "types": "./lib/ring-buffer.d.ts",
+      "default": "./lib/ring-buffer.js"
     },
     "./package.json": "./package.json"
   },
@@ -56,10 +64,8 @@
     }
   },
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../../dsh-adapter",
     "@chatdsh/core-contracts": "workspace:*",
     "@opentelemetry/api": "1.9.1",
-    "@opentelemetry/core": "2.11.0",
     "@opentelemetry/otlp-exporter-base": "0.222.0",
     "@opentelemetry/otlp-transformer": "0.222.0",
     "@opentelemetry/resources": "2.11.0",

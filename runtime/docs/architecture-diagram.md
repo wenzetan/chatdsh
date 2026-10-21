@@ -171,7 +171,7 @@ flowchart TB
 flowchart TB
   subgraph HOST["宿主平面：随进程加载一次"]
     H1["core-identity 注册 ctx.provide，取身份供分派与审计"]
-    H2["core-telemetry 注册 ctx.chatdshTelemetry，唯一遥测出口"]
+    H2["@chatdsh/core-diagnostics 提供客户端与导出管道；@chatdsh/host-telemetry 注册 ctx.chatdshTelemetry"]
     H3["core-session-index 写 ctx.sessionProjections"]
     H4["host-projects 扩展 ctx.storageDomain"]
     H5["host-artifacts 用 ctx.storageDomain 与 ctx.attachments"]
@@ -251,7 +251,7 @@ flowchart TB
 flowchart LR
   P1["chatdsh-web"] --> L1["dsh-base、dsh-web-app、bundle-hosted、preset-chat"]
   P2["chatdsh-desktop"] --> L2["dsh-base、dsh-web-app、bundle-storage-jsonl、bundle-hosted、bundle-desktop、preset-chat"]
-  P3["chatdsh-cli"] --> L3["dsh-base、dsh-tui"]
+  P3["chatdsh-cli"] --> L3["dsh-base、dsh-experimental-ralph-bundle、dsh-tui"]
   P4["chatdsh-worker"] --> L4["dsh-base、dsh-headless、bundle-hosted、bundle-memory-hindsight、bundle-worker"]
 ```
 

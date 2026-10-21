@@ -34,7 +34,7 @@ DSH 上游有两个遥测行。`session-telemetry-otel`（行 id 同名）只在
 
 ## 三、总体结构
 
-遥测分三类信号、两条出口。宿主进程、桌面主进程、命令行、移动端各自进程内建立 exporter 直发 OTLP/HTTP；浏览器不持有 OpenObserve 凭据，经运行时同源端点上报，由运行时转发。
+遥测分三类信号、两条出口。`@chatdsh/core-diagnostics` 是各端共享的纯诊断库，提供客户端、配置、脱敏、自建 W3C 链路上下文、有界环形缓冲与进程内 exporter 管道；`@chatdsh/host-telemetry` 是运行时宿主插件，只负责宿主注册 `ctx.chatdshTelemetry`、状态端点、自检端点与浏览器、移动端中继端点。宿主进程、桌面主进程、命令行、移动端复用 `@chatdsh/core-diagnostics` 的客户端，在各自进程内建立 exporter 直发 OTLP/HTTP；浏览器不持有 OpenObserve 凭据，经运行时同源端点上报，由运行时转发。
 
 ```mermaid
 flowchart TB
@@ -48,23 +48,29 @@ flowchart TB
     CL[命令行]
     MC[MCP 服务端]
   end
-  subgraph E[导出]
-    N1[进程内 OTLP exporter]
-    RELAY[运行时同源中继 /chatdsh/telemetry/browser]
+  subgraph D["@chatdsh/core-diagnostics：各端共享的纯诊断库"]
+    CLIENT["客户端：配置、脱敏、W3C 链路上下文、有界环形缓冲"]
+    N1[进程内 OTLP exporter 管道]
+    CLIENT --> N1
   end
+  subgraph H["@chatdsh/host-telemetry：运行时宿主插件"]
+    REG[注册 ctx.chatdshTelemetry、状态端点、自检端点与中继端点]
+  end
+  RELAY[运行时同源中继 /chatdsh/telemetry/browser]
   subgraph O[OpenObserve]
     L[chatdsh_logs]
     T[chatdsh_traces]
     M[chatdsh_* 指标流]
   end
-  GW --> N1
-  RT --> N1
-  SP --> N1
-  DK --> N1
-  MB --> N1
-  CL --> N1
-  MC --> N1
-  BR --> RELAY --> N1
+  GW --> CLIENT
+  RT --> REG
+  SP --> REG
+  DK --> CLIENT
+  MB --> CLIENT
+  CL --> CLIENT
+  MC --> CLIENT
+  REG --> CLIENT
+  BR --> RELAY --> REG
   N1 -->|OTLP/HTTP JSON| L
   N1 -->|OTLP/HTTP JSON| T
   N1 -->|OTLP/HTTP JSON| M
@@ -74,7 +80,7 @@ flowchart TB
 
 ## 四、统一服务契约
 
-业务代码只调用宿主平面注册的 `ctx.chatdshTelemetry`，每端的等价客户端提供同名方法。业务包禁止自行构造 OTLP exporter，禁止在业务路径上直接 import `@opentelemetry/sdk-*` 建立第二条管道。
+通用实现位于 `@chatdsh/core-diagnostics`，提供客户端、配置、脱敏、自建 W3C 链路上下文、有界环形缓冲与三条导出管道；宿主插件位于 `@chatdsh/host-telemetry`，注册 `ctx.chatdshTelemetry`、状态端点、自检端点与浏览器、移动端中继端点。业务代码只调用宿主平面注册的 `ctx.chatdshTelemetry`，每端的等价客户端由 `@chatdsh/core-diagnostics` 提供同名方法。业务包禁止自行构造 OTLP exporter，禁止在业务路径上直接 import `@opentelemetry/sdk-*` 建立第二条管道。
 
 | 方法 | 语义 |
 |---|---|
@@ -95,7 +101,7 @@ flowchart TB
 | `flush(deadlineMs)` | 有界刷新，超时后返回，不抛出 |
 | `shutdown()` | 释放 exporter 与 HTTP 代理，由所属 fiber 的销毁路径调用 |
 
-三个约束在实现里固定。入队不等待网络，业务路径不 `await` 导出。关闭状态下全部方法退化为空操作，不构造 SDK 对象，不创建 socket。入队失败与导出失败只在 `@chatdsh/core-telemetry` 内部计数，业务代码不捕获遥测异常。
+三个约束在实现里固定。入队不等待网络，业务路径不 `await` 导出。关闭状态下全部方法退化为空操作，不构造 SDK 对象，不创建 socket。入队失败与导出失败只在 `@chatdsh/core-diagnostics` 内部计数，业务代码不捕获遥测异常。
 
 语义化包装器优先于直接调用。一次工具执行写成一个 `runSpan('chatdsh.tool.execute', …)`，内部依次记录开始事件、结果事件与耗时直方图，失败时设置 `error.code` 与 `outcome=failure` 并让 span 状态为 `ERROR`。
 
@@ -350,15 +356,15 @@ flowchart TB
 
 关闭之后的行为逐项固定。
 
-- 不构造 `LoggerProvider`、`TracerProvider`、`MeterProvider`，不创建 exporter 与 HTTP 代理。
+- 不构造 `@chatdsh/core-diagnostics` 的管道，不创建 `LoggerProvider`、`TracerProvider`、`MeterProvider`，不创建 exporter 与 HTTP 代理。
 - 不注册浏览器与移动端上报端点，请求返回 404。
 - 不生成、不注入、不校验 `traceparent`。
 - 状态端点报告 `enabled: false` 与关闭原因，界面显示「遥测已关闭」。
 - 进程在观测窗口内没有任何到 OpenObserve 的出站连接。
 
-运行时切换由 `@chatdsh/core-telemetry` 的控制器承担。关闭时先停止新记录，再以 3 秒为界刷新并销毁 provider；开启时重建 provider 并立即写一条 `chatdsh.telemetry.enabled` 事件。切换不重启进程，不影响进行中的会话与工具调用。
+运行时切换由 `@chatdsh/host-telemetry` 的控制器承担。关闭时先停止新记录，再以 3 秒为界刷新并销毁 provider；开启时重建 provider 并立即写一条 `chatdsh.telemetry.enabled` 事件。切换不重启进程，不影响进行中的会话与工具调用。
 
-`--no-telemetry` 与 `CHATDSH_TELEMETRY=off` 落在启动器解析阶段，先于任何插件加载生效。设置文件与设置页的切换落在 `@chatdsh/core-telemetry` 的配置重载路径。
+`--no-telemetry` 与 `CHATDSH_TELEMETRY=off` 落在启动器解析阶段，先于任何插件加载生效。设置文件与设置页的切换落在 `@chatdsh/host-telemetry` 的配置重载路径。
 
 ## 九、内容边界与脱敏
 
@@ -366,7 +372,7 @@ flowchart TB
 
 允许记录的是长度、数量、类型、状态、耗时、枚举值与登记过的标识。错误只记 `error.type` 与 `error.code`；`error.message` 默认不记，调试模式下可以记录，但必须经过 `redactMessage` 处理：截断到 200 字符，替换绝对路径、URL 查询串、形似凭据的片段。
 
-脱敏在唯一的出口做。`@chatdsh/core-telemetry` 提供 `createRedactor(rules)`，规则按属性键与值的形状匹配；业务侧只传登记过的键，未登记的键在关闭调试模式时被丢弃并计数。这条限制让「忘记脱敏」变成一个可观测的丢弃计数，不依赖评审记忆。
+脱敏在唯一的出口做。`@chatdsh/core-diagnostics` 提供 `createRedactor(rules)`，规则按属性键与值的形状匹配；业务侧只传登记过的键，未登记的键在关闭调试模式时被丢弃并计数。这条限制让「忘记脱敏」变成一个可观测的丢弃计数，不依赖评审记忆。
 
 凭据读取只记录 `credential.name` 与 `outcome`，值不进入任何信号。模型请求只记录 token 计数与耗时，消息内容不进入遥测。
 
@@ -383,6 +389,8 @@ flowchart TB
 | 指标 | 不适用 | 不适用 | 15 秒 | 3 秒 |
 
 队列满时丢弃新记录并累加 `chatdsh_telemetry_dropped_total`，不阻塞业务路径。导出失败按 429、502、503、504 重试，上限 5 次，其余状态直接计数。关闭与进程退出时以 3 秒为界刷新，超时后放弃剩余记录并计数。
+
+`@chatdsh/core-diagnostics` 维护一个容量为 32 条的自建有界环形缓冲，只保存最近导出失败与丢弃记录的元数据，字段为 `signal`、`reason` 或 `status`、`at`，不保存日志正文、属性值、载荷与任何原文。缓冲未满时顺序写入；写满后覆盖最旧记录，并把覆盖次数计入 `chatdsh_telemetry_dropped_total`。状态端点的 `recentDiagnostics` 字段返回这个缓冲的有界快照。
 
 容量按单用户自托管估算：一次回合大约产生 40 条日志、12 个 span 与 30 个指标数据点；一天 200 个回合约 8 千条日志与 6 千个 span。建议日志流保留 14 天、追踪流保留 7 天、指标流保留 90 天；OpenObserve 容器的全局压缩保留期为 90 天，高流量调试流在流级设置更短的保留期。
 
@@ -432,7 +440,7 @@ limit 200
 
 ## 十二、实现要求
 
-`@chatdsh/core-telemetry` 是唯一的遥测出口，注册 `ctx.chatdshTelemetry`、状态端点、浏览器与移动端中继端点，并负责开关判定、脱敏、采样、批量与自监控指标。它声明 `inject: ["otel", "webServer", "settings"]`，缺少任一服务时启动失败并给出缺失项。
+`@chatdsh/core-diagnostics` 提供可复用的客户端、配置、脱敏、自建 W3C 链路上下文与有界环形缓冲，并建立三条进程内导出管道；它不依赖 DSH 适配层。`@chatdsh/host-telemetry` 是宿主平面的唯一出口，注册 `ctx.chatdshTelemetry`、状态端点、自检端点与浏览器、移动端中继端点，负责运行时开关切换与配置重载。它声明 `inject: ["otel", "webServer", "settings"]`，缺少任一服务时启动失败并给出缺失项。
 
 每个新增包在 `package.json` 里声明遥测面，供评审与构建检查比对：
 

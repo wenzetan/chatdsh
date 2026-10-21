@@ -14,7 +14,7 @@
     "@chatdsh/host-projects": "link:../../../packages/host/projects",
     "@chatdsh/host-push": "link:../../../packages/host/push",
     "@chatdsh/core-session-index": "link:../../../packages/core/session-index",
-    "@chatdsh/core-telemetry": "link:../../../packages/core/telemetry",
+    "@chatdsh/host-telemetry": "link:../../../packages/host/telemetry",
     "@chatdsh/host-usage": "link:../../../packages/host/usage"
   },
   "dsh": {

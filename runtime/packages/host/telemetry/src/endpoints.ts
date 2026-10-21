@@ -3,7 +3,7 @@
  *
  * 状态端点在开启与关闭两种状态下都可用；自检端点在关闭时返回 409；上报中继在关闭时返回 404。
  * 三个端点都只接受回环来源，并校验 `Origin`，避免被第三方页面当作代理使用。
- * @module @chatdsh/core-telemetry/endpoints
+ * @module @chatdsh/host-telemetry/endpoints
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';

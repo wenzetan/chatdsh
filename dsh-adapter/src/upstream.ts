@@ -20,6 +20,8 @@ export const UPSTREAM_BUNDLES = {
   headless: '@deepseek-ai/dsh-headless',
   /** ACP 协议入口。 */
   acpApp: '@deepseek-ai/dsh-acp-app',
+  /** 重复执行能力组合包，dsh-tui 的补丁层按 id 关闭其中的工具行。 */
+  experimentalRalph: '@deepseek-ai/dsh-experimental-ralph-bundle',
 } as const;
 
 /** 上游的客户端界面包，客户端插件的 `dsh.client.inject` 列它们。 */
@@ -130,6 +132,8 @@ export const UPSTREAM_CAPABILITY_PACKAGES = {
   clientUiSchedule: '@deepseek-ai/dsh-client-ui-schedule',
   /** 工作树服务，实验性。 */
   worktree: '@deepseek-ai/dsh-experimental-worktree',
+  /** 重复执行工具，实验性；由 ralph 组合包插入。 */
+  toolRalph: '@deepseek-ai/dsh-tool-ralph',
   /** 沙箱接缝。 */
   sandbox: '@deepseek-ai/dsh-sandbox',
   /** 本地沙箱后端。 */

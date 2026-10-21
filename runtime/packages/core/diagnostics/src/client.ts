@@ -4,14 +4,15 @@
  * 各端（控制平面、运行时之外的主进程、命令行、MCP 服务端）用同一个客户端，差别只在
  * `surface` 与 `component`。宿主平面插件把这个客户端包成 `ctx.chatdshTelemetry`，
  * 独立进程直接持有它。业务代码只调用客户端方法，不构造导出管道。
- * @module @chatdsh/core-telemetry/client
+ * @module @chatdsh/core-diagnostics/client
  */
 
 import { randomUUID } from 'node:crypto';
 import {
   SpanStatusCode,
   context,
-  propagation,
+  createTraceState,
+  isSpanContextValid,
   trace,
   type Counter,
   type Gauge,
@@ -19,7 +20,6 @@ import {
   type Span,
   type Tracer,
 } from '@opentelemetry/api';
-import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import {
   type ChatdshTelemetry,
   type TelemetryAttributeValue,
@@ -36,6 +36,9 @@ import {
 import { readOverrides, resolveSwitch, type TelemetryConfig, type TelemetryOverrides } from './config.ts';
 import { createRedactor, type Redactor } from './redact.ts';
 import { createPipelines, type Pipelines } from './pipelines.ts';
+import { ensureContextManager } from './context-manager.ts';
+import { createBoundedRingBuffer } from './ring-buffer.ts';
+import { extractTraceContext, parseTraceparent, parseTracestate, writeTraceContext } from './trace-context.ts';
 
 /** 日志级别到 OTel 严重级别的映射。 */
 const SEVERITY: Record<TelemetryLogLevel, { number: number; text: string }> = {
@@ -58,7 +61,7 @@ const NOOP_SPAN: TelemetrySpan = {
 
 /** 客户端构造输入。 */
 export interface TelemetryClientOptions {
-  /** 配置；缺省字段由 {@link Config} 的默认值补齐。 */
+  /** 配置；缺省字段由 {@link TelemetryConfig} 的默认值补齐。 */
   readonly config: TelemetryConfig;
   /** 产生信号的包或子系统名。 */
   readonly component: string;
@@ -74,6 +77,21 @@ export interface TelemetryClientOptions {
 export interface TelemetrySelfTest {
   readonly probeId: string;
 }
+
+/** 自监控诊断事件：只记录元数据，不记录任何原始载荷或消息正文。 */
+export interface TelemetryDiagnosticRecord {
+  /** 信号类别。 */
+  readonly signal: 'logs' | 'traces' | 'metrics';
+  /** 丢弃原因；导出失败事件没有该字段。 */
+  readonly reason?: string;
+  /** 导出状态；丢弃事件没有该字段。 */
+  readonly status?: string;
+  /** 事件发生时刻的毫秒时间戳。 */
+  readonly at: number;
+}
+
+/** 自监控事件环形缓冲容量。 */
+const DIAGNOSTICS_CAPACITY = 32;
 
 function wrapSpan(span: Span): TelemetrySpan {
   return {
@@ -117,6 +135,7 @@ export class TelemetryClient implements ChatdshTelemetry {
   private readonly counters = new Map<string, Counter>();
   private readonly histograms = new Map<string, Histogram>();
   private readonly gauges = new Map<string, Gauge>();
+  private readonly diagnostics = createBoundedRingBuffer<TelemetryDiagnosticRecord>(DIAGNOSTICS_CAPACITY);
   private exportedAt: number | undefined;
 
   constructor(options: TelemetryClientOptions) {
@@ -131,7 +150,7 @@ export class TelemetryClient implements ChatdshTelemetry {
     this.endpoint = this.overrides.endpoint ?? options.config.endpoint;
 
     if (state.enabled) {
-      propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+      ensureContextManager();
       this.pipelines = createPipelines({
         config: options.config,
         overrides: this.overrides,
@@ -153,7 +172,7 @@ export class TelemetryClient implements ChatdshTelemetry {
     if (this.pipelines === undefined) return;
     const { kept, dropped } = this.redactor.attributes(attributes);
     if (dropped > 0) this.recordDropped('logs', 'unregistered-attribute');
-    this.pipelines.loggerProvider.getLogger('@chatdsh/core-telemetry', this.settings.version).emit({
+    this.pipelines.loggerProvider.getLogger('@chatdsh/core-diagnostics', this.settings.version).emit({
       severityNumber: SEVERITY.info.number,
       severityText: SEVERITY.info.text,
       body: body === undefined ? name : this.redactor.message(body),
@@ -167,7 +186,7 @@ export class TelemetryClient implements ChatdshTelemetry {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[this.settings.logLevel as TelemetryLogLevel]) return;
     const { kept, dropped } = this.redactor.attributes(attributes);
     if (dropped > 0) this.recordDropped('logs', 'unregistered-attribute');
-    this.pipelines.loggerProvider.getLogger('@chatdsh/core-telemetry', this.settings.version).emit({
+    this.pipelines.loggerProvider.getLogger('@chatdsh/core-diagnostics', this.settings.version).emit({
       severityNumber: SEVERITY[level].number,
       severityText: SEVERITY[level].text,
       body: this.redactor.message(message),
@@ -275,30 +294,60 @@ export class TelemetryClient implements ChatdshTelemetry {
     });
   }
 
-  /** 把当前上下文写进载体。 */
+  /** 把当前活动 span 的链路上下文写进载体，不修改入参。 */
   inject(carrier: TelemetryCarrier): TelemetryCarrier {
     if (this.pipelines === undefined) return carrier;
-    propagation.inject(context.active(), carrier);
-    return carrier;
+    const activeSpan = trace.getSpan(context.active());
+    if (activeSpan === undefined) return carrier;
+    const spanContext = activeSpan.spanContext();
+    if (!isSpanContextValid(spanContext)) return carrier;
+    return writeTraceContext(carrier, {
+      traceId: spanContext.traceId,
+      spanId: spanContext.spanId,
+      traceFlags: spanContext.traceFlags.toString(16).padStart(2, '0'),
+      traceState: spanContext.traceState?.serialize(),
+    });
   }
 
-  /** 从载体还原父上下文；非法值记一条事件并返回空载体。 */
+  /**
+   * 严格解析载体并返回新的载体；非法 traceparent 或 tracestate 返回空对象。
+   * 入参不会被修改，合法时保留非链路头字段。
+   */
   extract(carrier: TelemetryCarrier): TelemetryCarrier {
     if (this.pipelines === undefined) return {};
-    const header = carrier.traceparent;
-    if (header !== undefined && !/^[\da-f]{2}-[\da-f]{32}-[\da-f]{16}-[\da-f]{2}$/i.test(header)) {
-      delete carrier.traceparent;
-      delete carrier.tracestate;
-      this.event('chatdsh.telemetry.invalid', { carrier: 'traceparent', reason: 'malformed' });
+    if (carrier.traceparent === undefined) return {};
+
+    const traceparentValid = parseTraceparent(carrier.traceparent) !== undefined;
+    const tracestateInvalid = traceparentValid
+      && carrier.tracestate !== undefined
+      && parseTracestate(carrier.tracestate) === undefined;
+    const parsed = this.parseCarrier(carrier);
+    if (parsed === undefined) {
+      this.event('chatdsh.telemetry.invalid', {
+        carrier: tracestateInvalid ? 'tracestate' : 'traceparent',
+        reason: 'malformed',
+      });
       return {};
     }
-    return carrier;
+
+    const { traceparent: _ignoredTraceparent, tracestate: _ignoredTracestate, ...rest } = carrier;
+    return writeTraceContext(rest, parsed);
   }
 
-  /** 在还原出的上下文里执行。 */
+  /** 在自建解析出的父上下文里执行；非法载体按空上下文执行。 */
   withContext<T>(carrier: TelemetryCarrier, fn: () => T): T {
     if (this.pipelines === undefined) return fn();
-    return context.with(propagation.extract(context.active(), carrier), fn);
+    const parsed = this.parseCarrier(carrier);
+    if (parsed === undefined) return context.with(context.active(), fn);
+
+    const traceState = parsed.traceState === undefined ? undefined : createTraceState(parsed.traceState);
+    const parent = trace.setSpanContext(context.active(), {
+      traceId: parsed.traceId,
+      spanId: parsed.spanId,
+      traceFlags: Number.parseInt(parsed.traceFlags, 16),
+      ...(traceState === undefined ? {} : { traceState }),
+    });
+    return context.with(parent, fn);
   }
 
   /** 当前 span 的 trace id；没有活动 span 时返回 `undefined`。 */
@@ -330,8 +379,9 @@ export class TelemetryClient implements ChatdshTelemetry {
   }
 
   /** 状态载荷：开关、端点、信号、队列深度与最近导出时刻。 */
-  status(): Record<string, unknown> {    if (this.pipelines === undefined) {
-      return { enabled: false, reason: this.reason, endpoint: this.endpoint };
+  status(): Record<string, unknown> {
+    if (this.pipelines === undefined) {
+      return { enabled: false, reason: this.reason, endpoint: this.endpoint, recentDiagnostics: [] };
     }
     return {
       enabled: true,
@@ -339,7 +389,7 @@ export class TelemetryClient implements ChatdshTelemetry {
       organization: this.overrides.organization ?? this.settings.organization,
       serviceName: this.pipelines.serviceName,
       instanceId: this.instanceId,
-      component: '@chatdsh/core-telemetry',
+      component: '@chatdsh/core-diagnostics',
       version: this.settings.version,
       signals: {
         logs: ['event', 'log'],
@@ -353,6 +403,7 @@ export class TelemetryClient implements ChatdshTelemetry {
       },
       lastExportAt: this.pipelines.lastExportAt() ?? this.exportedAt,
       credential: this.overrides.authUser === undefined || this.overrides.authPassword === undefined ? 'missing' : 'configured',
+      recentDiagnostics: this.recentDiagnostics(),
     };
   }
 
@@ -370,13 +421,36 @@ export class TelemetryClient implements ChatdshTelemetry {
 
   private meter() {
     if (this.pipelines === undefined) throw new Error('telemetry is disabled');
-    return this.pipelines.meterProvider.getMeter('@chatdsh/core-telemetry', this.settings.version);
+    return this.pipelines.meterProvider.getMeter('@chatdsh/core-diagnostics', this.settings.version);
   }
 
   private recordDropped(signal: 'logs' | 'traces' | 'metrics', reason: string): void {
     if (this.pipelines === undefined) return;
     this.pipelines.recordDropped(signal, reason);
+    const overwritten = this.diagnostics.push({ signal, reason, at: Date.now() });
+    if (overwritten) this.pipelines.recordDropped('logs', 'diagnostics-buffer-overflow');
     this.event('chatdsh.telemetry.dropped', { signal, reason });
+  }
+
+  /** 严格解析载体；traceparent 与 tracestate 任一非法都视为无有效上下文。 */
+  private parseCarrier(carrier: TelemetryCarrier) {
+    if (carrier.traceparent === undefined) return undefined;
+    if (parseTraceparent(carrier.traceparent) === undefined) return undefined;
+    if (carrier.tracestate !== undefined && parseTracestate(carrier.tracestate) === undefined) return undefined;
+    return extractTraceContext(carrier);
+  }
+
+  /** 合并管道导出失败与客户端丢弃事件，只返回最新的有界元数据。 */
+  private recentDiagnostics(): readonly TelemetryDiagnosticRecord[] {
+    if (this.pipelines === undefined) return [];
+    const exportFailures: TelemetryDiagnosticRecord[] = this.pipelines.recentExportFailures().map((failure) => ({
+      signal: failure.signal,
+      status: failure.status,
+      at: failure.at,
+    }));
+    const merged = [...exportFailures, ...this.diagnostics.snapshot()];
+    merged.sort((left, right) => left.at - right.at);
+    return merged.slice(Math.max(0, merged.length - DIAGNOSTICS_CAPACITY));
   }
 }
 

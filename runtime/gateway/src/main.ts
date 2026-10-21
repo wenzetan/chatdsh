@@ -8,8 +8,8 @@
  */
 
 // 只取框架无关的子路径：主入口导出宿主平面插件类，那条路径会拉起 cordis 相关模块。
-import { createTelemetryClient } from '@chatdsh/core-telemetry/client';
-import { defaultTelemetryConfig } from '@chatdsh/core-telemetry/config';
+import { createTelemetryClient } from '@chatdsh/core-diagnostics/client';
+import { defaultTelemetryConfig } from '@chatdsh/core-diagnostics/config';
 import { createGatewayServer } from './server.ts';
 import { createPushHub } from './push.ts';
 import { createScheduler } from './scheduler.ts';

@@ -68,10 +68,13 @@
       "path": "packages/host/push"
     },
     {
+      "path": "packages/host/telemetry"
+    },
+    {
       "path": "packages/core/session-index"
     },
     {
-      "path": "packages/core/telemetry"
+      "path": "packages/core/diagnostics"
     },
     {
       "path": "packages/host/usage"

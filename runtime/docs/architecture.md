@@ -147,7 +147,7 @@ DSH 自带一套绑定 DeepSeek 平台账号的登录、余额与充值接缝：
 
 DSH 自带的 `@deepseek-ai/dsh-otel` 只提供两条日志通道：`createEventReporter` 与 `createSessionLogReporter`。前者用于普通事件，后者按字节上限批量上送会话日志。`session-telemetry-otel` 只在用户提交反馈时采集会话日志，`desktop-product-telemetry` 只在 profile 名为 `desktop` 时启用。两者都不覆盖追踪与指标。
 
-ChatDSH 的遥测自成一套：唯一的出口 `@chatdsh/core-telemetry` 在宿主平面注册 `ctx.chatdshTelemetry`，内部用 DSH 安装里的 OpenTelemetry 包自建三条管道，直发本机 OpenObserve。上游两行的关闭语义沿用：`DSH_TELEMETRY_DISABLED` 取任何非空值时整体关闭。信号清单、命名规范、上下文传播与关闭入口见[遥测与调试接口](telemetry.md)。
+ChatDSH 的遥测自成一套：`@chatdsh/core-diagnostics` 提供各端共享的客户端、脱敏、W3C 链路上下文、有界环形缓冲与三条进程内导出管道，`@chatdsh/host-telemetry` 是宿主平面的唯一出口，在宿主平面注册 `ctx.chatdshTelemetry`，直发本机 OpenObserve。上游两行的关闭语义沿用：`DSH_TELEMETRY_DISABLED` 取任何非空值时整体关闭。信号清单、命名规范、上下文传播与关闭入口见[遥测与调试接口](telemetry.md)。
 
 ## 三、总体架构
 
@@ -234,8 +234,8 @@ flowchart TB
 
 | 目录 | 内容 |
 |---|---|
-| `packages/core/` | 契约包 `@chatdsh/core-contracts`，以及宿主侧基础设施服务 `@chatdsh/core-identity`、`@chatdsh/core-session-index`、`@chatdsh/core-telemetry` |
-| `packages/host/` | 宿主平面业务插件 `@chatdsh/host-*` |
+| `packages/core/` | 契约包 `@chatdsh/core-contracts`，各端共享的纯诊断库 `@chatdsh/core-diagnostics`，以及宿主侧基础设施服务 `@chatdsh/core-identity`、`@chatdsh/core-session-index` |
+| `packages/host/` | 宿主平面业务插件 `@chatdsh/host-*`，其中 `@chatdsh/host-telemetry` 是遥测的唯一宿主出口 |
 | `packages/tool/` | 会话平面工具插件 `@chatdsh/tool-*` |
 | `packages/client/` | 浏览器侧客户端插件 `@chatdsh/client-*` |
 | `packages/bundle/` | 组合包 `@chatdsh/bundle-*` |
@@ -317,7 +317,7 @@ flowchart TB
 
 ### 4.3 宿主平面插件
 
-表中 `core-*` 三个包位于 `packages/core/`，`host-*` 位于 `packages/host/`，两者都在宿主平面注册服务。
+表中 `core-identity`、`core-session-index` 与 `core-diagnostics` 位于 `packages/core/`，`host-*` 位于 `packages/host/`。`core-diagnostics` 是各端共享的纯诊断库，其余包在宿主平面注册服务。
 
 | 包 | 职责 | 注册点 |
 |---|---|---|
@@ -335,13 +335,14 @@ flowchart TB
 | `@chatdsh/host-voice` | 语音识别，复用内置实验性接口 | `dsh-experimental-api-speech-to-text` 行 |
 | `@chatdsh/host-images` | 图像生成与编辑工具的服务端部分 | `ctx.tools`、`ctx.attachments` |
 | `@chatdsh/mcp-server` | 把工具目录暴露为 MCP 服务端 | 独立子系统，见 4.4 |
-| `@chatdsh/core-telemetry` | 唯一遥测出口：`ctx.chatdshTelemetry`、开关、脱敏、浏览器与移动端中继、自监控指标 | `ctx.provide`、`ctx.webServer.register`、`dsh-session-telemetry-otel` 行 |
+| `@chatdsh/core-diagnostics` | 各端共享的纯诊断库：客户端、配置、脱敏、自建 W3C 链路上下文、有界环形缓冲与三条进程内导出管道 | 无，由各端客户端与宿主插件引用 |
+| `@chatdsh/host-telemetry` | 宿主平面唯一遥测出口：`ctx.chatdshTelemetry`、状态端点、自检端点、浏览器与移动端中继、开关切换与配置重载 | `ctx.provide`、`ctx.webServer.register`、`dsh-session-telemetry-otel` 行 |
 
 ### 4.4 MCP 服务端
 
 `@chatdsh/mcp-server` 是独立子系统，不是一行路由注册。它要自建协议会话初始化、能力协商、`tools/list`、`tools/call`、错误码与流式响应，并定义鉴权模型：新开的协议入口不经过 `remoteAccess.decide()`，工具目录的可见性要按控制平面的会话归属过滤后再生效。
 
-上面这张清单是宿主平面的设计集合，当前实现的是其中十二个：`core-identity`、`core-session-index`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`core-telemetry`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。`host-llm-router`、`host-voice`、`host-images` 与 `@chatdsh/mcp-server` 没有实现：模型调用走内置的 DeepSeek 适配器，图像能力由会话平面的 `tool-image` 承担，语音与 MCP 服务端留待后续。
+上面这张清单是宿主平面的设计集合，当前实现的是其中十三个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。`host-llm-router`、`host-voice`、`host-images` 与 `@chatdsh/mcp-server` 没有实现：模型调用走内置的 DeepSeek 适配器，图像能力由会话平面的 `tool-image` 承担，语音与 MCP 服务端留待后续。
 
 ### 4.5 会话平面插件
 
@@ -413,7 +414,7 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 |---|---|---|
 | `chatdsh-web` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`bundle-storage-jsonl` | 单机 Web 与执行节点 |
 | `chatdsh-desktop` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`bundle-storage-jsonl`、`bundle-desktop` | Electron 载体持有的本机 profile |
-| `chatdsh-cli` | `dsh-base`、`@deepseek-harness-tui/dsh-tui`、`bundle-cli` | 命令行交互 |
+| `chatdsh-cli` | `dsh-base`、`@deepseek-ai/dsh-experimental-ralph-bundle`、`@deepseek-harness-tui/dsh-tui` | 命令行交互 |
 | `chatdsh-worker` | `dsh-headless`、`bundle-worker` | 长任务 |
 
 每个 profile 的 `cordis.patch.yml` 负责本部署的差异：会话存储 `root`、`session-query` 打开检索、`connection` 行补 `trustedHosts`、按形态禁用不需要的宿主行。

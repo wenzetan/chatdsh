@@ -89,6 +89,7 @@
 **实现任何功能时同步接入遥测。** 新增或修改一个能力，在同一个提交里交付它对应的日志事件、span 与指标，并按 `docs/telemetry.md` 第六节的清单登记名称。功能完成时遥测未接入，视为该功能未完成。
 
 - 业务代码只调用 `ctx.chatdshTelemetry` 或各端等价客户端的同名方法。禁止业务包自行构造 OTLP exporter，禁止在业务路径上直接 import `@opentelemetry/sdk-*` 建立第二条管道。
+- 服务名约定：宿主平面唯一出口为 `@chatdsh/host-telemetry`，由它注册 `ctx.chatdshTelemetry`；各端复用 `@chatdsh/core-diagnostics` 提供的客户端与管道。
 - 每个对外可观察的动作都要有一个 span，覆盖耗时与结果；每个失败分支都要有一条带 `error.type` 与 `error.code` 的事件；每个可聚合的计数都要有一个 `_total` 指标。
 - 失败路径优先于成功路径补遥测：拒绝、超时、重试、降级、冲突、离线、限流，这些分支必须能被查询出来。
 - 跨组件边界必须传播 `traceparent`，边界清单见 `docs/telemetry.md` 第七节。

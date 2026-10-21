@@ -4,7 +4,7 @@
  * 开关采用「任一来源关闭即关闭」，来源与优先级按 `docs/telemetry.md` 第八节：
  * 环境变量、上游开关、设置文件（落到本插件的 `enabled`）、启动参数（落到 `noTelemetry`）、平台。
  * 凭据只从环境变量读取，不写入配置、不写进日志、不进入任何信号。
- * @module @chatdsh/core-telemetry/config
+ * @module @chatdsh/core-diagnostics/config
  */
 
 import type { TelemetryOffReason } from '@chatdsh/core-contracts';

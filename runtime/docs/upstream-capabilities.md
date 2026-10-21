@@ -29,7 +29,7 @@
 | `agent-preset-registry` | `@deepseek-ai/dsh-agent-preset-registry` | 受限挂载 | 默认预设改为 `chatdsh` |
 | `spill-policy` | `@deepseek-ai/dsh-spill-policy` | 受限挂载 | worker 形态把落盘阈值调低 |
 | `tool-result-pruner` | `@deepseek-ai/dsh-compaction-tool-result-pruner` | 受限挂载 | worker 形态把裁剪阈值调高 |
-| `chatdsh-telemetry` | `@chatdsh/core-telemetry` | 受限挂载 | worker 形态没有 Web 服务器与设置面，该行在此形态禁用 |
+| `chatdsh-telemetry` | `@chatdsh/host-telemetry` | 受限挂载 | worker 形态没有 Web 服务器与设置面，该行在此形态禁用 |
 | `chatdsh-assistants` | `@chatdsh/host-assistants` | 受限挂载 | worker 形态没有预设注册表，该行在此形态禁用 |
 | `deepseek-account` | `@deepseek-ai/dsh-deepseek-account-platform` | 禁用 | 绑定 DeepSeek 平台账号，账号由控制平面承担 |
 | `llm-deepseek-account` | `@deepseek-ai/dsh-llm-deepseek-account` | 禁用 | 同上，整链关掉 |
@@ -37,6 +37,7 @@
 | `ui-settings-account` | `@deepseek-ai/dsh-client-ui-settings-account` | 禁用 | 同上 |
 | `web-deepseek-api` | `@deepseek-ai/dsh-web-deepseek-api` | 禁用 | 同上 |
 | `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` | 禁用 | 同上 |
+| `optional-ralph` | `@deepseek-ai/dsh-tool-ralph` | 禁用 | dsh-tui 0.16.1 的补丁层按 id 关闭 `tool-ralph`，该行由可选组合包 `@deepseek-ai/dsh-experimental-ralph-bundle` 插入；cli 形态挂载该组合包只为满足补丁目标，整组关闭 |
 
 「禁用」一列必须与补丁层一致：`deepseek-account`、`llm-deepseek-account`、`account-controller`、`ui-settings-account`、`web-deepseek-api`、`web-search-deepseek` 六行在 web 与 desktop 形态由补丁层关掉，六个包互相引用，必须整链处理，只停其中几行会留下失败的 fiber。
 

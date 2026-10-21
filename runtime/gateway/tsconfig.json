@@ -7,6 +7,6 @@
   "include": ["src/**/*.ts"],
   "references": [
     { "path": "../packages/core/contracts" },
-    { "path": "../packages/core/telemetry" }
+    { "path": "../packages/core/diagnostics" }
   ]
 }
