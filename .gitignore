@@ -26,3 +26,6 @@ dev/.env
 
 # 参考项目快照，不纳入本仓库版本管理
 refer_repos/
+
+# 并行实现的独立工作树
+.worktrees/
