@@ -47,6 +47,9 @@ importers:
       '@chatdsh/host-push':
         specifier: link:../../../packages/host/push
         version: link:../../../packages/host/push
+      '@chatdsh/host-skills':
+        specifier: link:../../../packages/host/skills
+        version: link:../../../packages/host/skills
       '@chatdsh/host-telemetry':
         specifier: link:../../../packages/host/telemetry
         version: link:../../../packages/host/telemetry

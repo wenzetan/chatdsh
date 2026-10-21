@@ -129,6 +129,15 @@
     },
     {
       "path": "packages/client/context-insights"
+    },
+    {
+      "path": "packages/host/skills"
+    },
+    {
+      "path": "packages/tool/skill-manage"
+    },
+    {
+      "path": "packages/client/skills"
     }
   ]
 }

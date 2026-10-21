@@ -50,6 +50,9 @@ importers:
       '@chatdsh/client-share':
         specifier: link:../../packages/client/share
         version: link:../../packages/client/share
+      '@chatdsh/client-skills':
+        specifier: link:../../packages/client/skills
+        version: link:../../packages/client/skills
       '@chatdsh/client-telemetry':
         specifier: link:../../packages/client/telemetry
         version: link:../../packages/client/telemetry
@@ -86,6 +89,9 @@ importers:
       '@chatdsh/host-push':
         specifier: link:../../packages/host/push
         version: link:../../packages/host/push
+      '@chatdsh/host-skills':
+        specifier: link:../../packages/host/skills
+        version: link:../../packages/host/skills
       '@chatdsh/host-telemetry':
         specifier: link:../../packages/host/telemetry
         version: link:../../packages/host/telemetry
@@ -113,3 +119,6 @@ importers:
       '@chatdsh/tool-share':
         specifier: link:../../packages/tool/share
         version: link:../../packages/tool/share
+      '@chatdsh/tool-skill-manage':
+        specifier: link:../../packages/tool/skill-manage
+        version: link:../../packages/tool/skill-manage

@@ -180,6 +180,7 @@ flowchart TB
 | span | `chatdsh.runtime.storage.write` | 结构化存储写入 | `storage.domain`、`outcome` |
 | span | `chatdsh.runtime.model.provider.resolve` | 模型提供方注册校验 | `provider`、`outcome` |
 | span | `chatdsh.runtime.context.insight` | 计算一个会话的上下文占用 | `session.id`、`outcome` |
+| span | `chatdsh.runtime.skill.toggle` | 技能启用状态切换 | `skill.id`、`enabled`、`outcome`、`error.type` |
 | event | `chatdsh.runtime.boot.failed` | 启动失败 | `stage`、`error.type`、`error.code` |
 | event | `chatdsh.runtime.plugin.conflict` | 服务注册冲突或席位冲突 | `plugin.name`、`conflict.kind` |
 | event | `chatdsh.runtime.model.provider.failed` | 模型提供方注册校验失败 | `provider`、`error.type`、`error.code` |
@@ -191,6 +192,7 @@ flowchart TB
 | metric | `chatdsh_remote_call_duration_seconds` | Remote 调用耗时 | `method` |
 | metric | `chatdsh_model_provider_resolutions_total` | 模型提供方注册校验次数 | `provider`、`outcome` |
 | metric | `chatdsh_context_usage_ratio` | 上下文占用比例 | `level` |
+| metric | `chatdsh_skill_toggles_total` | 技能启用状态切换次数 | `enabled`、`outcome` |
 | metric | `chatdsh_process_resident_memory_bytes` | 常驻内存 | 无 |
 | metric | `chatdsh_process_cpu_seconds_total` | CPU 时间 | 无 |
 

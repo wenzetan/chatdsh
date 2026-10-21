@@ -26,6 +26,9 @@ importers:
       '@chatdsh/client-model-provider':
         specifier: link:../../packages/client/model-provider
         version: link:../../packages/client/model-provider
+      '@chatdsh/client-skills':
+        specifier: link:../../packages/client/skills
+        version: link:../../packages/client/skills
       '@chatdsh/core-identity':
         specifier: link:../../packages/core/identity
         version: link:../../packages/core/identity
@@ -62,9 +65,15 @@ importers:
       '@chatdsh/host-push':
         specifier: link:../../packages/host/push
         version: link:../../packages/host/push
+      '@chatdsh/host-skills':
+        specifier: link:../../packages/host/skills
+        version: link:../../packages/host/skills
       '@chatdsh/host-telemetry':
         specifier: link:../../packages/host/telemetry
         version: link:../../packages/host/telemetry
       '@chatdsh/host-usage':
         specifier: link:../../packages/host/usage
         version: link:../../packages/host/usage
+      '@chatdsh/tool-skill-manage':
+        specifier: link:../../packages/tool/skill-manage
+        version: link:../../packages/tool/skill-manage

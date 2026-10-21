@@ -62,6 +62,8 @@ importers:
 
   packages/client/share: {}
 
+  packages/client/skills: {}
+
   packages/client/telemetry: {}
 
   packages/core/backends:
@@ -204,6 +206,15 @@ importers:
         specifier: workspace:*
         version: link:../../core/contracts
 
+  packages/host/skills:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+
   packages/host/telemetry:
     dependencies:
       '@chatdsh/adapter':
@@ -265,6 +276,15 @@ importers:
       '@chatdsh/adapter':
         specifier: link:../../../../dsh-adapter
         version: link:../../../../dsh-adapter
+
+  packages/tool/skill-manage:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
 
 packages:
 

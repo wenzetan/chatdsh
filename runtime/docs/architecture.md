@@ -334,6 +334,7 @@ flowchart TB
 | `@chatdsh/host-push` | 把会话事件（回合结束、待审批）上报控制平面 | `ctx.schedule` 之外的自建上报 |
 | `@chatdsh/host-model-provider` | 模型提供方注册信息：路由标识、端点与静态请求头；构造时校验，运行期只读 | `ctx.chatdshModelProviders` |
 | `@chatdsh/host-context-insights` | 读会话索引与用量投影，按三档给出上下文占用与剩余空间 | `ctx.chatdshContextInsights` |
+| `@chatdsh/host-skills` | 技能目录与启用状态：读 `ctx.skills` 的摘要，维护本项目的开关 | `ctx.chatdshSkills` |
 | `@chatdsh/host-voice` | 语音识别，复用内置实验性接口 | `dsh-experimental-api-speech-to-text` 行 |
 | `@chatdsh/host-images` | 图像生成与编辑工具的服务端部分 | `ctx.tools`、`ctx.attachments` |
 | `@chatdsh/mcp-server` | 把工具目录暴露为 MCP 服务端 | 独立子系统，见 4.4 |
@@ -344,11 +345,11 @@ flowchart TB
 
 `@chatdsh/mcp-server` 是独立子系统，不是一行路由注册。它要自建协议会话初始化、能力协商、`tools/list`、`tools/call`、错误码与流式响应，并定义鉴权模型：新开的协议入口不经过 `remoteAccess.decide()`，工具目录的可见性要按控制平面的会话归属过滤后再生效。
 
-上面这张清单是宿主平面的设计集合，当前实现的是其中十五个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-context-insights`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。`host-llm-router`、`host-voice`、`host-images` 与 `@chatdsh/mcp-server` 没有实现：模型调用走内置的 DeepSeek 适配器，图像能力由会话平面的 `tool-image` 承担，语音与 MCP 服务端留待后续。
+上面这张清单是宿主平面的设计集合，当前实现的是其中十六个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。`host-llm-router`、`host-voice`、`host-images` 与 `@chatdsh/mcp-server` 没有实现：模型调用走内置的 DeepSeek 适配器，图像能力由会话平面的 `tool-image` 承担，语音与 MCP 服务端留待后续。
 
 ### 4.5 会话平面插件
 
-agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会话要挂载的行：`tool-bash`、`tool-pwsh`（按平台二选一）、`tool-fs`、`tool-fs-search`、`tool-skill`、`tool-jobs`、`tool-todo`、`tool-web`，加上自建工具行 `@chatdsh/tool-artifact`、`@chatdsh/tool-project`、`@chatdsh/tool-image`、`@chatdsh/tool-research`、`@chatdsh/tool-connector`、`@chatdsh/tool-share`。浏览器操作 `@chatdsh/tool-browser` 默认不挂进 preset，由工作区或会话的设置按需加上，原因见第 7.8 节。
+agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会话要挂载的行：`tool-bash`、`tool-pwsh`（按平台二选一）、`tool-fs`、`tool-fs-search`、`tool-skill`、`tool-jobs`、`tool-todo`、`tool-web`，加上自建工具行 `@chatdsh/tool-artifact`、`@chatdsh/tool-project`、`@chatdsh/tool-image`、`@chatdsh/tool-research`、`@chatdsh/tool-connector`、`@chatdsh/tool-share`、`@chatdsh/tool-skill-manage`。浏览器操作 `@chatdsh/tool-browser` 默认不挂进 preset，由工作区或会话的设置按需加上，原因见第 7.8 节。
 
 桌面控制不进会话 preset。`@deepseek-ai/dsh-computer-use` 的注册位是整棵运行时共用的单例，同一运行时第二次注册会直接抛出异常；提供方又把工具注册进宿主工具表，不随会话销毁。会话级挂载的后果是第二个会话启用时注册冲突、或者每个会话各起一套原生驱动，两种都不可接受。这两行放在宿主平面（桌面壳的组合包）里随进程加载一次，会话平面只做可见范围收敛，见第 7.8 节。
 
@@ -356,7 +357,7 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 
 ### 4.6 客户端插件
 
-`@chatdsh/client-projects`、`client-artifacts`、`client-memory`、`client-assistants`、`client-connectors`、`client-account`、`client-share`、`client-approval`、`client-model-provider`、`client-context-insights`。每个包声明 `dsh.client = { platform: "web", inject: [...] }`，导出 `./client` 子路径，产物落在 `lib/client.js`，构建用 esbuild。
+`@chatdsh/client-projects`、`client-artifacts`、`client-memory`、`client-assistants`、`client-connectors`、`client-account`、`client-share`、`client-approval`、`client-model-provider`、`client-context-insights`、`client-skills`。每个包声明 `dsh.client = { platform: "web", inject: [...] }`，导出 `./client` 子路径，产物落在 `lib/client.js`，构建用 esbuild。
 
 `client-approval` 在设置页的区段里按自建投影键列出待处理的审批，供查看与单次作答，选项是「本次允许」与「拒绝」。「本会话」与「始终」要改本会话的审批策略，在会话里用命令调整。会话输入区的审批卡片由宿主自带的 `ui-approval` 承担，两者不共用席位。
 

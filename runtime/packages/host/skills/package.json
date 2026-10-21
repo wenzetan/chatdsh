@@ -1,0 +1,43 @@
+{
+  "name": "@chatdsh/host-skills",
+  "version": "0.1.0",
+  "description": "ChatDSH 宿主平面插件：技能目录的启用与停用状态，供面板与工具读取",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [],
+      "spans": [
+        "chatdsh.runtime.skill.toggle"
+      ],
+      "metrics": [
+        "chatdsh_skill_toggles_total"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/core-contracts": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-skill": "0.2.1-rc.2"
+  }
+}

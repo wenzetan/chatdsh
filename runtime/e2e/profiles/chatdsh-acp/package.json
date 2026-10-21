@@ -17,7 +17,8 @@
     "@chatdsh/host-telemetry": "link:../../../packages/host/telemetry",
     "@chatdsh/host-usage": "link:../../../packages/host/usage",
     "@chatdsh/host-model-provider": "link:../../../packages/host/model-provider",
-    "@chatdsh/host-context-insights": "link:../../../packages/host/context-insights"
+    "@chatdsh/host-context-insights": "link:../../../packages/host/context-insights",
+    "@chatdsh/host-skills": "link:../../../packages/host/skills"
   },
   "dsh": {
     "profile": {

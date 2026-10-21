@@ -66,3 +66,5 @@
             name: '@chatdsh/tool-research'
           - id: chatdsh-tool-image
             name: '@chatdsh/tool-image'
+          - id: chatdsh-tool-skill-manage
+            name: '@chatdsh/tool-skill-manage'

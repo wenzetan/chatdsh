@@ -23,7 +23,10 @@
     "@chatdsh/host-model-provider": "link:../../packages/host/model-provider",
     "@chatdsh/client-model-provider": "link:../../packages/client/model-provider",
     "@chatdsh/host-context-insights": "link:../../packages/host/context-insights",
-    "@chatdsh/client-context-insights": "link:../../packages/client/context-insights"
+    "@chatdsh/client-context-insights": "link:../../packages/client/context-insights",
+    "@chatdsh/host-skills": "link:../../packages/host/skills",
+    "@chatdsh/client-skills": "link:../../packages/client/skills",
+    "@chatdsh/tool-skill-manage": "link:../../packages/tool/skill-manage"
   },
   "dsh": {
     "profile": {

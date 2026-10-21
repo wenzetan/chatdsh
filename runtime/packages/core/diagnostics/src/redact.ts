@@ -80,6 +80,7 @@ const DECLARED_KEYS = [
   'seq',
   'session.kind',
   'share.id',
+  'skill.id',
   'signal',
   'stage',
   'status',

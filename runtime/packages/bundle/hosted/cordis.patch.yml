@@ -55,3 +55,7 @@
     # 上下文占用：按会话索引与用量投影计算，窗口由部署写入。
     - id: chatdsh-context-insights
       name: '@chatdsh/host-context-insights'
+
+    # 技能目录：读宿主的技能注册表，维护启用状态。
+    - id: chatdsh-skills
+      name: '@chatdsh/host-skills'
