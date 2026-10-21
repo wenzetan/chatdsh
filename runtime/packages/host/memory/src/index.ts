@@ -33,7 +33,7 @@ export const name = 'chatdsh-memory';
 /** 记忆运行时使用的服务名，同时是 Remote 命名空间。 */
 export const SERVICE_NAME = 'chatdshMemory';
 
-/** 依赖：提示席位用于注入召回结果；遥测在能读到时记录。 */
+/** 依赖：提示席位用于注入召回结果，会话持久化用于回合结束后读取日志。 */
 export const inject = ['systemPrompt', 'sessionPersistence'];
 
 /** 提示上下文席位的名字。 */
@@ -108,6 +108,15 @@ interface MemoryTelemetry {
 export class ChatdshMemoryService extends TypertRemoteService {
   /** 配置 schema，供加载器校验。 */
   static readonly Config = Config;
+
+  /**
+   * 依赖的服务。
+   *
+   * 这里必须写成静态字段：加载器按 `Service.inject` 解析依赖，模块级导出的 `inject`
+   * 只对函数插件生效。写成模块级时实例拿不到 `ctx.sessionPersistence`，回合写入会在
+   * 运行时抛「cannot get property without inject」。
+   */
+  static inject = ['systemPrompt', 'sessionPersistence'];
 
   private readonly client: MemoryClient;
   private readonly extraBanks: readonly string[];

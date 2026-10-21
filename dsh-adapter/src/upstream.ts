@@ -122,6 +122,8 @@ export const UPSTREAM_CAPABILITY_PACKAGES = {
   clientUiSettingsSubagent: '@deepseek-ai/dsh-client-ui-settings-subagent',
   /** agent 循环。 */
   agentLoop: '@deepseek-ai/dsh-agent-loop',
+  /** 默认模型选择行。 */
+  agentDefaultModel: '@deepseek-ai/dsh-agent-default-model',
   /** 循环设置区段。 */
   clientUiSettingsAgentLoop: '@deepseek-ai/dsh-client-ui-settings-agent-loop',
   /** 宿主级定时任务。 */

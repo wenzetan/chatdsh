@@ -1,0 +1,64 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: false
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/bundle-hosted':
+        specifier: link:../../../packages/bundle/hosted
+        version: link:../../../packages/bundle/hosted
+      '@chatdsh/bundle-memory-hindsight':
+        specifier: link:../../../packages/bundle/memory-hindsight
+        version: link:../../../packages/bundle/memory-hindsight
+      '@chatdsh/core-identity':
+        specifier: link:../../../packages/core/identity
+        version: link:../../../packages/core/identity
+      '@chatdsh/core-session-index':
+        specifier: link:../../../packages/core/session-index
+        version: link:../../../packages/core/session-index
+      '@chatdsh/host-approval':
+        specifier: link:../../../packages/host/approval
+        version: link:../../../packages/host/approval
+      '@chatdsh/host-artifacts':
+        specifier: link:../../../packages/host/artifacts
+        version: link:../../../packages/host/artifacts
+      '@chatdsh/host-assistants':
+        specifier: link:../../../packages/host/assistants
+        version: link:../../../packages/host/assistants
+      '@chatdsh/host-connectors':
+        specifier: link:../../../packages/host/connectors
+        version: link:../../../packages/host/connectors
+      '@chatdsh/host-context-insights':
+        specifier: link:../../../packages/host/context-insights
+        version: link:../../../packages/host/context-insights
+      '@chatdsh/host-import':
+        specifier: link:../../../packages/host/import
+        version: link:../../../packages/host/import
+      '@chatdsh/host-memory':
+        specifier: link:../../../packages/host/memory
+        version: link:../../../packages/host/memory
+      '@chatdsh/host-model-provider':
+        specifier: link:../../../packages/host/model-provider
+        version: link:../../../packages/host/model-provider
+      '@chatdsh/host-projects':
+        specifier: link:../../../packages/host/projects
+        version: link:../../../packages/host/projects
+      '@chatdsh/host-push':
+        specifier: link:../../../packages/host/push
+        version: link:../../../packages/host/push
+      '@chatdsh/host-skills':
+        specifier: link:../../../packages/host/skills
+        version: link:../../../packages/host/skills
+      '@chatdsh/host-telemetry':
+        specifier: link:../../../packages/host/telemetry
+        version: link:../../../packages/host/telemetry
+      '@chatdsh/host-usage':
+        specifier: link:../../../packages/host/usage
+        version: link:../../../packages/host/usage

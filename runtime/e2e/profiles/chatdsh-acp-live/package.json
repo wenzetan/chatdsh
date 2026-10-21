@@ -1,0 +1,35 @@
+{
+  "name": "dsh-profile-chatdsh-acp-live",
+  "private": true,
+  "description": "端到端联调 profile：ACP 形态加测试模型网关，用于真实回合",
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/bundle-hosted": "link:../../../packages/bundle/hosted",
+    "@chatdsh/host-approval": "link:../../../packages/host/approval",
+    "@chatdsh/host-artifacts": "link:../../../packages/host/artifacts",
+    "@chatdsh/host-assistants": "link:../../../packages/host/assistants",
+    "@chatdsh/host-connectors": "link:../../../packages/host/connectors",
+    "@chatdsh/core-identity": "link:../../../packages/core/identity",
+    "@chatdsh/host-import": "link:../../../packages/host/import",
+    "@chatdsh/host-projects": "link:../../../packages/host/projects",
+    "@chatdsh/host-push": "link:../../../packages/host/push",
+    "@chatdsh/core-session-index": "link:../../../packages/core/session-index",
+    "@chatdsh/host-telemetry": "link:../../../packages/host/telemetry",
+    "@chatdsh/host-usage": "link:../../../packages/host/usage",
+    "@chatdsh/host-model-provider": "link:../../../packages/host/model-provider",
+    "@chatdsh/host-context-insights": "link:../../../packages/host/context-insights",
+    "@chatdsh/host-skills": "link:../../../packages/host/skills",
+    "@chatdsh/bundle-memory-hindsight": "link:../../../packages/bundle/memory-hindsight",
+    "@chatdsh/host-memory": "link:../../../packages/host/memory"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-acp-app",
+        "@chatdsh/bundle-hosted",
+        "@chatdsh/bundle-memory-hindsight"
+      ]
+    }
+  }
+}

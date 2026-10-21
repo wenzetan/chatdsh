@@ -394,7 +394,7 @@ node scripts/check-upstream-names.mjs
 
 **Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验，`hermes-adapter` 对本机 Hermes 测试容器完成了真实运行。`send` 的服务层写入（取写句柄、追加、flush）还没有在运行时里端到端跑过：Remote 方法需要页面上下文调用，而界面首次进入流程没有完成。这条验证要等能进主界面的客户端。
 
-**记忆的自动写入用规则抽取，模型摘要未接。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message，按 `composeTurnMemory` 拼成一条记忆写进 Hindsight；同一会话的同一回合只写一次。设计里「用 `ctx.llm` 生成摘要」这一步还没有接：当前保留用户问题与助手结论、去掉工具调用与中间步骤，按 4000 字符截断。模型摘要接入时要替换 `composeTurnMemory` 的调用点，写入链路与去重保持不变。
+**记忆的自动写入用规则抽取，模型摘要未接。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message，按 `composeTurnMemory` 拼成一条记忆写进 Hindsight；同一会话的同一回合只写一次。设计里「用 `ctx.llm` 生成摘要」这一步还没有接：当前保留用户问题与助手结论、去掉工具调用与中间步骤，按 4000 字符截断。模型摘要接入时要替换 `composeTurnMemory` 的调用点，写入链路与去重保持不变。真实回合已验证：`chatdsh-acp-live` 跑一次 prompt 后，Hindsight 的 `acct:local` bank 收到一条写入并进入整合。
 
 
 **共享工作区的记忆写入已接通。** 项目记录增加了 `shared` 标记，`project` 工具的 `set` 可以写入；回合写入时按 cwd 读项目记录，把 `shared` 传给 `banksFor`，共享工作区写组 bank，私有工作区写账号 bank。
