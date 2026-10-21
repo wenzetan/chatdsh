@@ -172,6 +172,7 @@ flowchart TB
   subgraph HOST["宿主平面：随进程加载一次"]
     H1["core-identity 注册 ctx.provide，取身份供分派与审计"]
     H2["@chatdsh/core-diagnostics 提供客户端与导出管道；@chatdsh/host-telemetry 注册 ctx.chatdshTelemetry"]
+    H2B["host-model-provider 登记模型路由；host-context-insights 算上下文占用；host-skills 维护技能开关"]
     H3["core-session-index 写 ctx.sessionProjections"]
     H4["host-projects 扩展 ctx.storageDomain"]
     H5["host-artifacts 用 ctx.storageDomain 与 ctx.attachments"]
@@ -207,7 +208,7 @@ flowchart TB
 
 存储、聊天后端、记忆后端、桌面壳与命令行各自成组合包，由 profile 的 bundles 列表选择。组合包之间不表达「基础」关系，同一组合包在列表里只出现一次。
 
-当前实现的组合包六个：`bundle-hosted`、`bundle-worker`、`bundle-desktop`、`bundle-storage-jsonl`、`bundle-memory-hindsight`、`preset-chat`。图中 `bundle-storage-postgres` 与 `bundle-chat-hermes` 尚未实现。
+当前实现的组合包五个：`bundle-hosted`、`bundle-worker`、`bundle-desktop`、`bundle-storage-jsonl`、`bundle-memory-hindsight`；`preset-chat` 是 agent preset 声明，在 `packages/preset/` 下，不算组合包。图中 `bundle-storage-postgres` 与 `bundle-chat-hermes` 尚未实现。
 
 ```mermaid
 flowchart TB
@@ -321,7 +322,7 @@ sequenceDiagram
 
 数据根下先分租户，再分账号，每账号一份 `$DSH_HOME`。租户目录从第一天就存在，单机下只有一个 `default`。
 
-当前实现的落盘只有三处：控制平面的 SQLite 库（图中 `gateway` 那一支）、各账号的 `$DSH_HOME`（含 `profiles` 与 `sessions`）、以及 `logs`。租户目录、`objects`、`hermes` 与 `chat` 四个子目录尚未实现——附件与制品走存储域，不落在文件系统里。
+当前实现的落盘只有三处：控制平面的 SQLite 库（图中 `gateway` 那一支）、各账号的 `$DSH_HOME`（含 `profiles` 与 `sessions`）、以及 `logs`。租户目录、`objects`、`hermes` 与 `chat` 四个子目录尚未实现：附件与制品走在存储域里，不落文件系统；Hermes 与聊天会话目前都还没有对应的落盘位置。
 
 ```mermaid
 flowchart TB

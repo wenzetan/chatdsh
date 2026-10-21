@@ -346,7 +346,14 @@ flowchart TB
 
 `@chatdsh/mcp-server` 是独立子系统，不是一行路由注册。它要自建协议会话初始化、能力协商、`tools/list`、`tools/call`、错误码与流式响应，并定义鉴权模型：新开的协议入口不经过 `remoteAccess.decide()`，工具目录的可见性要按控制平面的会话归属过滤后再生效。
 
-上面这张清单是宿主平面的设计集合，当前实现的是其中十六个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。`host-llm-router`、`host-voice`、`host-images` 与 `@chatdsh/mcp-server` 没有实现：模型调用走内置的 DeepSeek 适配器，图像能力由会话平面的 `tool-image` 承担，语音与 MCP 服务端留待后续。
+上面这张清单是宿主平面的设计集合。已实现的是其中十六个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。表中其余四项尚未实现，各自的状态与替代方式如下：
+
+| 未实现的包 | 现状 |
+|---|---|
+| `@chatdsh/host-llm-router` | 没有实现。模型调用走内置的 DeepSeek 适配器；`host-model-provider` 只登记路由信息（端点与静态请求头），不代理请求，也不做额度检查 |
+| `@chatdsh/host-voice` | 没有实现。语音输入依赖上游实验组合包 `dsh-experimental-voice-input-bundle`，本部署未纳入；语音输出没有对应上游接缝 |
+| `@chatdsh/host-images` | 没有实现。图像生成与编辑由会话平面的 `@chatdsh/tool-image` 直接请求外部供应方，没有独立的图像服务端 |
+| `@chatdsh/mcp-server` | 没有实现，设计见下一节。上游只提供 MCP 客户端，外部程序接入工具这条能力目前缺失 |
 
 ### 4.5 会话平面插件
 
@@ -370,12 +377,13 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 |---|---|
 | `@chatdsh/bundle-hosted` | 宿主平面插件行、会话平面 preset 行、客户端插件行 |
 | `@chatdsh/bundle-memory-hindsight` | `@chatdsh/host-memory` 行与 Hindsight 连接配置、bank 规则；`memoryBackend` 为 `hindsight` 时由 profile 加入 |
-| `@chatdsh/bundle-chat-hermes` | Hermes 承载聊天所需的渠道插件、`host-approval` 与 `memoryBackend: hermes` 时的内置记忆对接；`chatBackend` 为 `hermes` 时由 profile 加入 |
+| `@chatdsh/bundle-chat-hermes` | 计划中｜Hermes 承载聊天所需的渠道插件、`host-approval` 与 `memoryBackend: hermes` 时的内置记忆对接；`chatBackend` 为 `hermes` 时由 profile 加入。`hermes-adapter` 已提供协议翻译，组合包本身尚未创建 |
 | `@chatdsh/bundle-storage-jsonl` | 会话日志 JSONL 后端与控制平面的 SQLite 实现 |
-| `@chatdsh/bundle-storage-postgres` | 会话日志 Postgres 后端与控制平面的 Postgres 实现 |
+| `@chatdsh/bundle-storage-postgres` | 计划中｜会话日志 Postgres 后端与控制平面的 Postgres 实现 |
 | `@chatdsh/bundle-desktop` | 桌面原生桥行、本地审批呈现、`ui-sidebar-browser` 补回 |
-| `@chatdsh/bundle-cli` | 终端交互、命令行审批应答方 |
 | `@chatdsh/bundle-worker` | 长任务与后台执行行 |
+
+命令行形态不另设组合包：终端交互与命令行审批应答方全部由上游的 dsh-tui 承担，见 6.2 节。
 
 存储实现独立成组合包，由 profile 的 bundles 列表选择，单机与桌面取 JSONL，团队版取 Postgres。聊天后端与记忆后端也各成组合包：`bundle-memory-hindsight` 在 `memoryBackend` 为 `hindsight` 时加入，`bundle-chat-hermes` 在 `chatBackend` 为 `hermes` 时加入，两者都不加入时就是「无 Hermes 无 Hindsight」的最轻形态。组合包之间不表达「基础」关系，叠加顺序由 profile 决定，同一组合包在列表里只出现一次。
 
@@ -416,10 +424,12 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 
 | profile | bundles | 用途 |
 |---|---|---|
-| `chatdsh-web` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`bundle-storage-jsonl` | 单机 Web 与执行节点 |
-| `chatdsh-desktop` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`bundle-storage-jsonl`、`bundle-desktop` | Electron 载体持有的本机 profile |
-| `chatdsh-cli` | `dsh-base`、`@deepseek-ai/dsh-experimental-ralph-bundle`、`@deepseek-harness-tui/dsh-tui` | 命令行交互 |
-| `chatdsh-worker` | `dsh-headless`、`bundle-worker` | 长任务 |
+| `chatdsh-web` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`preset-chat` | 单机 Web 与执行节点 |
+| `chatdsh-desktop` | `dsh-base`、`dsh-web-app`、`bundle-storage-jsonl`、`bundle-hosted`、`bundle-desktop`、`preset-chat` | Electron 载体持有的本机 profile |
+| `chatdsh-cli` | `dsh-base`、`dsh-experimental-ralph-bundle`、`dsh-tui` | 命令行交互 |
+| `chatdsh-worker` | `dsh-base`、`dsh-headless`、`bundle-hosted`、`bundle-memory-hindsight`、`bundle-worker` | 长任务 |
+
+这张表以 `runtime/profiles/*/package.json` 的 `dsh.profile.bundles` 为准，改动时两处同步。`dsh-tui` 与 `dsh-experimental-ralph-bundle` 是上游组合包：后者让 dsh-tui 0.16.1 补丁层里的 `tool-ralph` 关闭行有目标可寻。
 
 每个 profile 的 `cordis.patch.yml` 负责本部署的差异：会话存储 `root`、`session-query` 打开检索、`connection` 行补 `trustedHosts`、按形态禁用不需要的宿主行。
 
