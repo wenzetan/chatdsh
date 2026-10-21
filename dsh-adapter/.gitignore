@@ -8,3 +8,6 @@ lib/
 
 # 打包产物
 *.tgz
+
+# 包管理器锁文件
+pnpm-lock.yaml
