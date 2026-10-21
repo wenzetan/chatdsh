@@ -141,6 +141,9 @@
     },
     {
       "path": "packages/client/automation"
+    },
+    {
+      "path": "packages/host/chat-hermes"
     }
   ]
 }

@@ -1,0 +1,46 @@
+{
+  "name": "@chatdsh/host-chat-hermes",
+  "version": "0.1.0",
+  "description": "ChatDSH 宿主平面插件：把 Hermes 的运行事件代写成 DSH 会话事件并桥接审批",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.chat.hermes.run.failed",
+        "chatdsh.chat.hermes.approval.relayed"
+      ],
+      "spans": [
+        "chatdsh.chat.hermes.run",
+        "chatdsh.chat.hermes.approval"
+      ],
+      "metrics": [
+        "chatdsh_chat_hermes_runs_total",
+        "chatdsh_chat_hermes_approvals_total"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/core-contracts": "workspace:*",
+    "@chatdsh/hermes-adapter": "link:../../../../hermes-adapter"
+  }
+}

@@ -66,6 +66,8 @@ importers:
 
   packages/client/assistants: {}
 
+  packages/client/automation: {}
+
   packages/client/connectors: {}
 
   packages/client/context-insights: {}
@@ -155,6 +157,18 @@ importers:
       '@chatdsh/core-contracts':
         specifier: workspace:*
         version: link:../../core/contracts
+
+  packages/host/chat-hermes:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+      '@chatdsh/hermes-adapter':
+        specifier: link:../../../../hermes-adapter
+        version: link:../../../../hermes-adapter
 
   packages/host/connectors:
     dependencies:

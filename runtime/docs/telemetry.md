@@ -187,6 +187,8 @@ flowchart TB
 | event | `chatdsh.runtime.boot.failed` | 启动失败 | `stage`、`error.type`、`error.code` |
 | event | `chatdsh.runtime.plugin.conflict` | 服务注册冲突或席位冲突 | `plugin.name`、`conflict.kind` |
 | event | `chatdsh.runtime.model.provider.failed` | 模型提供方注册校验失败 | `provider`、`error.type`、`error.code` |
+| event | `chatdsh.chat.hermes.run.failed` | Hermes 承载的聊天运行失败 | `error.type`、`error.code` |
+| event | `chatdsh.chat.hermes.approval.relayed` | Hermes 审批应答结果 | `outcome`、`error.code` |
 | event | `chatdsh.runtime.approval.decided` | 审批应答 | `decision`、`decided_by` |
 | metric | `chatdsh_runtime_boot_seconds` | 启动耗时 | `stage` |
 | metric | `chatdsh_sessions_live` | 存活会话数 | `session.kind` |
@@ -196,6 +198,8 @@ flowchart TB
 | metric | `chatdsh_model_provider_resolutions_total` | 模型提供方注册校验次数 | `provider`、`outcome` |
 | metric | `chatdsh_context_usage_ratio` | 上下文占用比例 | `level` |
 | metric | `chatdsh_skill_toggles_total` | 技能启用状态切换次数 | `enabled`、`outcome` |
+| metric | `chatdsh_chat_hermes_runs_total` | Hermes 承载的聊天运行数 | `outcome` |
+| metric | `chatdsh_chat_hermes_approvals_total` | Hermes 审批应答数 | `outcome` |
 | metric | `chatdsh_process_resident_memory_bytes` | 常驻内存 | 无 |
 | metric | `chatdsh_process_cpu_seconds_total` | CPU 时间 | 无 |
 

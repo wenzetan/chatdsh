@@ -3,7 +3,7 @@
 //
 // 角色目录决定允许的依赖方向：
 //   core     只依赖 core 自身、适配层与上游
-//   host    只依赖 core、其它 host 包与适配层（投影键的类型增强需要读邻居包的类型）
+//   host    只依赖 core、其它 host 包、适配层与同级协议适配器（投影类型增强与外部服务翻译）
 //   tool    只依赖 core 与适配层
 //   client   只依赖 core
 //   bundle/preset 可以依赖全部
@@ -25,7 +25,7 @@ const failures = [];
 /** 角色目录允许的自建依赖。 */
 const ALLOWED = {
   core: [/^@chatdsh\/core-/, /^@chatdsh\/adapter$/],
-  host: [/^@chatdsh\/core-/, /^@chatdsh\/host-/, /^@chatdsh\/adapter$/, /^@chatdsh\/hindsight-adapter$/],
+  host: [/^@chatdsh\/core-/, /^@chatdsh\/host-/, /^@chatdsh\/adapter$/, /^@chatdsh\/hindsight-adapter$/, /^@chatdsh\/hermes-adapter$/],
   tool: [/^@chatdsh\/core-/, /^@chatdsh\/adapter$/],
   client: [/^@chatdsh\/core-/],
   bundle: [/^@chatdsh\//],

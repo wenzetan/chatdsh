@@ -1,0 +1,13 @@
+# Hermes 承载聊天时的宿主行。
+#
+# 与 bundle-hosted 叠加使用：这一行只在 chatBackend 为 hermes 时加入 profile。
+# 审批行沿用 bundle-hosted 里的 chatdsh-approval，这里只把应答路径改到 Hermes。
+- insert:
+    - id: chatdsh-chat-hermes
+      name: '@chatdsh/host-chat-hermes'
+      config:
+        baseUrl: http://127.0.0.1:50011
+        apiKeyEnv: HERMES_API_KEY
+        requestTimeoutMs: 120000
+        approvalTimeoutMs: 300000
+        modelLabel: hermes-0.21.7
