@@ -25,9 +25,9 @@ node scripts/check-composition.mjs
 
 ```
 chatdsh-cli：通过（条目 117 个，重复 0 个，配置模式文档 有，投影警告 12 条）
-chatdsh-desktop：通过（条目 211 个，重复 0 个，配置模式文档 有，投影警告 9 条）
-chatdsh-web：通过（条目 211 个，重复 0 个，配置模式文档 有，投影警告 9 条）
-chatdsh-worker：通过（条目 110 个，重复 0 个，配置模式文档 有，投影警告 0 条）
+chatdsh-desktop：通过（条目 214 个，重复 0 个，配置模式文档 有，投影警告 9 条）
+chatdsh-web：通过（条目 214 个，重复 0 个，配置模式文档 有，投影警告 9 条）
+chatdsh-worker：通过（条目 113 个，重复 0 个，配置模式文档 有，投影警告 0 条）
 ```
 
 `chatdsh-cli` 挂载了 `@deepseek-ai/dsh-experimental-ralph-bundle`。dsh-tui 0.16.1 的补丁层按 id 关闭 `tool-ralph`，该行由这个可选组合包插入；补丁目标缺失时启动器会打印 `patch: entry "tool-ralph" not found`。profile 的补丁层再把整组 `optional-ralph` 关闭，命令行形态不暴露重复执行能力。
@@ -36,16 +36,18 @@ chatdsh-worker：通过（条目 110 个，重复 0 个，配置模式文档 有
 
 ## 二、插件契约
 
-**部分。** 自建包都声明了 `engines.dsh`；客户端插件声明了 `dsh.client`，产物经 `./client` 子路径提供。清单声明这一半有脚本可查：
+**通过。** 自建包都声明了 `engines.dsh`；客户端插件声明了 `dsh.client`，产物经 `./client` 子路径提供。清单声明这一半有脚本可查：
 
 ```bash
 node scripts/check-plugin-contract.mjs
 ```
 
 ```
-插件 28 个、客户端插件 9 个、组合包 6 个、profile 5 个、纯库 3 个
+插件 26 个、客户端插件 13 个、组合包 6 个、profile 5 个、纯库 0 个
 插件契约检查通过
 ```
+
+这一轮新增的包是 `host/model-provider`、`host/context-insights`、`host/skills`、`tool/skill-manage`、`client/model-provider`、`client/context-insights`、`client/skills`、`client/automation`，另有同级的 `hermes-adapter`、`hindsight-adapter` 与 `forge-bridge`。它们的接口与验收命令见 [兼容性与升级](compatibility.md) 与对应包的源码注释。
 
 检查四类声明：插件包的 `engines.dsh`、客户端插件的 `dsh.client` 与 `./client` 子路径、组合包的 `dsh.bundle.patch` 及其指向的文件是否存在、profile 的 `dsh.profile.bundles`。
 
