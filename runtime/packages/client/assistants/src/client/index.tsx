@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 助手面板：把自定义助手列在设置页里。
@@ -52,8 +52,8 @@ function AssistantsSection() {
       return;
     }
     load.call(clientFace?.remote?.chatdshAssistants).then(
-      (records) => {
-        if (!cancelled) setAssistants(records);
+      (result) => {
+        if (!cancelled) setAssistants(unwrapRemoteResult(result));
       },
       () => {
         if (!cancelled) setFailed(true);

@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 连接器面板：列出已登记的外部连接器。
@@ -101,8 +101,8 @@ export function ConnectorsSection({ remote }: { remote?: NonNullable<ClientFace[
       return;
     }
     load.call(face?.chatdshConnectors).then(
-      (records) => {
-        if (!cancelled) setConnectors(records);
+      (result) => {
+        if (!cancelled) setConnectors(unwrapRemoteResult(result));
       },
       () => {
         if (!cancelled) setFailed(true);
@@ -126,7 +126,8 @@ export function ConnectorsSection({ remote }: { remote?: NonNullable<ClientFace[
       return;
     }
     connectorsRemote.setEnabled.call(connectorsRemote, record.id, !record.enabled).then(
-      (updated) => {
+      (updatedResult) => {
+        const updated = unwrapRemoteResult<ConnectorRecord>(updatedResult);
         setConnectors((current) => (current ?? []).map((item) => (item.id === updated.id ? updated : item)));
         setError(undefined);
         return connectorsRemote.syncMcpRows?.call(connectorsRemote).then(() => noteAction('ok'), () => {

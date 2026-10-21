@@ -402,7 +402,7 @@ node scripts/check-upstream-names.mjs
 
 **自建 Remote 面板已接通客户端贡献。** 新增 `@chatdsh/core-remote-client` 构造器，九个产品客户端插件在 `apply` 里手写 descriptor、`$mount` 后用 `ctx.inject` 等命名空间就绪再注册面板。`scripts/verify-remote-namespaces.mjs` 在真实页面里断言十个自建命名空间全部挂载，并对每个命名空间做一次只读调用，全部返回成功。审批、制品、助手、连接器等服务的 `remove` 与 Remote 命名空间服务自带方法冲突，宿主导出名改为 `delete`。
 
-**面板组件与网关 HTTP 分支没有自动化测试。** 客户端面板目前只有文案、纯函数与初始帧渲染测试（连接器面板用 esbuild 单独打包后由 `react-dom/server` 渲染），点击交互没有自动化测试；网关的 webhook 路由已由 `gateway-webhook-http.test.mjs` 覆盖真实 HTTP 请求、鉴权顺序与落库。服务层的依赖注入由 `e2e/unit/service-contracts.test.mjs` 守住，这一轮它抓出 `host/context-insights` 与 `host/model-provider` 都漏了 `static inject`。
+**面板组件与网关 HTTP 分支没有自动化测试。** 客户端面板已补上真实点击交互：`scripts/verify-connector-toggle-ui.mjs` 在设置页连接器区段点击「停用」，断言界面变成「（已停用）」且存储记录同步；设置页各面板的远程结果按 `{ ok, value }` 解包，模型提供方、技能、连接器区段均能渲染。网关的 webhook 路由已由 `gateway-webhook-http.test.mjs` 覆盖真实 HTTP 请求、鉴权顺序与落库。服务层的依赖注入由 `e2e/unit/service-contracts.test.mjs` 守住，这一轮它抓出 `host/context-insights` 与 `host/model-provider` 都漏了 `static inject`。
 
 **主题插件契约不在本次验收范围。** [theme-plugin-contract.md](theme-plugin-contract.md) 定义了一套 `ctx.theme` 服务与主题插件的接入方式（`ctx.theme.register`、`ctx.theme.overrideTokens`、`theme/change` 事件、呈现适配器注入 CSS 变量）。架构文档第十二节没有对应条目，代码里也没有实现这套运行时。它描述的是可选能力的扩展点：启用时要先实现 `ctx.theme` 运行时与呈现适配器，再按该契约写主题插件。
 

@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 项目面板：把宿主平面的项目记录列在侧栏里。
@@ -50,8 +50,8 @@ function ProjectsEntry() {
       return;
     }
     load.call(clientFace?.remote?.chatdshProjects).then(
-      (records) => {
-        if (!cancelled) setProjects(records);
+      (result) => {
+        if (!cancelled) setProjects(unwrapRemoteResult(result));
       },
       () => {
         if (!cancelled) setFailed(true);

@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 制品面板：把宿主平面记录的制品列在设置页里。
@@ -54,8 +54,8 @@ function ArtifactsSection() {
       return;
     }
     load.call(clientFace?.remote?.chatdshArtifacts).then(
-      (records) => {
-        if (!cancelled) setArtifacts(records);
+      (result) => {
+        if (!cancelled) setArtifacts(unwrapRemoteResult(result));
       },
       () => {
         if (!cancelled) setFailed(true);

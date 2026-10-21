@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 模型提供方面板：把宿主注册的模型提供方列在设置页里。
@@ -99,10 +99,10 @@ function ModelProviderSection() {
       return;
     }
     Promise.all([list.call(remote?.chatdshModelProviders), status.call(remote?.chatdshModelProviders)]).then(
-      ([records, state]) => {
+      ([recordsResult, stateResult]) => {
         if (cancelled) return;
-        setProviders(records);
-        setSummary(formatProviderSummary(state));
+        setProviders(unwrapRemoteResult(recordsResult));
+        setSummary(formatProviderSummary(unwrapRemoteResult(stateResult)));
       },
       () => {
         if (!cancelled) setSummary('模型提供方状态暂不可用');

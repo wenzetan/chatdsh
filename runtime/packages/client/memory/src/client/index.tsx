@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 记忆面板：展示记忆后端的状态与 bank 规则。
@@ -51,8 +51,8 @@ function MemorySection() {
       return;
     }
     load.call(clientFace?.remote?.chatdshMemory).then(
-      (value) => {
-        if (!cancelled) setStatus(value);
+      (result) => {
+        if (!cancelled) setStatus(unwrapRemoteResult(result));
       },
       () => {
         if (!cancelled) setMissing(true);

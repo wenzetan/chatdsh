@@ -108,3 +108,21 @@ export function buildRemoteContribution(
   });
   return { package: service, descriptors };
 }
+
+/**
+ * 解包一次 Remote 调用结果。
+ *
+ * 客户端命名空间方法返回 `{ ok: true, value }` 或 `{ ok: false, error }`；调用方只关心
+ * 值，失败时抛错交给组件降级。非 RemoteResult 形状原样返回，便于兼容直接数据。
+ * @param result - Remote 调用结果。
+ * @returns 成功时的值。
+ * @throws Remote 调用失败时抛出，消息带错误码。
+ */
+export function unwrapRemoteResult<T>(result: unknown): T {
+  if (result !== null && typeof result === 'object' && 'ok' in result) {
+    const envelope = result as { readonly ok: boolean; readonly value?: unknown; readonly error?: { readonly code?: string } };
+    if (envelope.ok) return envelope.value as T;
+    throw new Error(`Remote 调用失败：${envelope.error?.code ?? 'unknown'}`);
+  }
+  return result as T;
+}

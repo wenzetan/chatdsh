@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 上下文占用面板：在侧栏显示当前会话的占用比例。
@@ -40,6 +40,20 @@ export const inject = ['slots', 'remote'];
 let clientFace: ClientFace | undefined;
 
 /**
+ * 读当前会话标识。
+ *
+ * 注入作用域只保证 remote 命名空间可用，`session` 不是该作用域的服务；直接读会抛
+ * 「cannot get property without inject」。这里把缺失当成没有会话，面板降级为不可用。
+ */
+function currentSessionId(): string | undefined {
+  try {
+    return clientFace?.session?.id;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * 面板上的一行文案。
  * @param insight - 洞察结果。
  * @returns 面向用户的一句话。
@@ -58,15 +72,15 @@ function ContextInsightsEntry() {
 
   useEffect(() => {
     let cancelled = false;
-    const sessionId = clientFace?.session?.id;
+    const sessionId = currentSessionId();
     const load = clientFace?.remote?.chatdshContextInsights?.insight;
     if (sessionId === undefined || load === undefined) {
       setFailed(true);
       return;
     }
     load.call(clientFace?.remote?.chatdshContextInsights, sessionId).then(
-      (state) => {
-        if (!cancelled) setInsight(state);
+      (result) => {
+        if (!cancelled) setInsight(unwrapRemoteResult(result));
       },
       () => {
         if (!cancelled) setFailed(true);

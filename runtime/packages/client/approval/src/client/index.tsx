@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 审批面板：展示还在等回答的审批。
@@ -58,8 +58,8 @@ function ApprovalSection() {
       return;
     }
     load.call(clientFace?.remote?.chatdshApprovals).then(
-      (records) => {
-        setPending(records);
+      (result) => {
+        setPending(unwrapRemoteResult(result));
         setFailed(false);
       },
       () => setFailed(true),

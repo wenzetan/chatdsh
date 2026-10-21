@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { z } from 'zod';
-import { buildRemoteContribution } from '../../packages/core/remote-client/lib/index.js';
+import { buildRemoteContribution, unwrapRemoteResult } from '../../packages/core/remote-client/lib/index.js';
 
 test('contribution 的 id、命名空间与参数按服务与方法生成', () => {
   const contribution = buildRemoteContribution('chatdshApprovals', {
@@ -44,4 +44,11 @@ test('服务名与方法前缀不一致时就地抛出', () => {
     () => buildRemoteContribution('chatdshSkills', { 'otherService/list': { parameters: [] } }, z),
     /前缀/,
   );
+});
+
+test('Remote 调用结果按成功与失败解包', () => {
+  assert.deepEqual(unwrapRemoteResult({ ok: true, value: [1, 2] }), [1, 2]);
+  assert.equal(unwrapRemoteResult({ ok: true, value: 'value' }), 'value');
+  assert.throws(() => unwrapRemoteResult({ ok: false, error: { code: 'gateway/internal' } }), /gateway\/internal/);
+  assert.deepEqual(unwrapRemoteResult([1]), [1]);
 });

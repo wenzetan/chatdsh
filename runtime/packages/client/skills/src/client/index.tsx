@@ -1,4 +1,4 @@
-import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
  * 技能面板：把技能目录与启用状态列在设置页里。
@@ -109,10 +109,10 @@ function SkillsSection() {
       return;
     }
     Promise.all([list.call(clientFace?.remote?.chatdshSkills), catalog.call(clientFace?.remote?.chatdshSkills)]).then(
-      ([records, size]) => {
+      ([recordsResult, sizeResult]) => {
         if (cancelled) return;
-        setSkills(records);
-        setState(size);
+        setSkills(unwrapRemoteResult(recordsResult));
+        setState(unwrapRemoteResult(sizeResult));
       },
       () => {
         if (!cancelled) setError(true);
