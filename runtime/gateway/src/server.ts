@@ -17,6 +17,7 @@ import { IDENTITY_HEADERS, CHATDSH_ERROR_CODES, manualProvider, tailscaleProvide
 import type { GatewayConfig, GatewayStore, ReceiptStore, ReplicaStore, ScheduleStore, ShareStore } from './store.ts';
 import type { PushHub } from './push.ts';
 import { renderSharePage } from './render.ts';
+import { AutomationStore, handleWebhook } from './automation.ts';
 
 /** 服务实例。 */
 export interface GatewayServer {
@@ -53,6 +54,8 @@ function routeOf(_method: string, path: string): string {
   if (path === '/chatdsh/gateway/receipt') return 'receipt';
   if (path === '/chatdsh/gateway/import') return 'import';
   if (path === '/chatdsh/gateway/events') return 'events';
+  if (path.startsWith('/chatdsh/gateway/webhook/')) return 'webhook';
+  if (path === '/chatdsh/gateway/automations') return 'automations';
   if (path.startsWith('/s/')) return 'snapshot';
   if (path.startsWith('/api/')) return 'api';
   if (path.startsWith('/plugins/')) return 'plugins';
@@ -93,6 +96,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
   const { config, store, replica, share, schedule, receipts, push, telemetry } = context;
   // 可达性提供方按配置选择：Tailscale 取 Serve 注入的头部，手动反代没有来源身份。
   const accessProvider: AccessProvider = config.accessProvider === 'manual' ? manualProvider() : tailscaleProvider();
+  const automations = new AutomationStore(store.handle());
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const path = (request.url ?? '/').split('?')[0] ?? '/';
@@ -114,6 +118,35 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
 
       if (route === 'healthz') {
         sendJson(response, 200, { ok: true, service: 'chatdsh-gateway', version: config.version });
+        return;
+      }
+
+      // webhook 投递：鉴权走记录里的密钥环境变量，不依赖控制平面的身份头，因此放在身份解析之前。
+      if (route === 'webhook') {
+        if (request.method !== 'POST') {
+          sendJson(response, 405, { error: 'method-not-allowed' });
+          return;
+        }
+        const automationId = path.slice('/chatdsh/gateway/webhook/'.length);
+        const body = await readBody(request, 256 * 1024);
+        const result = await telemetry.runSpan('chatdsh.gateway.webhook', { 'automation.id': automationId }, async (span) => {
+          const headers: Record<string, string | undefined> = {};
+          for (const [key, value] of Object.entries(request.headers)) {
+            headers[key] = Array.isArray(value) ? value[0] : value;
+          }
+          const outcome = handleWebhook(automations, automationId, headers, body);
+          span.setAttribute('outcome', String(outcome.status));
+          telemetry.counter('chatdsh_webhook_receipts_total', { description: 'webhook 投递结果' })
+            .add(1, { outcome: String(outcome.status) });
+          if (outcome.status >= 400) {
+            telemetry.event('chatdsh.gateway.webhook.rejected', {
+              reason: typeof outcome.body.error === 'string' ? outcome.body.error : 'unknown',
+              'error.code': typeof outcome.body.error === 'string' ? outcome.body.error : 'unknown',
+            });
+          }
+          return outcome;
+        });
+        sendJson(response, result.status, result.body);
         return;
       }
 
@@ -165,6 +198,15 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
         } else {
           sendJson(response, 200, { accountId: account.id, devices: store.listDevices(account.id) });
         }
+        return;
+      }
+
+      if (route === 'automations') {
+        if (request.method !== 'GET') {
+          sendJson(response, 405, { error: 'method-not-allowed' });
+          return;
+        }
+        sendJson(response, 200, { accountId: account.id, automations: automations.list(account.id) });
         return;
       }
 

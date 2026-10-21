@@ -154,14 +154,17 @@ flowchart TB
 | span | `chatdsh.gateway.push.deliver` | 推送投递 | `device.kind`、`outcome` |
 | span | `chatdsh.gateway.schedule.run` | 定时任务执行 | `task.id`、`action`、`outcome` |
 | span | `chatdsh.gateway.power.policy` | 电源策略下发与生效 | `power.mode`、`outcome` |
+| span | `chatdsh.gateway.webhook` | 外部 webhook 投递处理 | `automation.id`、`outcome` |
 | event | `chatdsh.gateway.auth.failed` | 认证失败 | `auth.mode`、`error.code` |
 | event | `chatdsh.gateway.power.failed` | 阻止睡眠失败或被执行环境拒绝 | `power.mode`、`error.code` |
+| event | `chatdsh.gateway.webhook.rejected` | webhook 投递被拒绝 | `reason`、`error.code` |
 | metric | `chatdsh_http_requests_total` | 全部入站请求 | `route`、`method`、`status_class` |
 | metric | `chatdsh_http_request_duration_seconds` | 全部入站请求 | `route`、`method` |
 | metric | `chatdsh_replica_lag_sessions` | 副本落后会话数 | 无 |
 | metric | `chatdsh_push_deliveries_total` | 推送投递 | `device.kind`、`outcome` |
 | metric | `chatdsh_schedule_runs_total` | 定时任务 | `action`、`outcome` |
 | metric | `chatdsh_power_policy_active` | 当前生效的保活与阻止睡眠档位 | `power.mode` |
+| metric | `chatdsh_webhook_receipts_total` | webhook 投递结果 | `outcome` |
 
 ### 6.2 运行时宿主平面
 

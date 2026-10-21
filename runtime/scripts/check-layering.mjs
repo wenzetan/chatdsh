@@ -70,7 +70,10 @@ for (const name of ['gateway', 'desktop']) {
   const manifest = manifestOf(dir);
   for (const dep of Object.keys(depsOf(manifest))) {
     if (!dep.startsWith('@chatdsh/')) continue;
-    if (!/^@chatdsh\/core-/.test(dep)) failures.push(`${name} 依赖了 ${dep}，该层只允许依赖 core`);
+    // 与 runtime 同级的桥接包只含纯函数，控制平面可以依赖它；其余只允许 core。
+    if (/^@chatdsh\/core-/.test(dep)) continue;
+    if (dep === '@chatdsh/forge-bridge') continue;
+    failures.push(`${name} 依赖了 ${dep}，该层只允许依赖 core 与 forge-bridge`);
   }
 }
 

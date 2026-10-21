@@ -28,6 +28,7 @@ const DECLARED_KEYS = [
   'approval.kind',
   'attempt',
   'auth.mode',
+  'automation.id',
   'bank.kind',
   'bank_kind',
   'boundary',

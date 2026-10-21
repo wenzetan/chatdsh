@@ -1,0 +1,40 @@
+# 自动化调试编排：在开发环境之上追加一个长驻的控制平面，用于接收 webhook 投递。
+#
+# 它复用开发环境的镜像与仓库挂载，只多开一组端口与一个可写数据卷。与 compose.yaml 一起用：
+#   docker compose --env-file dev/.env -f dev/docker/compose.yaml -f dev/docker/compose.automation.yaml up -d
+#
+# 密钥只从环境变量读：CHATDSH_WEBHOOK_SECRET 是 webhook 的共享密钥，
+# CHATDSH_GATEWAY_TOKEN 是控制平面自己的访问令牌。两者都不写进本文件。
+
+name: chatdsh-dev
+
+services:
+  automation-gateway:
+    image: "chatdsh-dev-dsh:${DSH_VERSION:-0.2.1-rc.2}"
+    init: true
+    depends_on:
+      dsh-runtime:
+        condition: service_healthy
+    environment:
+      DSH_HOME: /work/.dsh
+      CHATDSH_TELEMETRY_ENDPOINT: "${CHATDSH_TELEMETRY_ENDPOINT:-}"
+      CHATDSH_TELEMETRY_USER: "${CHATDSH_TELEMETRY_USER:-}"
+      CHATDSH_TELEMETRY_PASSWORD: "${CHATDSH_TELEMETRY_PASSWORD:-}"
+      CHATDSH_WEBHOOK_SECRET: "${CHATDSH_WEBHOOK_SECRET:-}"
+      CHATDSH_GATEWAY_TOKEN: "${CHATDSH_GATEWAY_TOKEN:-}"
+    env_file:
+      - path: ../.env
+        required: false
+    volumes:
+      - "${CHATDSH_WORKSPACE:-/workspace/chatdsh}:/src:ro"
+      - "automation-work:/work"
+    # 入口与开发环境的运行时一致：复制仓库、装依赖、构建、起控制平面。
+    # 命令里只写相对路径，避免把宿主路径带进容器。
+    command: ["node", "/work/src/runtime/gateway/lib/main.js"]
+    ports:
+      - "127.0.0.1:${AUTOMATION_HOST_PORT:-13171}:3171"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  automation-work:

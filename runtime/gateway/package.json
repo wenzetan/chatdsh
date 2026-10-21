@@ -26,7 +26,8 @@
   "chatdsh": {
     "telemetry": {
       "events": [
-        "chatdsh.gateway.auth.failed"
+        "chatdsh.gateway.auth.failed",
+        "chatdsh.gateway.webhook.rejected"
       ],
       "spans": [
         "chatdsh.gateway.http",
@@ -34,18 +35,21 @@
         "chatdsh.gateway.proxy",
         "chatdsh.gateway.replica.append",
         "chatdsh.gateway.schedule.run",
-        "chatdsh.gateway.share.render"
+        "chatdsh.gateway.share.render",
+        "chatdsh.gateway.webhook"
       ],
       "metrics": [
         "chatdsh_http_request_duration_seconds",
         "chatdsh_http_requests_total",
         "chatdsh_push_deliveries_total",
-        "chatdsh_schedule_runs_total"
+        "chatdsh_schedule_runs_total",
+        "chatdsh_webhook_receipts_total"
       ]
     }
   },
   "dependencies": {
     "@chatdsh/core-contracts": "workspace:*",
-    "@chatdsh/core-diagnostics": "workspace:*"
+    "@chatdsh/core-diagnostics": "workspace:*",
+    "@chatdsh/forge-bridge": "workspace:*"
   }
 }
