@@ -13,10 +13,10 @@
 import { Remote, schema as z, sessionPersistenceOf, sessionsOf, telemetryOf, TypertRemoteService, type Context, type SessionId } from '@chatdsh/adapter';
 import type { ApprovalChoice, ChatRunEvent } from '@chatdsh/core-contracts';
 import { createHermesChatBackend, HermesError, type HermesConfig } from '@chatdsh/hermes-adapter';
-import { approvalPluginEvent, translateRun } from './translate.ts';
+import { planReplyBatch } from './translate.ts';
 
-export { approvalPluginEvent, translateRun } from './translate.ts';
-export type { ChatSessionEvent, TranslateInput, TranslateResult } from './translate.ts';
+export { approvalPluginEvent, planReplyBatch, translateRun } from './translate.ts';
+export type { ChatSessionEvent, ReplyPlan, TranslateInput, TranslateResult } from './translate.ts';
 
 /** 插件名。 */
 export const name = 'chatdsh-chat-hermes';
@@ -127,7 +127,7 @@ export class ChatdshHermesChatService extends TypertRemoteService {
             if (event.type === 'turn/start' && typeof event.data.turn === 'number') return Math.max(max, event.data.turn);
             return max;
           }, 0);
-          const translated = translateRun({
+          const plan = planReplyBatch({
             runId: handle.runId,
             firstSeq,
             turn: lastTurn + 1,
@@ -137,27 +137,17 @@ export class ChatdshHermesChatService extends TypertRemoteService {
             model: this.config.modelLabel,
             events: collected,
           });
-          const batch = [...translated.events];
-          for (const [index, approval] of translated.approvals.entries()) {
-            batch.push(approvalPluginEvent({
-              runId: handle.runId,
-              requestId: approval.requestId,
-              title: approval.title,
-              choices: approval.choices,
-              seq: firstSeq + translated.events.length + index,
-            }));
-          }
-          await handleWrite.append(batch as never);
+          await handleWrite.append(plan.batch as never);
           await handleWrite.flush();
-          appended = batch.length;
+          appended = plan.batch.length;
           span?.setAttribute('outcome', 'ok');
           telemetry?.counter('chatdsh_chat_hermes_runs_total', { description: 'Hermes 承载的聊天运行数' })
             .add(1, { outcome: 'ok' });
           return {
             runId: handle.runId,
             appended,
-            assistantText: translated.assistantText,
-            approvals: translated.approvals.map((approval) => approval.requestId),
+            assistantText: plan.assistantText,
+            approvals: plan.approvals,
           };
         } finally {
           await handleWrite.close();

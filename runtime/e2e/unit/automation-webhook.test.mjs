@@ -75,3 +75,19 @@ test('环境变量缺失时按未配置处理，返回 503', () => {
   assert.equal(result.status, 503);
   assert.equal(result.body.error, 'webhook-secret-unconfigured');
 });
+
+test('鉴权在解析请求体之前：错密钥加非法请求体返回 401', () => {
+  const store = new AutomationStore(new DatabaseSync(':memory:'));
+  store.create(record());
+  process.env.HOOK_SECRET = 's3cret';
+  const result = handleWebhook(store, 'a1', { 'x-chatdsh-webhook-secret': 'wrong' }, 'not-json');
+  assert.equal(result.status, 401);
+  assert.equal(result.body.error, 'webhook-unauthorized');
+});
+
+test('记录不存在时先返回 404，不读取密钥与请求体', () => {
+  const store = new AutomationStore(new DatabaseSync(':memory:'));
+  const result = handleWebhook(store, 'missing', {}, 'not-json');
+  assert.equal(result.status, 404);
+  assert.equal(result.body.error, 'automation-not-found');
+});

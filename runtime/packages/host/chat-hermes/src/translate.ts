@@ -158,3 +158,41 @@ export function approvalPluginEvent(input: {
     // 插件记录是 log-only；surfaceOp 在这里不出现。
   };
 }
+
+/** 一次回复写入的完整计划。 */
+export interface ReplyPlan {
+  /** 连续事件，含审批插件记录。 */
+  readonly batch: ChatSessionEvent[];
+  /** 助手回复的可见文本。 */
+  readonly assistantText: string;
+  /** 审批请求标识，按出现顺序。 */
+  readonly approvals: string[];
+}
+
+/**
+ * 计划一次回复的完整写入批次。
+ *
+ * 回复事件由 {@link translateRun} 生成；每个审批请求再接一条 `plugin:hermes-approval`
+ * 记录。审批记录放在回合事件之后，保证宿主事件与插件记录各自连续，序号不跳跃。
+ * @param input - 与 {@link translateRun} 相同，另加运行标识。
+ * @returns 写入批次、助手文本与审批标识。
+ */
+export function planReplyBatch(input: TranslateInput): ReplyPlan {
+  const translated = translateRun(input);
+  const batch = [...translated.events];
+  for (const [index, approval] of translated.approvals.entries()) {
+    batch.push(approvalPluginEvent({
+      runId: input.runId,
+      requestId: approval.requestId,
+      title: approval.title,
+      choices: approval.choices,
+      seq: input.firstSeq + translated.events.length + index,
+      ...(input.now === undefined ? {} : { now: input.now }),
+    }));
+  }
+  return {
+    batch,
+    assistantText: translated.assistantText,
+    approvals: translated.approvals.map((approval) => approval.requestId),
+  };
+}

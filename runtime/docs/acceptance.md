@@ -392,13 +392,15 @@ node scripts/check-upstream-names.mjs
 
 **补丁覆盖层与配置转储的关系。** `dsh --patch <文件>` 是顶层选项（`--help` 里可见，位置要在应用参数之前）。但 `dsh --dump-config` 装配时只合入各组合包与 profile 的补丁层（`dsh-app-boot` 里是 `applyEntryPatches([], structuredClone(layers.flat()))`），不含 overlay——给 `tool-web` 写 `disabled: true` 之后转储没有任何变化，也没有警告。用转储核对覆盖层会得到假阴性，覆盖层是否生效只能在运行时观察，而当前还没找到合适的观察点。
 
-**Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验，`hermes-adapter` 对本机 Hermes 测试容器完成了真实运行。`send` 的服务层写入（取写句柄、追加、flush）还没有在运行时里端到端跑过：Remote 方法需要页面上下文调用，而界面首次进入流程没有完成。这条验证要等能进主界面的客户端。
+**Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验。`send` 的服务层写入已由 `e2e/unit/hermes-send.test.mjs` 覆盖：真实 Cordis 上下文、真实 JSONL 会话持久化、真实 Hermes 测试容器，断言两轮发送的 12 条事件与序号连续。Remote 方法经页面上下文的调用仍未验证，因为界面首次进入流程没有完成。
 
 **记忆的自动写入用规则抽取，模型摘要未接。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message，按 `composeTurnMemory` 拼成一条记忆写进 Hindsight；同一会话的同一回合只写一次。设计里「用 `ctx.llm` 生成摘要」这一步还没有接：当前保留用户问题与助手结论、去掉工具调用与中间步骤，按 4000 字符截断。模型摘要接入时要替换 `composeTurnMemory` 的调用点，写入链路与去重保持不变。真实回合已验证：`chatdsh-acp-live` 跑一次 prompt 后，Hindsight 的 `acct:local` bank 收到一条写入并进入整合。
 
 
 **共享工作区的记忆写入已接通。** 项目记录增加了 `shared` 标记，`project` 工具的 `set` 可以写入；回合写入时按 cwd 读项目记录，把 `shared` 传给 `banksFor`，共享工作区写组 bank，私有工作区写账号 bank。
 
+
+**面板组件与网关 HTTP 分支没有自动化测试。** 新增的三个客户端面板只有文案与纯函数测试，React 组件的渲染与点击没有测试环境；网关的 webhook 路由只测了 `handleWebhook` 的鉴权、去重与状态码，HTTP 层分支没有测试。服务层的依赖注入由 `e2e/unit/service-contracts.test.mjs` 守住，这一轮它抓出 `host/context-insights` 与 `host/model-provider` 都漏了 `static inject`。
 
 **主题插件契约不在本次验收范围。** [theme-plugin-contract.md](theme-plugin-contract.md) 定义了一套 `ctx.theme` 服务与主题插件的接入方式（`ctx.theme.register`、`ctx.theme.overrideTokens`、`theme/change` 事件、呈现适配器注入 CSS 变量）。架构文档第十二节没有对应条目，代码里也没有实现这套运行时。它描述的是可选能力的扩展点：启用时要先实现 `ctx.theme` 运行时与呈现适配器，再按该契约写主题插件。
 

@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { materializeAppendBatch, validateStoredEvents } from '../../.dsh-deps/@deepseek-ai/dsh-session-persistence/lib/index.js';
-import { approvalPluginEvent, translateRun } from '../../packages/host/chat-hermes/lib/translate.js';
+import { approvalPluginEvent, planReplyBatch, translateRun } from '../../packages/host/chat-hermes/lib/translate.js';
 
 /** 一个最小的会话头，只为让校验器运行。 */
 const HEADER = {
@@ -92,4 +92,25 @@ test('审批记录是可跳过的插件事件', () => {
   assert.equal(event.surfaceOp, undefined);
   // 插件事件不在内核事件类型里，必须能被读取方安全跳过；这里只核对信封形状。
   assert.deepEqual(Object.keys(event).sort(), ['data', 'seq', 'time', 'type']);
+});
+
+test('计划批次把审批记录接在回复事件之后且序号连续', () => {
+  const plan = planReplyBatch({
+    runId: 'run-9',
+    firstSeq: 20,
+    now: 1_700_000_000_000,
+    turn: 2,
+    step: 1,
+    userText: '执行',
+    events: [
+      { type: 'text', text: '好的' },
+      { type: 'approval-request', runId: 'run-9', requestId: 'req-9', title: '执行命令', choices: ['once', 'deny'] },
+      { type: 'finish', reason: 'stop' },
+    ],
+  });
+  assert.deepEqual(plan.batch.map((event) => event.seq), [20, 21, 22, 23, 24, 25, 26]);
+  assert.equal(plan.batch.at(-1).type, 'plugin:hermes-approval');
+  assert.equal(plan.batch.at(-1).data.requestId, 'req-9');
+  assert.equal(plan.assistantText, '好的');
+  assert.deepEqual(plan.approvals, ['req-9']);
 });

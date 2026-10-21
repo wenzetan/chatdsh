@@ -62,6 +62,9 @@ export class ChatdshModelProviderService extends TypertRemoteService {
   /** 配置 schema，供加载器校验。 */
   static readonly Config = Config;
 
+  /** 依赖的服务：模型运行时。注册信息在构造时校验，运行期只读。 */
+  static inject = ['llm'];
+
   private readonly providers: readonly ModelProviderInfo[];
 
   constructor(ctx: Context, config: ModelProviderConfig) {

@@ -19,10 +19,10 @@ import {
   type Context,
 } from '@chatdsh/adapter';
 import { createMemoryClient, type MemoryClient, type RecallOptions, type WriteOptions } from './client.ts';
-import { banksFor, composeTurnMemory, lastUserText, renderRecallSection, type MemoryHit, type TurnMessage } from './rules.ts';
+import { banksFor, lastUserText, planTurnWrite, renderRecallSection, TurnWriteDeduper, type MemoryHit, type TurnMessage } from './rules.ts';
 
-export { banksFor, composeTurnMemory, dedupeHits, lastUserText, renderRecallSection } from './rules.ts';
-export type { TurnMessage } from './rules.ts';
+export { banksFor, composeTurnMemory, dedupeHits, lastUserText, planTurnWrite, renderRecallSection, TurnWriteDeduper } from './rules.ts';
+export type { TurnMessage, TurnWritePlan } from './rules.ts';
 export type { MemoryHit, MemoryScope } from './rules.ts';
 export { MemoryUnavailableError } from './client.ts';
 export type { RecallOptions, WriteOptions } from './client.ts';
@@ -124,8 +124,8 @@ export class ChatdshMemoryService extends TypertRemoteService {
   private readonly maxTokens: number;
   /** 每个会话最近一次召回的结果，供提示席位同步读取。 */
   private readonly recalls = new Map<string, { hits: MemoryHit[]; at: number; query: string }>();
-  /** 已经写过记忆的回合，键是 `sessionId:endSeq`，避免重放或重复事件造成重复写入。 */
-  private readonly writtenTurns = new Set<string>();
+  /** 已经写过记忆的回合，避免重放或重复事件造成重复写入。 */
+  private readonly writtenTurns = new TurnWriteDeduper();
 
   constructor(ctx: Context, config: MemoryConfig) {
     super(ctx, SERVICE_NAME);
@@ -175,8 +175,7 @@ export class ChatdshMemoryService extends TypertRemoteService {
   private async persistTurn(session: { readonly id: string; readonly header: { readonly cwd?: string } }, endSeq: number): Promise<void> {
     const cwd = session.header.cwd ?? '';
     const turnKey = `${session.id}:${String(endSeq)}`;
-    if (this.writtenTurns.has(turnKey)) return;
-    this.writtenTurns.add(turnKey);
+    if (!this.writtenTurns.accept(turnKey)) return;
     try {
       const handle = await sessionPersistenceOf(this.ctx).open(session.id as never, 'read');
       let messages: TurnMessage[] = [];
@@ -206,11 +205,9 @@ export class ChatdshMemoryService extends TypertRemoteService {
       } finally {
         await handle.close();
       }
-      const content = composeTurnMemory(messages);
-      if (content === '') return;
-      const shared = this.workspaceShared(cwd);
-      const banks = banksFor({ accountId: 'local', tenantId: 'default', memoryGroupId: cwd === '' ? undefined : cwd, shared });
-      await this.write(banks.write, { content, context: 'turn-summary' });
+      const plan = planTurnWrite({ cwd, shared: this.workspaceShared(cwd), messages });
+      if (plan === undefined) return;
+      await this.write(plan.bank, { content: plan.content, context: 'turn-summary' });
     } catch {
       this.telemetry()?.event('chatdsh.memory.degraded', { operation: 'turn-write', reason: 'hindsight-unreachable' });
     }

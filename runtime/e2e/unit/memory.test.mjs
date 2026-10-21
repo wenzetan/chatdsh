@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { banksFor, composeTurnMemory, dedupeHits } from '../../packages/host/memory/lib/rules.js';
+import { banksFor, composeTurnMemory, dedupeHits, planTurnWrite, TurnWriteDeduper } from '../../packages/host/memory/lib/rules.js';
 import { createMemoryClient } from '../../packages/host/memory/lib/client.js';
 
 const HINDSIGHT = process.env.HINDSIGHT_URL ?? 'http://127.0.0.1:8889';
@@ -77,4 +77,29 @@ test('回合记忆保留用户与助手文本并按上限截断', () => {
   assert.equal(long.length, 11);
   assert.ok(long.endsWith('…'));
   assert.equal(composeTurnMemory([]), '');
+});
+
+test('回合写入按工作区是否共享选择 bank', () => {
+  const messages = [{ role: 'user', text: '问题' }, { role: 'assistant', text: '结论' }];
+  const privatePlan = planTurnWrite({ cwd: '/work/private', shared: false, messages });
+  assert.equal(privatePlan.bank, 'acct:local');
+  assert.equal(privatePlan.content, '用户：问题\n助手：结论');
+
+  const sharedPlan = planTurnWrite({ cwd: '/work/shared', shared: true, messages });
+  assert.equal(sharedPlan.bank, 't:default:ws:/work/shared');
+
+  const chatPlan = planTurnWrite({ cwd: '', shared: false, messages });
+  assert.equal(chatPlan.bank, 'acct:local');
+});
+
+test('空回合不产生写入计划', () => {
+  assert.equal(planTurnWrite({ cwd: '/work', shared: false, messages: [] }), undefined);
+});
+
+test('同一会话的同一回合只允许写一次', () => {
+  const deduper = new TurnWriteDeduper(4);
+  assert.equal(deduper.accept('s1:1'), true);
+  assert.equal(deduper.accept('s1:1'), false);
+  assert.equal(deduper.accept('s1:2'), true);
+  assert.equal(deduper.size, 2);
 });

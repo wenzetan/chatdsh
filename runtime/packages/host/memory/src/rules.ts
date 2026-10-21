@@ -118,3 +118,69 @@ export function composeTurnMemory(messages: readonly TurnMessage[], limit = 4000
   const text = parts.join('\n');
   return text.length <= limit ? text : `${text.slice(0, limit)}…`;
 }
+
+/** 一次回合写入的计划。 */
+export interface TurnWritePlan {
+  /** 写入的 bank。 */
+  readonly bank: string;
+  /** 写入的内容。 */
+  readonly content: string;
+}
+
+/**
+ * 算出一回合记忆写到哪个 bank、写什么内容。
+ *
+ * 私有工作区写账号 bank，共享工作区写组 bank，聊天会话（没有 cwd）写账号 bank。
+ * 内容为空时不产生计划，避免把空回合写成一条空记忆。
+ * @param input - 工作目录、共享标记与本回合消息。
+ * @returns 写入计划；没有内容时为 `undefined`。
+ */
+export function planTurnWrite(input: {
+  readonly cwd: string;
+  readonly shared: boolean;
+  readonly messages: readonly TurnMessage[];
+}): TurnWritePlan | undefined {
+  const content = composeTurnMemory(input.messages);
+  if (content === '') return undefined;
+  const banks = banksFor({
+    accountId: 'local',
+    tenantId: 'default',
+    memoryGroupId: input.cwd === '' ? undefined : input.cwd,
+    shared: input.shared,
+  });
+  return { bank: banks.write, content };
+}
+
+/**
+ * 回合写入去重器。
+ *
+ * 记录已经写过的 `sessionId:endSeq`，并限制条目数：长时间运行的进程不会无限增长，
+ * 超出上限时淘汰最早的一条。淘汰只影响去重记忆，不影响已经写入的数据。
+ */
+export class TurnWriteDeduper {
+  readonly #seen = new Set<string>();
+
+  constructor(private readonly limit = 1024) {
+    if (!Number.isSafeInteger(limit) || limit <= 0) throw new RangeError(`去重上限必须是正安全整数，收到 ${String(limit)}`);
+  }
+
+  /** 当前记录数。 */
+  get size(): number {
+    return this.#seen.size;
+  }
+
+  /**
+   * 接受一个键；已经见过时返回 false。
+   * @param key - `sessionId:endSeq`。
+   * @returns 是否首次见到。
+   */
+  accept(key: string): boolean {
+    if (this.#seen.has(key)) return false;
+    this.#seen.add(key);
+    if (this.#seen.size > this.limit) {
+      const oldest = this.#seen.values().next().value;
+      if (oldest !== undefined) this.#seen.delete(oldest);
+    }
+    return true;
+  }
+}

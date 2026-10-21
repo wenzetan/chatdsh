@@ -54,6 +54,9 @@ export class ChatdshContextInsightsService extends TypertRemoteService {
   /** 配置 schema，供加载器校验。 */
   static readonly Config = Config;
 
+  /** 依赖的服务：两个投影的读面与会话注册表。 */
+  static inject = ['sessionProjections', 'sessions'];
+
   constructor(ctx: Context, private readonly config: ContextInsightsConfig) {
     super(ctx, SERVICE_NAME);
   }
