@@ -394,11 +394,9 @@ node scripts/check-upstream-names.mjs
 
 **Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验。`send` 的服务层写入已由 `e2e/unit/hermes-send.test.mjs` 覆盖：真实 Cordis 上下文、真实 JSONL 会话持久化、真实 Hermes 测试容器，断言两轮发送的 12 条事件与序号连续。Remote 方法经页面上下文的调用已经打通：`e2e/fixtures/client-remote-bridge` 手写自建服务的 descriptor 并 `$mount`，再用 `ctx.inject(['remote.chatdshHermesChat'])` 暴露命名空间；`scripts/verify-hermes-send-page.mjs` 在页面上下文创建会话并调用 `send`，断言 6 条事件与助手文本。产品客户端插件也按同一方案接入了各自的贡献，见下一条。
 
-**记忆的自动写入用规则抽取，模型摘要未接。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message，按 `composeTurnMemory` 拼成一条记忆写进 Hindsight；同一会话的同一回合只写一次。设计里「用 `ctx.llm` 生成摘要」这一步还没有接：当前保留用户问题与助手结论、去掉工具调用与中间步骤，按 4000 字符截断。模型摘要接入时要替换 `composeTurnMemory` 的调用点，写入链路与去重保持不变。真实回合已验证：`chatdsh-acp-live` 跑一次 prompt 后，Hindsight 的 `acct:local` bank 收到一条写入并进入整合。
-
+**记忆的自动写入优先使用模型摘要，模型不可用时退回规则抽取。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message；配置 `summaryProvider` 与 `summaryModel` 时用 `ctx.llm.stream` 生成摘要，流式块同时兼容 `text` 与 `delta` 字段，输出按 4000 字符截断。调用失败或输出为空时退回 `composeTurnMemory`，并记录 `chatdsh.memory.degraded`（`operation: turn-summary`）；两个字段都缺省时保持规则抽取。同一会话的同一回合只写一次，写入链路与 bank 选择不变。真实回合已验证：`chatdsh-acp-live` 跑一次 prompt 后，Hindsight 文档的 `original_text` 是模型摘要而不是带「用户：」「助手：」前缀的规则文本，`acct:local` bank 收到写入并进入整合。
 
 **共享工作区的记忆写入已接通。** 项目记录增加了 `shared` 标记，`project` 工具的 `set` 可以写入；回合写入时按 cwd 读项目记录，把 `shared` 传给 `banksFor`，共享工作区写组 bank，私有工作区写账号 bank。
-
 
 **自建 Remote 面板已接通客户端贡献。** 新增 `@chatdsh/core-remote-client` 构造器，九个产品客户端插件在 `apply` 里手写 descriptor、`$mount` 后用 `ctx.inject` 等命名空间就绪再注册面板。`scripts/verify-remote-namespaces.mjs` 在真实页面里断言十个自建命名空间全部挂载，并对每个命名空间做一次只读调用，全部返回成功。审批、制品、助手、连接器等服务的 `remove` 与 Remote 命名空间服务自带方法冲突，宿主导出名改为 `delete`。
 

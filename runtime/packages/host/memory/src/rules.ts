@@ -100,6 +100,17 @@ export interface TurnMessage {
 }
 
 /**
+ * 把记忆内容裁剪到上限并去掉首尾空白。
+ * @param text - 原始内容。
+ * @param limit - 最大字符数，默认 4000。
+ * @returns 裁剪后的内容；输入为空白时为空串。
+ */
+function limitMemoryText(text: string, limit = 4000): string {
+  const trimmed = text.trim();
+  return trimmed.length <= limit ? trimmed : `${trimmed.slice(0, limit)}…`;
+}
+
+/**
  * 把一回合的消息拼成一条待写入的记忆。
  *
  * 这是不依赖模型的规则抽取：保留用户问题与助手结论，去掉工具调用与中间步骤，按上限
@@ -115,8 +126,7 @@ export function composeTurnMemory(messages: readonly TurnMessage[], limit = 4000
   const parts: string[] = [];
   if (user.length > 0) parts.push(`用户：${user.join('\n')}`);
   if (assistant.length > 0) parts.push(`助手：${assistant.join('\n')}`);
-  const text = parts.join('\n');
-  return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+  return limitMemoryText(parts.join('\n'), limit);
 }
 
 /** 一次回合写入的计划。 */
@@ -139,8 +149,10 @@ export function planTurnWrite(input: {
   readonly cwd: string;
   readonly shared: boolean;
   readonly messages: readonly TurnMessage[];
+  /** 调用方已经生成的摘要；缺省时用规则抽取。 */
+  readonly content?: string;
 }): TurnWritePlan | undefined {
-  const content = composeTurnMemory(input.messages);
+  const content = input.content === undefined ? composeTurnMemory(input.messages) : limitMemoryText(input.content);
   if (content === '') return undefined;
   const banks = banksFor({
     accountId: 'local',
@@ -185,6 +197,27 @@ export class TurnWriteDeduper {
   }
 }
 
+/**
+ * 从流式块里收集摘要文本。
+ *
+ * 上游不同适配器的文本块字段可能是 `text` 或 `delta`。这里同时接受两种形状，
+ * 忽略非文本块，最后去掉首尾空白；模型没有输出文本时返回空串。
+ * @param chunks - 模型调用返回的流式块。
+ * @returns 收集到的摘要文本。
+ */
+export function collectSummaryText(chunks: readonly unknown[]): string {
+  let text = '';
+  for (const chunk of chunks) {
+    if (typeof chunk !== 'object' || chunk === null) continue;
+
+    const candidate = chunk as { readonly type?: unknown; readonly text?: unknown; readonly delta?: unknown };
+    if (candidate.type === 'reasoning-delta') continue;
+    if (typeof candidate.text === 'string') text += candidate.text;
+    else if (typeof candidate.delta === 'string') text += candidate.delta;
+  }
+  return text.trim();
+}
+
 /** 一次模型摘要的提示。 */
 export interface SummaryPrompt {
   /** 系统指令。 */
@@ -207,5 +240,42 @@ export function composeSummaryPrompt(messages: readonly TurnMessage[]): SummaryP
   return {
     system: '把这段对话提炼成一条适合长期记忆的简明事实，只保留可复用的结论与约束，不要复述过程。',
     user,
+  };
+}
+
+/** 摘要请求的可用配置。 */
+export interface SummaryConfigLike {
+  readonly summaryProvider?: string;
+  readonly summaryModel?: string;
+}
+
+/** 一条摘要请求。 */
+export interface SummaryRequest {
+  readonly provider: string;
+  readonly model: string;
+  readonly system: string;
+  readonly messages: {
+    readonly role: 'user';
+    readonly content: readonly { readonly type: 'text'; readonly text: string }[];
+  }[];
+}
+
+
+/**
+ * 由配置与提示构造模型摘要请求。
+ * @param config - 摘要提供方与模型；缺任一项时返回 `undefined`。
+ * @param prompt - 摘要提示。
+ * @returns 可直接交给 `ctx.llm.stream` 的请求。
+ */
+export function summaryRequestOf(config: SummaryConfigLike, prompt: SummaryPrompt): SummaryRequest | undefined {
+  if (config.summaryProvider === undefined || config.summaryModel === undefined) return undefined;
+  return {
+    provider: config.summaryProvider,
+    model: config.summaryModel,
+    system: prompt.system,
+    messages: [{
+      role: 'user',
+      content: [{ type: 'text', text: prompt.user }],
+    }],
   };
 }

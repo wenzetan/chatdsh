@@ -52,3 +52,5 @@
     requestTimeoutMs: 5000
     mirrorToOwnBank: false
     additionalBanks: []
+    summaryProvider: test-gateway
+    summaryModel: xhs/dots3-note-prev

@@ -27,7 +27,8 @@
       ],
       "spans": [
         "chatdsh.memory.recall",
-        "chatdsh.memory.write"
+        "chatdsh.memory.write",
+        "chatdsh.memory.summary"
       ],
       "metrics": [
         "chatdsh_memory_recall_seconds"

@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { banksFor, composeSummaryPrompt, composeTurnMemory, dedupeHits, planTurnWrite, TurnWriteDeduper } from '../../packages/host/memory/lib/rules.js';
+import { banksFor, composeSummaryPrompt, composeTurnMemory, dedupeHits, planTurnWrite, summaryRequestOf, collectSummaryText, TurnWriteDeduper } from '../../packages/host/memory/lib/rules.js';
 import { createMemoryClient } from '../../packages/host/memory/lib/client.js';
 
 const HINDSIGHT = process.env.HINDSIGHT_URL ?? 'http://127.0.0.1:8889';
@@ -47,7 +47,7 @@ test('对真实 Hindsight 完成探活、写入与召回', async () => {
   const client = createMemoryClient({
     hindsightUrl: HINDSIGHT,
     maxTokens: 256,
-    requestTimeoutMs: 10_000,
+    requestTimeoutMs: 30_000,
   });
   assert.equal(await client.probe(), true, 'Hindsight 应当可用');
 
@@ -112,4 +112,51 @@ test('摘要提示只保留本回合文本并给出稳定指令', () => {
   assert.match(prompt.system, /长期记忆/);
   assert.equal(prompt.user, '用户：蓝鲸有多长\n助手：约三十米');
   assert.equal(composeSummaryPrompt([]), undefined);
+});
+
+test('摘要请求在配置了 provider 与 model 时才生成', () => {
+  const prompt = { system: '系统', user: '用户内容' };
+  assert.equal(summaryRequestOf({}, prompt), undefined);
+  assert.equal(summaryRequestOf({ summaryProvider: 'test-gateway' }, prompt), undefined);
+  assert.equal(summaryRequestOf({ summaryModel: 'xhs/dots3-note-prev' }, prompt), undefined);
+  const request = summaryRequestOf({ summaryProvider: 'test-gateway', summaryModel: 'xhs/dots3-note-prev' }, prompt);
+  assert.equal(request.provider, 'test-gateway');
+  assert.equal(request.model, 'xhs/dots3-note-prev');
+  assert.equal(request.system, '系统');
+  assert.equal(request.messages[0].content[0].text, '用户内容');
+});
+
+test('摘要流式文本同时兼容 text 与 delta 字段', () => {
+  assert.equal(collectSummaryText([
+    { type: 'text-delta', text: '模型' },
+    { type: 'text-delta', delta: '摘要' },
+    { type: 'finish', reason: 'stop' },
+  ]), '模型摘要');
+  assert.equal(collectSummaryText([
+    { type: 'reasoning-delta', text: '思考过程' },
+    { type: 'text-delta', delta: '结论' },
+  ]), '结论');
+  assert.equal(collectSummaryText([{ type: 'text-delta', text: '   ' }]), '');
+  assert.equal(collectSummaryText([{ delta: '无类型字段' }]), '无类型字段');
+  assert.equal(collectSummaryText([]), '');
+});
+
+test('模型摘要写入计划使用摘要内容并截断', () => {
+  const plan = planTurnWrite({
+    cwd: '/work/private',
+    shared: false,
+    messages: [{ role: 'user', text: '问题' }],
+    content: '  模型生成的结论  ',
+  });
+  assert.equal(plan.bank, 'acct:local');
+  assert.equal(plan.content, '模型生成的结论');
+
+  const long = planTurnWrite({
+    cwd: '',
+    shared: false,
+    messages: [{ role: 'user', text: '问题' }],
+    content: 'x'.repeat(5000),
+  });
+  assert.equal(long.content.length, 4001);
+  assert.ok(long.content.endsWith('…'));
 });

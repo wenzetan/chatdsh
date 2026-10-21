@@ -305,8 +305,9 @@ flowchart TB
 |---|---|---|---|
 | span | `chatdsh.memory.recall` | 记忆召回（Hindsight 或 Hermes 内置） | `bank.kind`、`hits`、`outcome` |
 | span | `chatdsh.memory.write` | 记忆写入（Hindsight 或 Hermes 内置） | `bank.kind`、`outcome` |
+| span | `chatdsh.memory.summary` | 回合记忆的模型摘要 | `model.provider`、`outcome`、`chars` |
 | span | `chatdsh.dependency.probe` | Hermes、Hindsight 探活 | `dependency`、`outcome` |
-| event | `chatdsh.memory.degraded` | 记忆降级 | `reason` |
+| event | `chatdsh.memory.degraded` | 记忆降级 | `operation`、`reason`、`error.type` |
 | metric | `chatdsh_memory_recall_seconds` | 召回耗时 | `bank_kind` |
 | metric | `chatdsh_dependency_probe_failures_total` | 探活失败 | `dependency` |
 | span | `chatdsh.import.seed` | 把会话副本还原成会话种子 | `records.count`、`seed.count`、`outcome` |

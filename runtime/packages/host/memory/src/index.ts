@@ -12,6 +12,7 @@ import {
   SESSION_EVENTS,
   Remote,
   schema as z,
+  llmOf,
   sessionPersistenceOf,
   systemPromptOf,
   telemetryOf,
@@ -19,10 +20,9 @@ import {
   type Context,
 } from '@chatdsh/adapter';
 import { createMemoryClient, type MemoryClient, type RecallOptions, type WriteOptions } from './client.ts';
-import { banksFor, lastUserText, planTurnWrite, renderRecallSection, TurnWriteDeduper, type MemoryHit, type TurnMessage } from './rules.ts';
-
-export { banksFor, composeTurnMemory, dedupeHits, lastUserText, planTurnWrite, renderRecallSection, TurnWriteDeduper } from './rules.ts';
-export type { TurnMessage, TurnWritePlan } from './rules.ts';
+import { banksFor, collectSummaryText, composeSummaryPrompt, lastUserText, planTurnWrite, renderRecallSection, summaryRequestOf, TurnWriteDeduper, type MemoryHit, type SummaryConfigLike, type TurnMessage } from './rules.ts';
+export { banksFor, collectSummaryText, composeSummaryPrompt, composeTurnMemory, dedupeHits, lastUserText, planTurnWrite, renderRecallSection, summaryRequestOf, TurnWriteDeduper } from './rules.ts';
+export type { SummaryConfigLike, SummaryPrompt, SummaryRequest, TurnMessage, TurnWritePlan } from './rules.ts';
 export type { MemoryHit, MemoryScope } from './rules.ts';
 export { MemoryUnavailableError } from './client.ts';
 export type { RecallOptions, WriteOptions } from './client.ts';
@@ -34,7 +34,7 @@ export const name = 'chatdsh-memory';
 export const SERVICE_NAME = 'chatdshMemory';
 
 /** 依赖：提示席位用于注入召回结果，会话持久化用于回合结束后读取日志。 */
-export const inject = ['systemPrompt', 'sessionPersistence'];
+export const inject = ['systemPrompt', 'sessionPersistence', 'llm'];
 
 /** 提示上下文席位的名字。 */
 export const RECALL_CONTEXT_NAME = 'chatdsh-memory:recall';
@@ -79,6 +79,10 @@ export interface MemoryConfig {
   mirrorToOwnBank: boolean;
   /** 额外召回的 bank，按优先级追加。 */
   additionalBanks: string[];
+  /** 摘要模型所属的提供方路由；缺省时使用规则抽取。 */
+  summaryProvider?: string;
+  /** 摘要模型标识；缺省时使用规则抽取。 */
+  summaryModel?: string;
 }
 
 /** 配置 schema。 */
@@ -89,6 +93,8 @@ export const Config: z<MemoryConfig> = z.object({
   requestTimeoutMs: z.number().default(5000),
   mirrorToOwnBank: z.boolean().default(false),
   additionalBanks: z.array(z.string()).default([]),
+  summaryProvider: z.string().required(false),
+  summaryModel: z.string().required(false),
 });
 
 /** 遥测面，只用到的部分。 */
@@ -116,12 +122,14 @@ export class ChatdshMemoryService extends TypertRemoteService {
    * 只对函数插件生效。写成模块级时实例拿不到 `ctx.sessionPersistence`，回合写入会在
    * 运行时抛「cannot get property without inject」。
    */
-  static inject = ['systemPrompt', 'sessionPersistence'];
+  static inject = ['systemPrompt', 'sessionPersistence', 'llm'];
 
   private readonly client: MemoryClient;
   private readonly extraBanks: readonly string[];
   private readonly endpoint: string;
   private readonly maxTokens: number;
+  /** 摘要请求的提供方与模型；两项都缺省时保持规则抽取。 */
+  private readonly summaryConfig: SummaryConfigLike;
   /** 每个会话最近一次召回的结果，供提示席位同步读取。 */
   private readonly recalls = new Map<string, { hits: MemoryHit[]; at: number; query: string }>();
   /** 已经写过记忆的回合，避免重放或重复事件造成重复写入。 */
@@ -133,6 +141,7 @@ export class ChatdshMemoryService extends TypertRemoteService {
     this.extraBanks = config.additionalBanks;
     this.endpoint = config.hindsightUrl;
     this.maxTokens = config.maxTokens;
+    this.summaryConfig = { summaryProvider: config.summaryProvider, summaryModel: config.summaryModel };
   }
 
   /**
@@ -205,12 +214,67 @@ export class ChatdshMemoryService extends TypertRemoteService {
       } finally {
         await handle.close();
       }
-      const plan = planTurnWrite({ cwd, shared: this.workspaceShared(cwd), messages });
+
+      const summary = await this.summarizeTurn(messages);
+      const plan = planTurnWrite({ cwd, shared: this.workspaceShared(cwd), messages, ...(summary === undefined ? {} : { content: summary }) });
       if (plan === undefined) return;
       await this.write(plan.bank, { content: plan.content, context: 'turn-summary' });
     } catch {
       this.telemetry()?.event('chatdsh.memory.degraded', { operation: 'turn-write', reason: 'hindsight-unreachable' });
     }
+  }
+
+  /**
+   * 用模型生成一条回合摘要。
+   *
+   * 未配置提供方与模型时返回 `undefined`，调用方使用规则抽取。配置后调用失败或
+   * 模型没有输出文本时同样返回 `undefined`，并记一条 `chatdsh.memory.degraded`。
+   */
+  private async summarizeTurn(messages: readonly TurnMessage[]): Promise<string | undefined> {
+    const prompt = composeSummaryPrompt(messages);
+    if (prompt === undefined) return undefined;
+    const request = summaryRequestOf(this.summaryConfig, prompt);
+    if (request === undefined) return undefined;
+    const call = async (): Promise<string | undefined> => {
+      const chunks: unknown[] = [];
+      for await (const chunk of llmOf(this.ctx).stream(request)) chunks.push(chunk);
+      const text = collectSummaryText(chunks);
+      return text === '' ? undefined : text;
+    };
+    const telemetry = this.telemetry();
+    if (telemetry === undefined) {
+      try {
+        return await call();
+      } catch {
+        return undefined;
+      }
+    }
+    return telemetry.runSpan('chatdsh.memory.summary', { 'model.provider': request.provider }, async (span) => {
+      try {
+        const text = await call();
+        if (text === undefined) {
+          span.setAttribute('outcome', 'empty');
+          this.reportSummaryDegraded('summary-empty');
+          return undefined;
+        }
+        span.setAttribute('outcome', 'delivered');
+        span.setAttribute('chars', text.length);
+        return text;
+      } catch (error) {
+        span.setAttribute('outcome', 'failed');
+        this.reportSummaryDegraded('summary-failed', error);
+        return undefined;
+      }
+    });
+  }
+
+  /** 记一条回合摘要降级事件；模型调用失败时带上错误类型。 */
+  private reportSummaryDegraded(reason: string, error?: unknown): void {
+    this.telemetry()?.event('chatdsh.memory.degraded', {
+      operation: 'turn-summary',
+      reason,
+      ...(error === undefined ? {} : { 'error.type': error instanceof Error ? error.name : 'Unknown' }),
+    });
   }
 
   /** 工作区是否标记为共享；项目插件未安装时按私有处理。 */
