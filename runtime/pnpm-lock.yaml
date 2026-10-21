@@ -54,6 +54,8 @@ importers:
 
   packages/client/memory: {}
 
+  packages/client/model-provider: {}
+
   packages/client/projects: {}
 
   packages/client/share: {}
@@ -157,6 +159,18 @@ importers:
       '@chatdsh/hindsight-adapter':
         specifier: link:../../../../hindsight-adapter
         version: link:../../../../hindsight-adapter
+
+  packages/host/model-provider:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-backends':
+        specifier: workspace:*
+        version: link:../../core/backends
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
 
   packages/host/projects:
     dependencies:

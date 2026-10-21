@@ -38,6 +38,9 @@ importers:
       '@chatdsh/client-memory':
         specifier: link:../../packages/client/memory
         version: link:../../packages/client/memory
+      '@chatdsh/client-model-provider':
+        specifier: link:../../packages/client/model-provider
+        version: link:../../packages/client/model-provider
       '@chatdsh/client-projects':
         specifier: link:../../packages/client/projects
         version: link:../../packages/client/projects
@@ -68,6 +71,9 @@ importers:
       '@chatdsh/host-import':
         specifier: link:../../packages/host/import
         version: link:../../packages/host/import
+      '@chatdsh/host-model-provider':
+        specifier: link:../../packages/host/model-provider
+        version: link:../../packages/host/model-provider
       '@chatdsh/host-projects':
         specifier: link:../../packages/host/projects
         version: link:../../packages/host/projects

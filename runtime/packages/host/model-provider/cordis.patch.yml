@@ -1,0 +1,6 @@
+# 模型提供方宿主行。默认不注册任何提供方，由控制平面按部署情况写入。
+- insert:
+    - id: chatdsh-model-provider
+      name: '@chatdsh/host-model-provider'
+      config:
+        providers: []

@@ -178,14 +178,17 @@ flowchart TB
 | span | `chatdsh.runtime.tool.execute` | 工具执行 | `tool.name`、`outcome` |
 | span | `chatdsh.runtime.approval.wait` | 审批等待 | `approval.kind`、`decision` |
 | span | `chatdsh.runtime.storage.write` | 结构化存储写入 | `storage.domain`、`outcome` |
+| span | `chatdsh.runtime.model.provider.resolve` | 模型提供方注册校验 | `provider`、`outcome` |
 | event | `chatdsh.runtime.boot.failed` | 启动失败 | `stage`、`error.type`、`error.code` |
 | event | `chatdsh.runtime.plugin.conflict` | 服务注册冲突或席位冲突 | `plugin.name`、`conflict.kind` |
+| event | `chatdsh.runtime.model.provider.failed` | 模型提供方注册校验失败 | `provider`、`error.type`、`error.code` |
 | event | `chatdsh.runtime.approval.decided` | 审批应答 | `decision`、`decided_by` |
 | metric | `chatdsh_runtime_boot_seconds` | 启动耗时 | `stage` |
 | metric | `chatdsh_sessions_live` | 存活会话数 | `session.kind` |
 | metric | `chatdsh_session_events_total` | 会话事件数 | `event.type` |
 | metric | `chatdsh_remote_calls_total` | Remote 调用数 | `method`、`outcome`、`error_code` |
 | metric | `chatdsh_remote_call_duration_seconds` | Remote 调用耗时 | `method` |
+| metric | `chatdsh_model_provider_resolutions_total` | 模型提供方注册校验次数 | `provider`、`outcome` |
 | metric | `chatdsh_process_resident_memory_bytes` | 常驻内存 | 无 |
 | metric | `chatdsh_process_cpu_seconds_total` | CPU 时间 | 无 |
 

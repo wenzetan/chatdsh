@@ -65,6 +65,7 @@ const DECLARED_KEYS = [
   'parent.session.id',
   'patch.id',
   'plugin.name',
+  'provider',
   'policy.mode',
   'power.mode',
   'probe.id',

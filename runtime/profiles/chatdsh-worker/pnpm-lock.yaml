@@ -20,6 +20,9 @@ importers:
       '@chatdsh/bundle-worker':
         specifier: link:../../packages/bundle/worker
         version: link:../../packages/bundle/worker
+      '@chatdsh/client-model-provider':
+        specifier: link:../../packages/client/model-provider
+        version: link:../../packages/client/model-provider
       '@chatdsh/core-identity':
         specifier: link:../../packages/core/identity
         version: link:../../packages/core/identity
@@ -44,6 +47,9 @@ importers:
       '@chatdsh/host-memory':
         specifier: link:../../packages/host/memory
         version: link:../../packages/host/memory
+      '@chatdsh/host-model-provider':
+        specifier: link:../../packages/host/model-provider
+        version: link:../../packages/host/model-provider
       '@chatdsh/host-projects':
         specifier: link:../../packages/host/projects
         version: link:../../packages/host/projects

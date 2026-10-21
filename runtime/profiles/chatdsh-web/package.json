@@ -32,7 +32,9 @@
     "@chatdsh/tool-image": "link:../../packages/tool/image",
     "@chatdsh/tool-project": "link:../../packages/tool/project",
     "@chatdsh/tool-research": "link:../../packages/tool/research",
-    "@chatdsh/tool-share": "link:../../packages/tool/share"
+    "@chatdsh/tool-share": "link:../../packages/tool/share",
+    "@chatdsh/host-model-provider": "link:../../packages/host/model-provider",
+    "@chatdsh/client-model-provider": "link:../../packages/client/model-provider"
   },
   "dsh": {
     "profile": {

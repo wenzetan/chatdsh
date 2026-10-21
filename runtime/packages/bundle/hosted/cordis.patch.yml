@@ -47,3 +47,7 @@
       name: '@chatdsh/host-connectors'
     - id: chatdsh-import
       name: '@chatdsh/host-import'
+
+    # 模型提供方：路由标识、端点与静态请求头，默认空列表。
+    - id: chatdsh-model-provider
+      name: '@chatdsh/host-model-provider'
