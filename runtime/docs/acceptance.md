@@ -392,7 +392,7 @@ node scripts/check-upstream-names.mjs
 
 **补丁覆盖层与配置转储的关系。** `dsh --patch <文件>` 是顶层选项（`--help` 里可见，位置要在应用参数之前）。但 `dsh --dump-config` 装配时只合入各组合包与 profile 的补丁层（`dsh-app-boot` 里是 `applyEntryPatches([], structuredClone(layers.flat()))`），不含 overlay——给 `tool-web` 写 `disabled: true` 之后转储没有任何变化，也没有警告。用转储核对覆盖层会得到假阴性，覆盖层是否生效只能在运行时观察，而当前还没找到合适的观察点。
 
-**Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验。`send` 的服务层写入已由 `e2e/unit/hermes-send.test.mjs` 覆盖：真实 Cordis 上下文、真实 JSONL 会话持久化、真实 Hermes 测试容器，断言两轮发送的 12 条事件与序号连续。Remote 方法经页面上下文的调用仍未验证，因为界面首次进入流程没有完成。
+**Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验。`send` 的服务层写入已由 `e2e/unit/hermes-send.test.mjs` 覆盖：真实 Cordis 上下文、真实 JSONL 会话持久化、真实 Hermes 测试容器，断言两轮发送的 12 条事件与序号连续。Remote 方法经页面上下文的调用仍未完成：`e2e/fixtures/client-remote-bridge` 与 `e2e/profiles/chatdsh-hermes-live` 已能把页面里的 `ctx.remote` 暴露出来，页面能加载客户端模块，但首次进入流程在创建会话时失败，`remote.namespaces` 为空，拿不到 `chatdshHermesChat`。联调资产保留在 e2e 目录，等首次进入流程修好后可直接使用。
 
 **记忆的自动写入用规则抽取，模型摘要未接。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message，按 `composeTurnMemory` 拼成一条记忆写进 Hindsight；同一会话的同一回合只写一次。设计里「用 `ctx.llm` 生成摘要」这一步还没有接：当前保留用户问题与助手结论、去掉工具调用与中间步骤，按 4000 字符截断。模型摘要接入时要替换 `composeTurnMemory` 的调用点，写入链路与去重保持不变。真实回合已验证：`chatdsh-acp-live` 跑一次 prompt 后，Hindsight 的 `acct:local` bank 收到一条写入并进入整合。
 

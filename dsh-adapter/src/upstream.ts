@@ -174,6 +174,8 @@ export const UPSTREAM_ROWS = {
   'deepseek-account': '@deepseek-ai/dsh-deepseek-account-platform',
   /** 走账号的模型适配器。 */
   'llm-deepseek-account': '@deepseek-ai/dsh-llm-deepseek-account',
+  /** 走 API key 的 DeepSeek 适配器。 */
+  'llm-deepseek-api-key': '@deepseek-ai/dsh-llm-deepseek-api-key',
   /** 账号接口控制器。 */
   'account-controller': '@deepseek-ai/dsh-api-account-controller',
   /** 设置页的账号区段。 */
