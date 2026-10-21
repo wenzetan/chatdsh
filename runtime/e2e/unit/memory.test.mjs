@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { banksFor, composeTurnMemory, dedupeHits, planTurnWrite, TurnWriteDeduper } from '../../packages/host/memory/lib/rules.js';
+import { banksFor, composeSummaryPrompt, composeTurnMemory, dedupeHits, planTurnWrite, TurnWriteDeduper } from '../../packages/host/memory/lib/rules.js';
 import { createMemoryClient } from '../../packages/host/memory/lib/client.js';
 
 const HINDSIGHT = process.env.HINDSIGHT_URL ?? 'http://127.0.0.1:8889';
@@ -102,4 +102,14 @@ test('同一会话的同一回合只允许写一次', () => {
   assert.equal(deduper.accept('s1:1'), false);
   assert.equal(deduper.accept('s1:2'), true);
   assert.equal(deduper.size, 2);
+});
+
+test('摘要提示只保留本回合文本并给出稳定指令', () => {
+  const prompt = composeSummaryPrompt([
+    { role: 'user', text: '蓝鲸有多长' },
+    { role: 'assistant', text: '约三十米' },
+  ]);
+  assert.match(prompt.system, /长期记忆/);
+  assert.equal(prompt.user, '用户：蓝鲸有多长\n助手：约三十米');
+  assert.equal(composeSummaryPrompt([]), undefined);
 });

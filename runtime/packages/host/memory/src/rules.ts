@@ -184,3 +184,28 @@ export class TurnWriteDeduper {
     return true;
   }
 }
+
+/** 一次模型摘要的提示。 */
+export interface SummaryPrompt {
+  /** 系统指令。 */
+  readonly system: string;
+  /** 用户侧输入。 */
+  readonly user: string;
+}
+
+/**
+ * 构造模型摘要的提示。
+ *
+ * 只把本回合的用户与助手文本交给模型，不带工具调用与系统提示。模型输出由调用方
+ * 截断后写入存储层；模型不可用时退回 {@link composeTurnMemory} 的规则结果。
+ * @param messages - 本回合消息。
+ * @returns 提示；没有内容时为 `undefined`。
+ */
+export function composeSummaryPrompt(messages: readonly TurnMessage[]): SummaryPrompt | undefined {
+  const user = composeTurnMemory(messages);
+  if (user === '') return undefined;
+  return {
+    system: '把这段对话提炼成一条适合长期记忆的简明事实，只保留可复用的结论与约束，不要复述过程。',
+    user,
+  };
+}
