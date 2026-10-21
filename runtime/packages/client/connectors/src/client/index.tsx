@@ -84,19 +84,21 @@ function noteAction(outcome: 'ok' | 'failed'): void {
 }
 
 /** 设置页区段。 */
-function ConnectorsSection() {
+export function ConnectorsSection({ remote }: { remote?: NonNullable<ClientFace['remote']> } = {}) {
+  // 测试与嵌入场景可以直接传 remote；正常装配走 apply 写入的模块级上下文。
+  const face = remote ?? clientFace?.remote;
   const [connectors, setConnectors] = useState<ConnectorRecord[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
-    const load = clientFace?.remote?.chatdshConnectors?.list;
+    const load = face?.chatdshConnectors?.list;
     if (load === undefined) {
       setFailed(true);
       return;
     }
-    load.call(clientFace?.remote?.chatdshConnectors).then(
+    load.call(face?.chatdshConnectors).then(
       (records) => {
         if (!cancelled) setConnectors(records);
       },
@@ -107,7 +109,7 @@ function ConnectorsSection() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [remote]);
 
   /**
    * 切换一个连接器的启用状态。
@@ -116,16 +118,16 @@ function ConnectorsSection() {
    * 已挂载的 MCP 行消失。
    */
   function toggle(record: ConnectorRecord): void {
-    const remote = clientFace?.remote?.chatdshConnectors;
-    if (remote?.setEnabled === undefined || remote.syncMcpRows === undefined) {
+    const connectorsRemote = face?.chatdshConnectors;
+    if (connectorsRemote?.setEnabled === undefined || connectorsRemote.syncMcpRows === undefined) {
       setError('连接器接口不可用');
       return;
     }
-    remote.setEnabled.call(remote, record.id, !record.enabled).then(
+    connectorsRemote.setEnabled.call(connectorsRemote, record.id, !record.enabled).then(
       (updated) => {
         setConnectors((current) => (current ?? []).map((item) => (item.id === updated.id ? updated : item)));
         setError(undefined);
-        return remote.syncMcpRows?.call(remote).then(() => noteAction('ok'), () => {
+        return connectorsRemote.syncMcpRows?.call(connectorsRemote).then(() => noteAction('ok'), () => {
           setError('记录已更新，但加载器行同步失败');
           noteAction('failed');
         });
