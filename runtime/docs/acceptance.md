@@ -392,6 +392,8 @@ node scripts/check-upstream-names.mjs
 
 **补丁覆盖层与配置转储的关系。** `dsh --patch <文件>` 是顶层选项（`--help` 里可见，位置要在应用参数之前）。但 `dsh --dump-config` 装配时只合入各组合包与 profile 的补丁层（`dsh-app-boot` 里是 `applyEntryPatches([], structuredClone(layers.flat()))`），不含 overlay——给 `tool-web` 写 `disabled: true` 之后转储没有任何变化，也没有警告。用转储核对覆盖层会得到假阴性，覆盖层是否生效只能在运行时观察，而当前还没找到合适的观察点。
 
+**Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验，`hermes-adapter` 对本机 Hermes 测试容器完成了真实运行。`send` 的服务层写入（取写句柄、追加、flush）还没有在运行时里端到端跑过：Remote 方法需要页面上下文调用，而界面首次进入流程没有完成。这条验证要等能进主界面的客户端。
+
 **连接器的停用只有远端方法。** `setEnabled` 是一个 Remote 方法，`mcp.ts` 生成行时会过滤掉 `enabled: false` 的连接器，但连接器面板只读展示「（已停用）」、没有切换入口，界面也内没有在切换后调用 `syncMcpRows` 的地方。要在界面上停用一个连接器，得由客户端依次调这两个远端方法。
 
 **记忆的自动写入没有实现。** 插件在 `agent/created` 注册提示席位、在 `agent/pre-step` 做召回，没有挂回合结束的任何事件。`write` 是一个 Remote 方法，只由客户端显式调用（`verify-memory` 直接调的就是它）。文档描述的「回合结束后按会话去重与节流、用 `ctx.llm` 生成摘要、写入存储层」这条链路不存在，记忆目前只能手工写入。
