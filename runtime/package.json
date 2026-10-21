@@ -33,7 +33,9 @@
     "verify:telemetry-sync": "node scripts/verify-telemetry-sync.mjs",
     "verify:schedule": "node scripts/verify-schedule.mjs",
     "verify:memory": "node scripts/verify-memory.mjs",
-    "profiles:sync": "node scripts/sync-profiles.mjs"
+    "profiles:sync": "node scripts/sync-profiles.mjs",
+    "check:surface": "node scripts/check-upstream-surface.mjs",
+    "upgrade:dsh": "node scripts/upgrade-dsh.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
