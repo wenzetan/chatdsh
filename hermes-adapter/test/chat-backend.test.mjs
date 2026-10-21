@@ -33,7 +33,8 @@ test('createRun 返回 run_id 并携带会话标识', async () => {
     assert.equal(handle.runId, 'run-1');
     assert.equal(fake.received[0].method, 'POST');
     assert.equal(fake.received[0].url, '/v1/runs');
-    assert.deepEqual(JSON.parse(fake.received[0].body), { session_id: 'chat-1', message: '你好' });
+    // Hermes 的 /v1/runs 用 input 字段；写成 message 会得到 400。
+  assert.deepEqual(JSON.parse(fake.received[0].body), { session_id: 'chat-1', input: '你好' });
     assert.match(fake.received[0].headers['x-hermes-session-id'], /^chat-1$/);
   } finally {
     fake.server.close();
@@ -42,10 +43,11 @@ test('createRun 返回 run_id 并携带会话标识', async () => {
 
 test('streamEvents 把 SSE 行翻译成契约事件', async () => {
   const fake = await fakeHermes((_request, response) => {
+    // 形状照抄 Hermes 的真实输出：事件名在 event 字段，文本增量在 delta 字段。
     response.writeHead(200, { 'content-type': 'text/event-stream' });
-    response.write('data: {"type":"text","text":"第一段"}\n\n');
-    response.write('data: {"type":"approval.request","request_id":"r1","title":"执行命令","choices":["once","deny"]}\n\n');
-    response.write('data: {"type":"finish","reason":"stop"}\n\n');
+    response.write('id: 0\ndata: {"event":"message.delta","run_id":"run-1","delta":"第一段","seq":0}\n\n');
+    response.write('id: 1\ndata: {"event":"approval.request","run_id":"run-1","request_id":"r1","title":"执行命令","choices":["once","deny"],"seq":1}\n\n');
+    response.write('id: 2\ndata: {"event":"run.completed","run_id":"run-1","output":"第一段","seq":2}\n\n');
     response.end();
   });
   const backend = createHermesChatBackend({ baseUrl: fake.baseUrl, requestTimeoutMs: 2000, approvalTimeoutMs: 2000 });

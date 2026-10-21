@@ -58,18 +58,34 @@ async function errorCodeOf(response: Response): Promise<string> {
   return typeof parsed.error === 'string' ? parsed.error : `http-${response.status}`;
 }
 
-/** 把一条 Hermes 的 SSE 数据翻译成契约事件。 */
+/**
+ * 把一条 Hermes 的 SSE 数据翻译成契约事件。
+ *
+ * Hermes 的数据形状是 `{ event, run_id, seq, ... }`，事件名在 `event` 字段里；旧版
+ * 兼容形状把事件名放在 `type`。两种都认，字段名按事件名区分：
+ * `message.delta` 与 `output.delta` 都算文本增量，`run.completed` 带 `output` 与 `usage`。
+ */
 function translate(runId: string, payload: Record<string, unknown>): ChatRunEvent | undefined {
-  switch (payload.type) {
+  const name = typeof payload.event === 'string' ? payload.event : typeof payload.type === 'string' ? payload.type : '';
+  switch (name) {
+    case 'message.delta':
+    case 'output.delta':
     case 'text':
-      return typeof payload.text === 'string' ? { type: 'text', text: payload.text } : undefined;
+      return typeof payload.delta === 'string'
+        ? { type: 'text', text: payload.delta }
+        : typeof payload.text === 'string'
+          ? { type: 'text', text: payload.text }
+          : undefined;
+    case 'reasoning.available':
     case 'reasoning':
       return typeof payload.text === 'string' ? { type: 'reasoning', text: payload.text } : undefined;
     case 'tool.call':
+    case 'tool_call':
       return typeof payload.call_id === 'string' && typeof payload.name === 'string'
         ? { type: 'tool-call', callId: payload.call_id, name: payload.name }
         : undefined;
-    case 'approval.request': {
+    case 'approval.request':
+    case 'approval.requested': {
       if (typeof payload.request_id !== 'string') return undefined;
       const choices = Array.isArray(payload.choices) ? payload.choices.filter((item): item is ApprovalChoice => typeof item === 'string') : [];
       return {
@@ -80,11 +96,14 @@ function translate(runId: string, payload: Record<string, unknown>): ChatRunEven
         choices,
       };
     }
+    case 'run.completed':
     case 'finish': {
+      const interrupted = payload.interrupted === true;
       const reason = payload.reason;
-      const allowed = reason === 'cancelled' || reason === 'error' ? reason : 'stop';
+      const allowed = interrupted || reason === 'cancelled' ? 'cancelled' : reason === 'error' ? 'error' : 'stop';
       return { type: 'finish', reason: allowed };
     }
+    case 'run.failed':
     case 'error':
       return {
         type: 'error',
@@ -122,7 +141,8 @@ export class HermesClient {
   async createRun(sessionId: string, text: string): Promise<HermesRunHandle> {
     const response = await this.request('create-run', '/v1/runs', {
       method: 'POST',
-      body: JSON.stringify({ session_id: sessionId, message: text }),
+      // Hermes 的 /v1/runs 要求 input 字段；写 message 会得到 400 invalid_request_error。
+      body: JSON.stringify({ session_id: sessionId, input: text }),
       headers: { ...this.headers, 'X-Hermes-Session-Id': sessionId },
     });
     const payload = (await response.json()) as { run_id?: unknown };

@@ -1,0 +1,95 @@
+# 测试用服务：Hermes、Hindsight 与 Hindsight 的 Postgres。
+#
+# 宿主端口全部在 50000 以上，数据卷与密钥与真实实例完全分开。
+# 用法见 README.md；变量从 deploy/.env 读，文件里不出现任何真实值。
+
+name: chatdsh-test
+
+# 复用开发环境已有的桥接网络。宿主的端口防护只放行固定白名单网段访问 20128，
+# 而 Docker 默认网桥已占满一整个 /16，不能在里面再切子网；这个网络在放行清单里。
+# 复用网络只共享网段，容器、数据卷与密钥都独立。
+networks:
+  default:
+    external: true
+    name: ${CHATDSH_TEST_NETWORK:-chatdsh-dev_default}
+
+services:
+  hermes:
+    image: "${HERMES_IMAGE:-nousresearch/hermes-agent:latest}"
+    init: true
+    environment:
+      HERMES_HOME: /opt/data
+      API_SERVER_KEY: "${HERMES_API_KEY:?deploy/.env 里必须设置 HERMES_API_KEY}"
+      # api_server 默认只绑容器回环，宿主映射连不上；绑到容器所有接口，宿主侧只发布到回环。
+      API_SERVER_HOST: "0.0.0.0"
+      CHATDSH_TEST_GATEWAY_URL: "${CHATDSH_TEST_GATEWAY_URL:-http://host.docker.internal:20128/v1}"
+      CHATDSH_TEST_GATEWAY_API_KEY: "${CHATDSH_TEST_GATEWAY_API_KEY:-}"
+      CHATDSH_TEST_GATEWAY_MODEL: "${CHATDSH_TEST_GATEWAY_MODEL:-xhs/dots3-note-prev}"
+    volumes:
+      - "./data/hermes:/opt/data"
+      - "./hermes/init.sh:/opt/hermes-init/init.sh:ro"
+    ports:
+      - "127.0.0.1:50011:8642"
+    extra_hosts:
+      # host-gateway 在部分宿主上解析成默认网桥，跨子网时连不通 20128；
+      # 用 deploy/.env 的 CHATDSH_TEST_GATEWAY 显式给出本网络网关地址。
+      - "host.docker.internal:${CHATDSH_TEST_GATEWAY:-host-gateway}"
+    command: ["sh", "/opt/hermes-init/init.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8642/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+  hindsight:
+    image: "${HINDSIGHT_IMAGE:-ghcr.nju.edu.cn/vectorize-io/hindsight:0.9.2}"
+    command: ["/app/start-all.sh"]
+    depends_on:
+      hindsight-db:
+        condition: service_healthy
+    environment:
+      HINDSIGHT_API_HOST: "0.0.0.0"
+      HINDSIGHT_API_PORT: "8889"
+      HINDSIGHT_ENABLE_API: "true"
+      HINDSIGHT_ENABLE_CP: "false"
+      HINDSIGHT_API_DATABASE_URL: "postgresql://${HINDSIGHT_DB_USER:-hindsight}:${HINDSIGHT_DB_PASSWORD:?deploy/.env 里必须设置 HINDSIGHT_DB_PASSWORD}@hindsight-db:5432/${HINDSIGHT_DB_NAME:-hindsight}"
+      HINDSIGHT_API_VECTOR_EXTENSION: "vchord"
+      HINDSIGHT_API_LLM_PROVIDER: "${HINDSIGHT_LLM_PROVIDER:-openai}"
+      HINDSIGHT_API_LLM_BASE_URL: "${HINDSIGHT_LLM_BASE_URL:-http://host.docker.internal:20128/v1}"
+      HINDSIGHT_API_LLM_MODEL: "${HINDSIGHT_LLM_MODEL:-xhs/dots3-note-prev}"
+      HINDSIGHT_API_LLM_API_KEY: "${HINDSIGHT_LLM_API_KEY:-}"
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: "${HINDSIGHT_EMBEDDINGS_PROVIDER:-openai}"
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_BASE_URL: "${HINDSIGHT_EMBEDDINGS_BASE_URL:-http://host.docker.internal:20128/v1}"
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: "${HINDSIGHT_EMBEDDINGS_MODEL:-}"
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY: "${HINDSIGHT_EMBEDDINGS_API_KEY:-}"
+    volumes:
+      - "./data/hindsight:/app/data"
+    ports:
+      - "127.0.0.1:50021:8889"
+    extra_hosts:
+      - "host.docker.internal:${CHATDSH_TEST_GATEWAY:-host-gateway}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8889/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
+  hindsight-db:
+    image: "${HINDSIGHT_DB_IMAGE:-docker.1panel.live/tensorchord/vchord-postgres:pg18-v1.1.1}"
+    command: ["postgres", "-c", "shared_preload_libraries=vchord,vector"]
+    environment:
+      POSTGRES_USER: "${HINDSIGHT_DB_USER:-hindsight}"
+      POSTGRES_PASSWORD: "${HINDSIGHT_DB_PASSWORD:?deploy/.env 里必须设置 HINDSIGHT_DB_PASSWORD}"
+      POSTGRES_DB: "${HINDSIGHT_DB_NAME:-hindsight}"
+    volumes:
+      - "./data/hindsight-db:/var/lib/postgresql"
+    ports:
+      - "127.0.0.1:50022:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${HINDSIGHT_DB_USER:-hindsight} -d ${HINDSIGHT_DB_NAME:-hindsight}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s

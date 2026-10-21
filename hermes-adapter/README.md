@@ -25,6 +25,13 @@ const backend = createHermesChatBackend({
 | `stop` | `POST /v1/runs/{run_id}/stop` |
 | `health` | `GET /health` |
 
+## 真实协议
+
+联调 `deploy/compose.yaml` 起的 Hermes 时确认了两处形状，与最初的实现不同：
+
+- 发起运行的请求体用 `input` 字段，写成 `message` 会得到 400 `invalid_request_error`；
+- 事件流的数据是 `{ event, run_id, seq, ... }`，事件名在 `event` 字段里，文本增量在 `delta` 字段；`run.completed` 表示结束。适配器同时认旧的 `{ type, ... }` 形状。
+
 ## 错误
 
 非 2xx 一律抛 `HermesError`，字段 `operation`、`status`、`code`。审批应答收到 409 时
