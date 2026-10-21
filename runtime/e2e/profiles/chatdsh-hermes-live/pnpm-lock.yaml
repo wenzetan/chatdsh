@@ -17,6 +17,9 @@ importers:
       '@chatdsh/bundle-hosted':
         specifier: link:../../../packages/bundle/hosted
         version: link:../../../packages/bundle/hosted
+      '@chatdsh/bundle-memory-hindsight':
+        specifier: link:../../../packages/bundle/memory-hindsight
+        version: link:../../../packages/bundle/memory-hindsight
       '@chatdsh/client-account':
         specifier: link:../../../packages/client/account
         version: link:../../../packages/client/account
@@ -86,6 +89,9 @@ importers:
       '@chatdsh/host-import':
         specifier: link:../../../packages/host/import
         version: link:../../../packages/host/import
+      '@chatdsh/host-memory':
+        specifier: link:../../../packages/host/memory
+        version: link:../../../packages/host/memory
       '@chatdsh/host-model-provider':
         specifier: link:../../../packages/host/model-provider
         version: link:../../../packages/host/model-provider

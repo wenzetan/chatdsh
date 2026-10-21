@@ -1,3 +1,5 @@
+import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { z } from 'zod';
 /**
  * 上下文占用面板：在侧栏显示当前会话的占用比例。
  *
@@ -33,7 +35,7 @@ export const PANEL_SLOT = 'sidebar.panellist';
 export const PANEL_NAME = 'chatdsh.context-insights';
 
 /** 浏览器侧依赖：只等席位服务。 */
-export const inject = ['slots'];
+export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
 
@@ -93,10 +95,26 @@ function ContextInsightsEntry() {
  * 注册侧栏面板。
  * @param ctx - 客户端根上下文。
  */
-export function apply(ctx: ClientFace & { slots: ClientSlots }): void {
+export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<void> {
   clientFace = ctx;
+  const remoteHost = ctx as unknown as {
+    remote: { $mount(contribution: unknown): Promise<unknown> };
+    inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
+  };
+  await remoteHost.remote.$mount(buildRemoteContribution('chatdshContextInsights', {
+    'chatdshContextInsights/insight': { parameters: [{ name: 'sessionId', kind: 'string' }] },
+    'chatdshContextInsights/all': { parameters: [] },
+  }, z));
+  await new Promise<void>((resolve) => {
+    remoteHost.inject(['remote.chatdshContextInsights'], (scope) => {
+      clientFace = scope;
+      resolve();
+    });
+  });
+
   ctx.slots.inject(PANEL_SLOT, () => ctx.slots.register({
     name: PANEL_SLOT,
+    id: `panel.${PANEL_NAME}`,
     entry: PANEL_NAME,
   }, ContextInsightsEntry));
 }
@@ -104,5 +122,5 @@ export function apply(ctx: ClientFace & { slots: ClientSlots }): void {
 /** 席位服务的最小形状。 */
 interface ClientSlots {
   inject(key: string, callback: () => () => void): () => void;
-  register(spec: { name: string; entry?: string }, Component: () => unknown): () => void;
+  register(spec: { name: string; id?: string; entry?: string }, Component: () => unknown): () => void;
 }

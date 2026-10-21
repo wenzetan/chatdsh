@@ -1,3 +1,5 @@
+import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { z } from 'zod';
 /**
  * 模型提供方面板：把宿主注册的模型提供方列在设置页里。
  *
@@ -38,7 +40,7 @@ export const SECTION_SLOT = 'settings.section';
 export const SECTION_ID = 'chatdsh-model-provider';
 
 /** 浏览器侧依赖：只等席位服务。 */
-export const inject = ['slots'];
+export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
 
@@ -56,8 +58,23 @@ export function formatProviderSummary(status: ProviderStatus): string {
  * 注册设置页区段。
  * @param ctx - 客户端根上下文。
  */
-export function apply(ctx: ClientFace & { slots: ClientSlots }): void {
+export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<void> {
   clientFace = ctx;
+  const remoteHost = ctx as unknown as {
+    remote: { $mount(contribution: unknown): Promise<unknown> };
+    inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
+  };
+  await remoteHost.remote.$mount(buildRemoteContribution('chatdshModelProviders', {
+    'chatdshModelProviders/list': { parameters: [] },
+    'chatdshModelProviders/status': { parameters: [] },
+  }, z));
+  await new Promise<void>((resolve) => {
+    remoteHost.inject(['remote.chatdshModelProviders'], (scope) => {
+      clientFace = scope;
+      resolve();
+    });
+  });
+
   ctx.slots.inject(SECTION_SLOT, () => ctx.slots.register({
     name: SECTION_SLOT,
     id: SECTION_ID,

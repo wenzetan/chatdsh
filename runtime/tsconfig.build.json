@@ -144,6 +144,9 @@
     },
     {
       "path": "packages/host/chat-hermes"
+    },
+    {
+      "path": "packages/core/remote-client"
     }
   ]
 }

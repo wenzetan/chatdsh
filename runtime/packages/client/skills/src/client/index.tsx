@@ -1,3 +1,5 @@
+import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { z } from 'zod';
 /**
  * 技能面板：把技能目录与启用状态列在设置页里。
  *
@@ -40,7 +42,7 @@ export const SECTION_SLOT = 'settings.section';
 export const SECTION_ID = 'chatdsh-skills';
 
 /** 浏览器侧依赖：只等席位服务。 */
-export const inject = ['slots'];
+export const inject = ['slots', 'remote'];
 
 /** 来源的中文名。 */
 const SOURCE_LABEL: Readonly<Record<SkillRecord['source'], string>> = {
@@ -65,8 +67,24 @@ export function formatSkillSummary(state: SkillCatalogState): string {
  * 注册设置页区段。
  * @param ctx - 客户端根上下文。
  */
-export function apply(ctx: ClientFace & { slots: ClientSlots }): void {
+export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<void> {
   clientFace = ctx;
+  const remoteHost = ctx as unknown as {
+    remote: { $mount(contribution: unknown): Promise<unknown> };
+    inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
+  };
+  await remoteHost.remote.$mount(buildRemoteContribution('chatdshSkills', {
+    'chatdshSkills/list': { parameters: [] },
+    'chatdshSkills/catalog': { parameters: [] },
+    'chatdshSkills/toggle': { parameters: [{ name: 'id', kind: 'string' }, { name: 'enabled', kind: 'boolean' }] },
+  }, z));
+  await new Promise<void>((resolve) => {
+    remoteHost.inject(['remote.chatdshSkills'], (scope) => {
+      clientFace = scope;
+      resolve();
+    });
+  });
+
   ctx.slots.inject(SECTION_SLOT, () => ctx.slots.register({
     name: SECTION_SLOT,
     id: SECTION_ID,

@@ -120,7 +120,7 @@ export class ChatdshAssistantsService extends TypertRemoteService {
   }
 
   /** 删除一条助手。 */
-  @Remote('remove')
+  @Remote({ name: 'delete' })
   async remove(id: string): Promise<boolean> {
     const table = this.requireTable();
     await this.unmount(id);

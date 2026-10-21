@@ -204,7 +204,7 @@ export class ChatdshConnectorService extends TypertRemoteService {
   }
 
   /** 删除一个连接器。 */
-  @Remote('remove')
+  @Remote({ name: 'delete' })
   async remove(id: string): Promise<boolean> {
     const table = this.require();
     if (table.get(id) === undefined) return false;

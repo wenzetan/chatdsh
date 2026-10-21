@@ -43,6 +43,12 @@
       name: '@chatdsh/client-approval'
     - id: chatdsh-client-connectors
       name: '@chatdsh/client-connectors'
+    - id: chatdsh-client-model-provider
+      name: '@chatdsh/client-model-provider'
+    - id: chatdsh-client-context-insights
+      name: '@chatdsh/client-context-insights'
+    - id: chatdsh-client-skills
+      name: '@chatdsh/client-skills'
 
 # 单机形态不接 DeepSeek 官方账号链，模型凭据由设置页或环境变量提供。
 - id: deepseek-account

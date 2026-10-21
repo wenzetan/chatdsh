@@ -1,3 +1,5 @@
+import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { z } from 'zod';
 /**
  * 制品面板：把宿主平面记录的制品列在设置页里。
  *
@@ -35,7 +37,7 @@ export const SECTION_SLOT = 'settings.section';
 export const SECTION_ID = 'chatdsh-artifacts';
 
 /** 浏览器侧依赖：只等席位服务，模块加载顺序由模块图自己保证。 */
-export const inject = ['slots'];
+export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
 
@@ -86,8 +88,26 @@ function ArtifactsSection() {
  * 注册设置页区段。
  * @param ctx - 客户端根上下文。
  */
-export function apply(ctx: ClientFace & { slots: ClientSlots }): void {
+export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<void> {
   clientFace = ctx;
+  const remoteHost = ctx as unknown as {
+    remote: { $mount(contribution: unknown): Promise<unknown> };
+    inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
+  };
+  await remoteHost.remote.$mount(buildRemoteContribution('chatdshArtifacts', {
+    'chatdshArtifacts/put': { parameters: [{ name: 'input', kind: 'json' }] },
+    'chatdshArtifacts/read': { parameters: [{ name: 'id', kind: 'string' }, { name: 'version', kind: 'number' }] },
+    'chatdshArtifacts/list': { parameters: [{ name: 'sessionId', kind: 'string' }] },
+    'chatdshArtifacts/versions': { parameters: [{ name: 'id', kind: 'string' }] },
+    'chatdshArtifacts/delete': { parameters: [{ name: 'id', kind: 'string' }] },
+  }, z));
+  await new Promise<void>((resolve) => {
+    remoteHost.inject(['remote.chatdshArtifacts'], (scope) => {
+      clientFace = scope;
+      resolve();
+    });
+  });
+
   ctx.slots.inject(SECTION_SLOT, () => ctx.slots.register({
     name: SECTION_SLOT,
     id: SECTION_ID,

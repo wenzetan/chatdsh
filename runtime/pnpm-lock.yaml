@@ -68,27 +68,90 @@ importers:
 
   packages/client/account: {}
 
-  packages/client/approval: {}
+  packages/client/approval:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
-  packages/client/artifacts: {}
+  packages/client/artifacts:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
-  packages/client/assistants: {}
+  packages/client/assistants:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/client/automation: {}
 
-  packages/client/connectors: {}
+  packages/client/connectors:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
-  packages/client/context-insights: {}
+  packages/client/context-insights:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
-  packages/client/memory: {}
+  packages/client/memory:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
-  packages/client/model-provider: {}
+  packages/client/model-provider:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
-  packages/client/projects: {}
+  packages/client/projects:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/client/share: {}
 
-  packages/client/skills: {}
+  packages/client/skills:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/client/telemetry: {}
 
@@ -135,6 +198,8 @@ importers:
       '@chatdsh/core-contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/core/remote-client: {}
 
   packages/core/session-index:
     dependencies:

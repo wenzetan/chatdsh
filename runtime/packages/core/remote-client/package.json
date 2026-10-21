@@ -1,0 +1,23 @@
+{
+  "name": "@chatdsh/core-remote-client",
+  "version": "0.1.0",
+  "description": "ChatDSH 的自建 Remote 客户端贡献构造器：把服务与方法声明翻译成 $mount 接受的 descriptor",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  }
+}

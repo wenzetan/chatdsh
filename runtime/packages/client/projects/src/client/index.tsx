@@ -1,3 +1,5 @@
+import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { z } from 'zod';
 /**
  * 项目面板：把宿主平面的项目记录列在侧栏里。
  *
@@ -31,7 +33,7 @@ export const PANEL_SLOT = 'sidebar.panellist';
 export const PANEL_NAME = 'chatdsh.projects';
 
 /** 浏览器侧依赖：只等席位服务，模块加载顺序由模块图自己保证。 */
-export const inject = ['slots'];
+export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
 
@@ -80,10 +82,28 @@ function ProjectsEntry() {
  * 注册侧栏面板。
  * @param ctx - 客户端根上下文。
  */
-export function apply(ctx: ClientFace & { slots: ClientSlots }): void {
+export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<void> {
   clientFace = ctx;
+  const remoteHost = ctx as unknown as {
+    remote: { $mount(contribution: unknown): Promise<unknown> };
+    inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
+  };
+  await remoteHost.remote.$mount(buildRemoteContribution('chatdshProjects', {
+    'chatdshProjects/list': { parameters: [] },
+    'chatdshProjects/get': { parameters: [{ name: 'path', kind: 'string' }] },
+    'chatdshProjects/set': { parameters: [{ name: 'input', kind: 'json' }] },
+    'chatdshProjects/delete': { parameters: [{ name: 'path', kind: 'string' }] },
+  }, z));
+  await new Promise<void>((resolve) => {
+    remoteHost.inject(['remote.chatdshProjects'], (scope) => {
+      clientFace = scope;
+      resolve();
+    });
+  });
+
   ctx.slots.inject(PANEL_SLOT, () => ctx.slots.register({
     name: PANEL_SLOT,
+    id: `panel.${PANEL_NAME}`,
     entry: PANEL_NAME,
   }, ProjectsEntry));
 }
@@ -91,5 +111,5 @@ export function apply(ctx: ClientFace & { slots: ClientSlots }): void {
 /** 席位服务的最小形状。 */
 interface ClientSlots {
   inject(key: string, callback: () => () => void): () => void;
-  register(spec: { name: string; entry?: string }, Component: () => unknown): () => void;
+  register(spec: { name: string; id?: string; entry?: string }, Component: () => unknown): () => void;
 }

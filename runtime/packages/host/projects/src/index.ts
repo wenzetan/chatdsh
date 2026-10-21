@@ -104,7 +104,7 @@ export class ChatdshProjectsService extends TypertRemoteService {
   }
 
   /** 删除一个项目的记录。 */
-  @Remote('remove')
+  @Remote({ name: 'delete' })
   async remove(path: string): Promise<boolean> {
     return this.require().delete(path);
   }

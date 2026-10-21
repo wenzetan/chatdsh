@@ -45,6 +45,12 @@
       name: '@chatdsh/client-approval'
     - id: chatdsh-client-connectors
       name: '@chatdsh/client-connectors'
+    - id: chatdsh-client-model-provider
+      name: '@chatdsh/client-model-provider'
+    - id: chatdsh-client-context-insights
+      name: '@chatdsh/client-context-insights'
+    - id: chatdsh-client-skills
+      name: '@chatdsh/client-skills'
 
 # 账号链六行整体禁用。DSH 自带的那套登录、余额与充值接缝绑定 DeepSeek 平台账号，
 # ChatDSH 的账号由控制平面承担，运行时内的授权层恒为 owner，因此这条链不挂载。

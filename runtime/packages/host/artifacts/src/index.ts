@@ -155,7 +155,7 @@ export class ChatdshArtifactsService extends TypertRemoteService {
   }
 
   /** 删除一个制品及其全部版本文件。 */
-  @Remote('remove')
+  @Remote({ name: 'delete' })
   async remove(id: string): Promise<boolean> {
     const artifacts = this.require(this.artifacts);
     const versions = this.require(this.versions);

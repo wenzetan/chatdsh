@@ -35,5 +35,9 @@
   },
   "peerDependencies": {
     "react": ">=19"
+  },
+  "dependencies": {
+    "@chatdsh/core-remote-client": "workspace:*",
+    "zod": "4.4.3"
   }
 }

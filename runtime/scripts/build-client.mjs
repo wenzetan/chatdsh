@@ -17,7 +17,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CLIENTS = join(ROOT, 'packages', 'client');
 
 /** 宿主在浏览器侧提供的包，必须保持外部依赖。 */
-const HOST_PROVIDED = ['react', 'react/*', 'react-dom', 'react-dom/*', '@deepseek-ai/*'];
+const HOST_PROVIDED = ['react', 'react/*', 'react-dom', 'react-dom/*', 'zod', '@deepseek-ai/*'];
 
 async function exists(path) {
   try {
