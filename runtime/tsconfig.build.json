@@ -138,6 +138,9 @@
     },
     {
       "path": "packages/client/skills"
+    },
+    {
+      "path": "packages/client/automation"
     }
   ]
 }

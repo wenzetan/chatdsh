@@ -20,6 +20,9 @@ importers:
       '@chatdsh/bundle-worker':
         specifier: link:../../packages/bundle/worker
         version: link:../../packages/bundle/worker
+      '@chatdsh/client-automation':
+        specifier: link:../../packages/client/automation
+        version: link:../../packages/client/automation
       '@chatdsh/client-context-insights':
         specifier: link:../../packages/client/context-insights
         version: link:../../packages/client/context-insights

@@ -32,6 +32,9 @@ importers:
       '@chatdsh/client-assistants':
         specifier: link:../../packages/client/assistants
         version: link:../../packages/client/assistants
+      '@chatdsh/client-automation':
+        specifier: link:../../packages/client/automation
+        version: link:../../packages/client/automation
       '@chatdsh/client-connectors':
         specifier: link:../../packages/client/connectors
         version: link:../../packages/client/connectors

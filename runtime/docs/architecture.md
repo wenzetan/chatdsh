@@ -358,7 +358,7 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 
 ### 4.6 客户端插件
 
-`@chatdsh/client-projects`、`client-artifacts`、`client-memory`、`client-assistants`、`client-connectors`、`client-account`、`client-share`、`client-approval`、`client-model-provider`、`client-context-insights`、`client-skills`。每个包声明 `dsh.client = { platform: "web", inject: [...] }`，导出 `./client` 子路径，产物落在 `lib/client.js`，构建用 esbuild。
+`@chatdsh/client-projects`、`client-artifacts`、`client-memory`、`client-assistants`、`client-connectors`、`client-account`、`client-share`、`client-approval`、`client-model-provider`、`client-context-insights`、`client-skills`、`client-automation`。每个包声明 `dsh.client = { platform: "web", inject: [...] }`，导出 `./client` 子路径，产物落在 `lib/client.js`，构建用 esbuild。
 
 `client-approval` 在设置页的区段里按自建投影键列出待处理的审批，供查看与单次作答，选项是「本次允许」与「拒绝」。「本会话」与「始终」要改本会话的审批策略，在会话里用命令调整。会话输入区的审批卡片由宿主自带的 `ui-approval` 承担，两者不共用席位。
 
