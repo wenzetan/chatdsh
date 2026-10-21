@@ -147,6 +147,12 @@
     },
     {
       "path": "packages/core/remote-client"
+    },
+    {
+      "path": "packages/core/session-persistence-postgres"
+    },
+    {
+      "path": "packages/bundle/storage-postgres"
     }
   ]
 }

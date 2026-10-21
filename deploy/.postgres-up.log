@@ -1,0 +1,165 @@
+ Image postgres:18 Pulling 
+ 8ed0c854313a Pulling fs layer 0B
+ fc259989795e Pulling fs layer 0B
+ 40ebd398ec37 Pulling fs layer 0B
+ 19f779d0bd48 Pulling fs layer 0B
+ 33e59af3458c Pulling fs layer 0B
+ cf9efa127f85 Pulling fs layer 0B
+ 00490e632b75 Pulling fs layer 0B
+ 92accee5624e Pulling fs layer 0B
+ 5bf0df4dfeec Pulling fs layer 0B
+ bea9e19f5a74 Pulling fs layer 0B
+ 36f05ca1a259 Pulling fs layer 0B
+ af1084bcb355 Pulling fs layer 0B
+ f2be67225471 Pulling fs layer 0B
+ 19f779d0bd48 Download complete 0B
+ 22580ab3546a Download complete 0B
+ 5ac26356ed7c Downloading 1.049MB
+ 8ed0c854313a Download complete 0B
+ 40ebd398ec37 Download complete 0B
+ 5ac26356ed7c Downloading 2.097MB
+ 5ac26356ed7c Downloading 3.146MB
+ 00490e632b75 Download complete 0B
+ 5ac26356ed7c Downloading 5.243MB
+ 36f05ca1a259 Download complete 0B
+ 5ac26356ed7c Download complete 0B
+ bea9e19f5a74 Download complete 0B
+ af1084bcb355 Download complete 0B
+ fc259989795e Downloading 1.049MB
+ 33e59af3458c Downloading 1.049MB
+ fc259989795e Downloading 1.049MB
+ fc259989795e Downloading 3.146MB
+ 5bf0df4dfeec Download complete 0B
+ 33e59af3458c Download complete 0B
+ 92accee5624e Downloading 1.049MB
+ cf9efa127f85 Downloading 1.049MB
+ fc259989795e Downloading 5.243MB
+ cf9efa127f85 Downloading 2.097MB
+ fc259989795e Downloading 7.34MB
+ 92accee5624e Downloading 2.097MB
+ 92accee5624e Downloading 4.194MB
+ cf9efa127f85 Downloading 5.243MB
+ fc259989795e Download complete 0B
+ f2be67225471 Downloading 1.049MB
+ f2be67225471 Downloading 2.097MB
+ 92accee5624e Download complete 0B
+ cf9efa127f85 Downloading 7.34MB
+ cf9efa127f85 Downloading 10.49MB
+ f2be67225471 Downloading 4.989MB
+ cf9efa127f85 Downloading 11.53MB
+ f2be67225471 Downloading 7.34MB
+ f2be67225471 Downloading 10.49MB
+ cf9efa127f85 Downloading 14.68MB
+ f2be67225471 Downloading 13.63MB
+ cf9efa127f85 Downloading 16.78MB
+ f2be67225471 Downloading 16.78MB
+ cf9efa127f85 Downloading 16.78MB
+ f2be67225471 Downloading 18.87MB
+ cf9efa127f85 Downloading 19.92MB
+ cf9efa127f85 Downloading 22.02MB
+ f2be67225471 Downloading 22.02MB
+ cf9efa127f85 Downloading 25.17MB
+ f2be67225471 Downloading 25.17MB
+ f2be67225471 Downloading 28.31MB
+ cf9efa127f85 Downloading 28.31MB
+ f2be67225471 Download complete 0B
+ cf9efa127f85 Downloading 31.46MB
+ f2be67225471 Extracting 1B
+ cf9efa127f85 Downloading 33.55MB
+ f2be67225471 Extracting 1B
+ cf9efa127f85 Downloading 36.7MB
+ f2be67225471 Extracting 1B
+ cf9efa127f85 Downloading 38.8MB
+ f2be67225471 Extracting 1B
+ cf9efa127f85 Downloading 40.89MB
+ f2be67225471 Extracting 1B
+ cf9efa127f85 Downloading 45.09MB
+ f2be67225471 Pull complete 0B
+ cf9efa127f85 Downloading 48.23MB
+ 36f05ca1a259 Pull complete 0B
+ 92accee5624e Pull complete 0B
+ cf9efa127f85 Downloading 49.28MB
+ 5bf0df4dfeec Pull complete 0B
+ fc259989795e Extracting 1B
+ cf9efa127f85 Downloading 51.38MB
+ fc259989795e Extracting 1B
+ cf9efa127f85 Downloading 53.48MB
+ fc259989795e Pull complete 0B
+ cf9efa127f85 Downloading 54.53MB
+ 33e59af3458c Pull complete 0B
+ cf9efa127f85 Downloading 56.62MB
+ bea9e19f5a74 Pull complete 0B
+ cf9efa127f85 Downloading 57.67MB
+ 19f779d0bd48 Pull complete 0B
+ cf9efa127f85 Downloading 59.77MB
+ cf9efa127f85 Downloading 59.77MB
+ cf9efa127f85 Downloading 61.87MB
+ cf9efa127f85 Downloading 63.96MB
+ cf9efa127f85 Downloading 66.06MB
+ cf9efa127f85 Downloading 67.11MB
+ cf9efa127f85 Downloading 68.16MB
+ cf9efa127f85 Downloading 71.3MB
+ cf9efa127f85 Downloading 72.35MB
+ cf9efa127f85 Downloading 74.45MB
+ cf9efa127f85 Downloading 75.5MB
+ cf9efa127f85 Downloading 76.55MB
+ cf9efa127f85 Downloading 79.69MB
+ cf9efa127f85 Downloading 80.74MB
+ cf9efa127f85 Downloading 82.84MB
+ cf9efa127f85 Downloading 83.89MB
+ cf9efa127f85 Downloading 85.98MB
+ cf9efa127f85 Downloading 88.08MB
+ cf9efa127f85 Downloading 89.13MB
+ cf9efa127f85 Downloading 91.23MB
+ cf9efa127f85 Downloading 92.27MB
+ cf9efa127f85 Downloading 94.37MB
+ cf9efa127f85 Downloading 96.47MB
+ cf9efa127f85 Downloading 97.52MB
+ cf9efa127f85 Downloading 99.61MB
+ cf9efa127f85 Downloading 101.7MB
+ cf9efa127f85 Downloading 102.8MB
+ cf9efa127f85 Downloading 104.9MB
+ cf9efa127f85 Downloading 105.9MB
+ cf9efa127f85 Downloading 109.1MB
+ cf9efa127f85 Downloading 110.1MB
+ cf9efa127f85 Downloading 111.1MB
+ cf9efa127f85 Downloading 113.2MB
+ cf9efa127f85 Downloading 115.3MB
+ cf9efa127f85 Downloading 115.4MB
+ cf9efa127f85 Download complete 0B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 1B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 2B
+ cf9efa127f85 Extracting 3B
+ cf9efa127f85 Extracting 3B
+ af1084bcb355 Pull complete 0B
+ cf9efa127f85 Pull complete 0B
+ 40ebd398ec37 Pull complete 0B
+ 00490e632b75 Pull complete 0B
+ 8ed0c854313a Pull complete 0B
+ Image postgres:18 Pulled 
+ Network chatdsh-test_default Creating 
+ Network chatdsh-test_default Created 
+time="2026-10-21T16:49:46+08:00" level=warning msg="Found orphan containers (chatdsh-test-hermes-1) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container chatdsh-test-postgres-1 Creating 
+ Container chatdsh-test-postgres-1 Created 
+ Container chatdsh-test-postgres-1 Starting 
+ Container chatdsh-test-postgres-1 Started 

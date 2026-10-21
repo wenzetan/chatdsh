@@ -29,6 +29,7 @@
 | `agent-preset-registry` | `@deepseek-ai/dsh-agent-preset-registry` | 受限挂载 | 默认预设改为 `chatdsh` |
 | `spill-policy` | `@deepseek-ai/dsh-spill-policy` | 受限挂载 | worker 形态把落盘阈值调低 |
 | `tool-result-pruner` | `@deepseek-ai/dsh-compaction-tool-result-pruner` | 受限挂载 | worker 形态把裁剪阈值调高 |
+| `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` | 受限挂载 | 默认会话日志后端；切换到 Postgres 组合包时禁用 |
 | `chatdsh-telemetry` | `@chatdsh/host-telemetry` | 受限挂载 | worker 形态没有 Web 服务器与设置面，该行在此形态禁用 |
 | `chatdsh-assistants` | `@chatdsh/host-assistants` | 受限挂载 | worker 形态没有预设注册表，该行在此形态禁用 |
 | `deepseek-account` | `@deepseek-ai/dsh-deepseek-account-platform` | 禁用 | 绑定 DeepSeek 平台账号，账号由控制平面承担 |

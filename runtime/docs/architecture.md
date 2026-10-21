@@ -379,7 +379,7 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 | `@chatdsh/bundle-memory-hindsight` | `@chatdsh/host-memory` 行与 Hindsight 连接配置、bank 规则；`memoryBackend` 为 `hindsight` 时由 profile 加入 |
 | `@chatdsh/bundle-chat-hermes` | Hermes 承载聊天所需的 `host-chat-hermes` 行与审批接管；`chatBackend` 为 `hermes` 时由 profile 加入。协议翻译在 `hermes-adapter`，事件代写在 `host-chat-hermes` |
 | `@chatdsh/bundle-storage-jsonl` | 会话日志 JSONL 后端与控制平面的 SQLite 实现 |
-| `@chatdsh/bundle-storage-postgres` | 计划中｜会话日志 Postgres 后端与控制平面的 Postgres 实现 |
+| `@chatdsh/bundle-storage-postgres` | 会话日志切到 `@chatdsh/core-session-persistence-postgres`；控制平面仍用 SQLite，Postgres 控制平面尚未实现 |
 | `@chatdsh/bundle-desktop` | 桌面原生桥行、本地审批呈现、`ui-sidebar-browser` 补回 |
 | `@chatdsh/bundle-worker` | 长任务与后台执行行 |
 
@@ -427,6 +427,7 @@ agent preset `chatdsh` 由 `@chatdsh/preset-chat` 声明，`plugins` 列出会�
 | `chatdsh-web` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`preset-chat` | 单机 Web 与执行节点 |
 | `chatdsh-desktop` | `dsh-base`、`dsh-web-app`、`bundle-storage-jsonl`、`bundle-hosted`、`bundle-desktop`、`preset-chat` | Electron 载体持有的本机 profile |
 | `chatdsh-cli` | `dsh-base`、`dsh-experimental-ralph-bundle`、`dsh-tui` | 命令行交互 |
+| `chatdsh-postgres` | `dsh-base`、`dsh-web-app`、`bundle-storage-postgres`、`bundle-hosted`、`preset-chat` | Postgres 会话日志联调 |
 | `chatdsh-hermes` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`bundle-chat-hermes`、`preset-chat` | Hermes 承载聊天 |
 | `chatdsh-worker` | `dsh-base`、`dsh-headless`、`bundle-hosted`、`bundle-memory-hindsight`、`bundle-worker` | 长任务 |
 
