@@ -105,8 +105,12 @@ export class ChatdshHermesChatService extends TypertRemoteService {
    */
   @Remote('send')
   async send(sessionId: string, text: string): Promise<SendResult> {
-    const session = sessionsOf(this.ctx).get(sessionId as SessionId);
-    if (session === undefined) throw new Error(`会话不存在：${sessionId}`);
+    // 渠道会话可能没有活动 Agent：存在性以会话注册表或持久化存储任一为准。
+    const liveSession = sessionsOf(this.ctx).get(sessionId as SessionId);
+    if (liveSession === undefined) {
+      const stored = await sessionPersistenceOf(this.ctx).stat(sessionId as SessionId);
+      if (stored === undefined) throw new Error(`会话不存在：${sessionId}`);
+    }
     if (text.trim() === '') throw new Error('消息不能为空');
 
     const telemetry = telemetryOf<ChatTelemetry>(this.ctx);
@@ -118,40 +122,81 @@ export class ChatdshHermesChatService extends TypertRemoteService {
           collected.push(event);
         }
 
-        const handleWrite = await sessionPersistenceOf(this.ctx).open(sessionId as SessionId, 'write');
-        let appended = 0;
-        try {
-          const existing = await handleWrite.read();
-          const firstSeq = existing.events.length;
-          const lastTurn = existing.events.reduce((max, event) => {
-            if (event.type === 'turn/start' && typeof event.data.turn === 'number') return Math.max(max, event.data.turn);
-            return max;
-          }, 0);
-          const plan = planReplyBatch({
-            runId: handle.runId,
-            firstSeq,
-            turn: lastTurn + 1,
-            step: 1,
-            userText: text,
-            provider: 'hermes',
-            model: this.config.modelLabel,
-            events: collected,
-          });
-          await handleWrite.append(plan.batch as never);
-          await handleWrite.flush();
-          appended = plan.batch.length;
-          span?.setAttribute('outcome', 'ok');
-          telemetry?.counter('chatdsh_chat_hermes_runs_total', { description: 'Hermes 承载的聊天运行数' })
-            .add(1, { outcome: 'ok' });
-          return {
-            runId: handle.runId,
-            appended,
-            assistantText: plan.assistantText,
-            approvals: plan.approvals,
-          };
-        } finally {
-          await handleWrite.close();
+        // 活体会话优先走 Session.append：它的写句柄由 agent 生命周期持有，外部再开
+        // 写句柄会以 SessionAlreadyOwnedError 拒绝。没有活体会话时才走存储写句柄。
+        const live = sessionsOf(this.ctx).get(sessionId as SessionId);
+        let firstSeq: number;
+        let existingEvents: readonly { readonly type: string; readonly data: unknown }[];
+        if (live !== undefined) {
+          firstSeq = live.seq;
+          existingEvents = live.snapshotEvents();
+        } else {
+          const handleWrite = await sessionPersistenceOf(this.ctx).open(sessionId as SessionId, 'write');
+          try {
+            const existing = await handleWrite.read();
+            firstSeq = existing.events.length;
+            existingEvents = existing.events as unknown as readonly { readonly type: string; readonly data: unknown }[];
+            const lastTurn = existingEvents.reduce((max, event) => {
+              if (event.type === 'turn/start' && typeof (event.data as { turn?: number }).turn === 'number') return Math.max(max, (event.data as { turn: number }).turn);
+              return max;
+            }, 0);
+            const plan = planReplyBatch({
+              runId: handle.runId,
+              firstSeq,
+              turn: lastTurn + 1,
+              step: 1,
+              userText: text,
+              provider: 'hermes',
+              model: this.config.modelLabel,
+              events: collected,
+            });
+            await handleWrite.append(plan.batch as never);
+            await handleWrite.flush();
+            span?.setAttribute('outcome', 'ok');
+            telemetry?.counter('chatdsh_chat_hermes_runs_total', { description: 'Hermes 承载的聊天运行数' })
+              .add(1, { outcome: 'ok' });
+            return {
+              runId: handle.runId,
+              appended: plan.batch.length,
+              assistantText: plan.assistantText,
+              approvals: plan.approvals,
+            };
+          } finally {
+            await handleWrite.close();
+          }
         }
+
+        const lastTurn = existingEvents.reduce((max, event) => {
+          if (event.type === 'turn/start' && typeof (event.data as { turn?: number }).turn === 'number') return Math.max(max, (event.data as { turn: number }).turn);
+          return max;
+        }, 0);
+        const plan = planReplyBatch({
+          runId: handle.runId,
+          firstSeq,
+          turn: lastTurn + 1,
+          step: 1,
+          userText: text,
+          provider: 'hermes',
+          model: this.config.modelLabel,
+          events: collected,
+        });
+        for (const event of plan.batch) {
+          if (event.surfaceOp === 'append') {
+            (live as unknown as { append(type: string, data: unknown, intent: { surfaceOp: 'append' }): unknown }).append(event.type, event.data, { surfaceOp: 'append' });
+          } else {
+            (live as unknown as { append(type: string, data: unknown): unknown }).append(event.type, event.data);
+          }
+        }
+        await sessionsOf(this.ctx).flush(live);
+        span?.setAttribute('outcome', 'ok');
+        telemetry?.counter('chatdsh_chat_hermes_runs_total', { description: 'Hermes 承载的聊天运行数' })
+          .add(1, { outcome: 'ok' });
+        return {
+          runId: handle.runId,
+          appended: plan.batch.length,
+          assistantText: plan.assistantText,
+          approvals: plan.approvals,
+        };
       } catch (error) {
         span?.setAttribute('outcome', 'failed');
         telemetry?.event('chatdsh.chat.hermes.run.failed', {

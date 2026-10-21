@@ -44,7 +44,7 @@ test('send 把 Hermes 回复写成连续的会话事件', { skip: hasKey ? false
   const created = await ctx.sessionPersistence.create(header);
   await created.flush();
   await created.close();
-  ctx.sessions.create(id, { meta: { cwd } });
+  // 故意不创建活体会话：走存储写句柄分支，覆盖没有活动 Agent 的渠道会话形态。
 
   try {
     const result = await ctx.chatdshHermesChat.send(id, '只回复两个字：收到');

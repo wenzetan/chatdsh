@@ -392,7 +392,7 @@ node scripts/check-upstream-names.mjs
 
 **补丁覆盖层与配置转储的关系。** `dsh --patch <文件>` 是顶层选项（`--help` 里可见，位置要在应用参数之前）。但 `dsh --dump-config` 装配时只合入各组合包与 profile 的补丁层（`dsh-app-boot` 里是 `applyEntryPatches([], structuredClone(layers.flat()))`），不含 overlay——给 `tool-web` 写 `disabled: true` 之后转储没有任何变化，也没有警告。用转储核对覆盖层会得到假阴性，覆盖层是否生效只能在运行时观察，而当前还没找到合适的观察点。
 
-**Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验。`send` 的服务层写入已由 `e2e/unit/hermes-send.test.mjs` 覆盖：真实 Cordis 上下文、真实 JSONL 会话持久化、真实 Hermes 测试容器，断言两轮发送的 12 条事件与序号连续。Remote 方法经页面上下文的调用卡在客户端贡献：`e2e/fixtures/client-remote-bridge` 与 `e2e/profiles/chatdsh-hermes-live` 已能把页面里的 `ctx.remote` 暴露出来，页面能加载客户端模块，但 `remote.chatdshHermesChat` 未挂载。原因是自建 Remote 服务只有宿主侧定义，没有 typert 客户端贡献；同一问题也影响 `chatdshApprovals`、`chatdshMemory` 等自建 Remote 面板。
+**Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验。`send` 的服务层写入已由 `e2e/unit/hermes-send.test.mjs` 覆盖：真实 Cordis 上下文、真实 JSONL 会话持久化、真实 Hermes 测试容器，断言两轮发送的 12 条事件与序号连续。Remote 方法经页面上下文的调用已经打通：`e2e/fixtures/client-remote-bridge` 手写自建服务的 descriptor 并 `$mount`，再用 `ctx.inject(['remote.chatdshHermesChat'])` 暴露命名空间；`scripts/verify-hermes-send-page.mjs` 在页面上下文创建会话并调用 `send`，断言 6 条事件与助手文本。自建 Remote 面板的产品代码仍没有各自的客户端贡献，这套方案先在联调桥里验证。
 
 **记忆的自动写入用规则抽取，模型摘要未接。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message，按 `composeTurnMemory` 拼成一条记忆写进 Hindsight；同一会话的同一回合只写一次。设计里「用 `ctx.llm` 生成摘要」这一步还没有接：当前保留用户问题与助手结论、去掉工具调用与中间步骤，按 4000 字符截断。模型摘要接入时要替换 `composeTurnMemory` 的调用点，写入链路与去重保持不变。真实回合已验证：`chatdsh-acp-live` 跑一次 prompt 后，Hindsight 的 `acct:local` bank 收到一条写入并进入整合。
 
@@ -400,7 +400,7 @@ node scripts/check-upstream-names.mjs
 **共享工作区的记忆写入已接通。** 项目记录增加了 `shared` 标记，`project` 工具的 `set` 可以写入；回合写入时按 cwd 读项目记录，把 `shared` 传给 `banksFor`，共享工作区写组 bank，私有工作区写账号 bank。
 
 
-**自建 Remote 服务缺少客户端贡献。** 宿主侧用 `TypertRemoteService` 注册的服务没有对应的客户端生成定义，页面里的 `ctx.remote` 只能访问上游自带的服务命名空间。自建 Remote 面板（审批、记忆、模型提供方等）的调用路径因此在页面上不可用；要接通，需要为自建服务生成 typert 客户端贡献并挂进客户端模块图。
+**自建 Remote 面板仍缺客户端贡献。** 宿主侧用 `TypertRemoteService` 注册的服务没有客户端生成定义，页面里的 `ctx.remote` 默认只挂载上游命名空间。联调桥已经验证手写 descriptor 加 `$mount` 的可行路径，`chatdshHermesChat` 可以端到端调用；审批、记忆、模型提供方等产品面板还没有接入同样的贡献，需要在各自的客户端插件里补 descriptor。
 
 **面板组件与网关 HTTP 分支没有自动化测试。** 客户端面板目前只有文案、纯函数与初始帧渲染测试（连接器面板用 esbuild 单独打包后由 `react-dom/server` 渲染），点击交互没有自动化测试；网关的 webhook 路由已由 `gateway-webhook-http.test.mjs` 覆盖真实 HTTP 请求、鉴权顺序与落库。服务层的依赖注入由 `e2e/unit/service-contracts.test.mjs` 守住，这一轮它抓出 `host/context-insights` 与 `host/model-provider` 都漏了 `static inject`。
 
