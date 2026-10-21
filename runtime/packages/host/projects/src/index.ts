@@ -29,6 +29,8 @@ export interface ProjectInput {
   readonly title?: string;
   readonly instructions?: string;
   readonly defaultModel?: string;
+  /** 工作区是否共享。 */
+  readonly shared?: boolean;
 }
 
 /** 只用到四个方法的键值表。 */
@@ -94,6 +96,7 @@ export class ChatdshProjectsService extends TypertRemoteService {
       title: input.title ?? current?.title ?? '',
       instructions: input.instructions ?? current?.instructions ?? '',
       defaultModel: input.defaultModel ?? current?.defaultModel,
+      shared: input.shared ?? current?.shared,
       updatedAt: Date.now(),
     };
     await projects.put(input.path, record);

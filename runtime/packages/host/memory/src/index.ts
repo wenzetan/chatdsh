@@ -9,17 +9,20 @@
 
 import {
   AGENT_EVENTS,
+  SESSION_EVENTS,
   Remote,
   schema as z,
+  sessionPersistenceOf,
   systemPromptOf,
   telemetryOf,
   TypertRemoteService,
   type Context,
 } from '@chatdsh/adapter';
 import { createMemoryClient, type MemoryClient, type RecallOptions, type WriteOptions } from './client.ts';
-import { banksFor, lastUserText, renderRecallSection, type MemoryHit } from './rules.ts';
+import { banksFor, composeTurnMemory, lastUserText, renderRecallSection, type MemoryHit, type TurnMessage } from './rules.ts';
 
-export { banksFor, dedupeHits, lastUserText, renderRecallSection } from './rules.ts';
+export { banksFor, composeTurnMemory, dedupeHits, lastUserText, renderRecallSection } from './rules.ts';
+export type { TurnMessage } from './rules.ts';
 export type { MemoryHit, MemoryScope } from './rules.ts';
 export { MemoryUnavailableError } from './client.ts';
 export type { RecallOptions, WriteOptions } from './client.ts';
@@ -31,7 +34,7 @@ export const name = 'chatdsh-memory';
 export const SERVICE_NAME = 'chatdshMemory';
 
 /** 依赖：提示席位用于注入召回结果；遥测在能读到时记录。 */
-export const inject = ['systemPrompt'];
+export const inject = ['systemPrompt', 'sessionPersistence'];
 
 /** 提示上下文席位的名字。 */
 export const RECALL_CONTEXT_NAME = 'chatdsh-memory:recall';
@@ -112,6 +115,8 @@ export class ChatdshMemoryService extends TypertRemoteService {
   private readonly maxTokens: number;
   /** 每个会话最近一次召回的结果，供提示席位同步读取。 */
   private readonly recalls = new Map<string, { hits: MemoryHit[]; at: number; query: string }>();
+  /** 已经写过记忆的回合，键是 `sessionId:endSeq`，避免重放或重复事件造成重复写入。 */
+  private readonly writtenTurns = new Set<string>();
 
   constructor(ctx: Context, config: MemoryConfig) {
     super(ctx, SERVICE_NAME);
@@ -143,6 +148,70 @@ export class ChatdshMemoryService extends TypertRemoteService {
       await this.refreshRecall(payload.agent, payload.messages);
       return next();
     });
+
+    // 回合结束后把本回合的用户与助手消息写回记忆。写入是后台动作：失败只记降级事件，
+    // 不改变回合结果，也不阻塞下一个回合。
+    this.ctx.on(SESSION_EVENTS.event, (session, event) => {
+      if (event.type === 'turn/end') void this.persistTurn(session, event.seq);
+    });
+  }
+
+  /**
+   * 把一个回合写进记忆。
+   *
+   * 回合内容从会话日志读：最后一条 `turn/start` 到本次 `turn/end` 之间的 user/message
+   * 与 assistant/message。写入 bank 由 `banksFor` 决定，共享工作区写组 bank，私有工作区
+   * 写账号 bank。同一个会话的同一回合只写一次。
+   */
+  private async persistTurn(session: { readonly id: string; readonly header: { readonly cwd?: string } }, endSeq: number): Promise<void> {
+    const cwd = session.header.cwd ?? '';
+    const turnKey = `${session.id}:${String(endSeq)}`;
+    if (this.writtenTurns.has(turnKey)) return;
+    this.writtenTurns.add(turnKey);
+    try {
+      const handle = await sessionPersistenceOf(this.ctx).open(session.id as never, 'read');
+      let messages: TurnMessage[] = [];
+      try {
+        const result = await handle.read();
+        const events = result.events;
+        let start = 0;
+        for (let index = events.length - 1; index >= 0; index -= 1) {
+          const candidate = events[index];
+          if (candidate !== undefined && candidate.type === 'turn/start') {
+            start = index;
+            break;
+          }
+        }
+        for (const event of events.slice(start)) {
+          if (event.type === 'user/message') {
+            const content = event.data.content as readonly { type?: string; text?: string }[];
+            const text = content.filter((block) => block.type === 'text').map((block) => block.text ?? '').join(' ').trim();
+            if (text !== '') messages.push({ role: 'user', text });
+          }
+          if (event.type === 'assistant/message') {
+            const content = event.data.message.content as readonly { type?: string; text?: string }[];
+            const text = content.filter((block) => block.type === 'text').map((block) => block.text ?? '').join(' ').trim();
+            if (text !== '') messages.push({ role: 'assistant', text });
+          }
+        }
+      } finally {
+        await handle.close();
+      }
+      const content = composeTurnMemory(messages);
+      if (content === '') return;
+      const shared = this.workspaceShared(cwd);
+      const banks = banksFor({ accountId: 'local', tenantId: 'default', memoryGroupId: cwd === '' ? undefined : cwd, shared });
+      await this.write(banks.write, { content, context: 'turn-summary' });
+    } catch {
+      this.telemetry()?.event('chatdsh.memory.degraded', { operation: 'turn-write', reason: 'hindsight-unreachable' });
+    }
+  }
+
+  /** 工作区是否标记为共享；项目插件未安装时按私有处理。 */
+  private workspaceShared(cwd: string): boolean {
+    if (cwd === '') return false;
+    const projects = this.ctx.reflect.get('chatdshProjects') as { get?: (path: string) => { shared?: boolean } | undefined } | undefined;
+    return projects?.get?.(cwd)?.shared === true;
   }
 
   /**

@@ -92,3 +92,29 @@ export function renderRecallSection(hits: readonly { readonly text: string }[]):
   if (hits.length === 0) return '';
   return `# 相关记忆\n${hits.map((hit) => `- ${hit.text}`).join('\n')}`;
 }
+
+/** 一次回合里用于写入记忆的消息。 */
+export interface TurnMessage {
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+}
+
+/**
+ * 把一回合的消息拼成一条待写入的记忆。
+ *
+ * 这是不依赖模型的规则抽取：保留用户问题与助手结论，去掉工具调用与中间步骤，按上限
+ * 截断。模型摘要由上层在可用时替换这条规则的结果，规则结果作为摘要不可用时的兜底。
+ * @param messages - 本回合的用户与助手消息。
+ * @param limit - 最大字符数，默认 4000。
+ * @returns 一条记忆文本；没有内容时为空串。
+ */
+export function composeTurnMemory(messages: readonly TurnMessage[], limit = 4000): string {
+  const user = messages.filter((message) => message.role === 'user').map((message) => message.text.trim()).filter((text) => text !== '');
+  const assistant = messages.filter((message) => message.role === 'assistant').map((message) => message.text.trim()).filter((text) => text !== '');
+  if (user.length === 0 && assistant.length === 0) return '';
+  const parts: string[] = [];
+  if (user.length > 0) parts.push(`用户：${user.join('\n')}`);
+  if (assistant.length > 0) parts.push(`助手：${assistant.join('\n')}`);
+  const text = parts.join('\n');
+  return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+}

@@ -20,6 +20,7 @@ interface ProjectRecord {
   readonly title: string;
   readonly instructions: string;
   readonly defaultModel?: string;
+  readonly shared?: boolean;
   readonly updatedAt: number;
 }
 
@@ -27,7 +28,7 @@ interface ProjectRecord {
 interface ProjectsService {
   list(): ProjectRecord[];
   get(path: string): ProjectRecord | undefined;
-  set(input: { path: string; title?: string; instructions?: string; defaultModel?: string }): Promise<ProjectRecord>;
+  set(input: { path: string; title?: string; instructions?: string; defaultModel?: string; shared?: boolean }): Promise<ProjectRecord>;
 }
 
 /** 可执行的动作。 */
@@ -49,6 +50,7 @@ export function apply(ctx: Context): void {
       title: { type: 'string', description: 'set 时的展示名。' },
       instructions: { type: 'string', description: 'set 时的项目说明，会注入该项目下的会话上下文。' },
       defaultModel: { type: 'string', description: 'set 时的默认模型路由名。' },
+      shared: { type: 'boolean', description: 'set 时的工作区共享标记；共享工作区的记忆写进组 bank。' },
     },
     output: {
       schema: {
@@ -87,6 +89,7 @@ export function apply(ctx: Context): void {
         title: args.title,
         instructions: args.instructions,
         defaultModel: args.defaultModel,
+        shared: args.shared,
       });
       return { action: 'set', result: `已写入 ${record.path} 的项目记录。` };
     },

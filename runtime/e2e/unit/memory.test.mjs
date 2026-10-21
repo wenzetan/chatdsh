@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { banksFor, dedupeHits } from '../../packages/host/memory/lib/rules.js';
+import { banksFor, composeTurnMemory, dedupeHits } from '../../packages/host/memory/lib/rules.js';
 import { createMemoryClient } from '../../packages/host/memory/lib/client.js';
 
 const HINDSIGHT = process.env.HINDSIGHT_URL ?? 'http://127.0.0.1:8889';
@@ -65,4 +65,16 @@ test('对真实 Hindsight 完成探活、写入与召回', async () => {
   // 命中与否取决于整合进度，不作为断言条件。
   const hits = await client.recall([bank], { query: marker, tags: [marker], maxTokens: 128 });
   assert.ok(Array.isArray(hits), '召回应当返回列表');
+});
+
+test('回合记忆保留用户与助手文本并按上限截断', () => {
+  const text = composeTurnMemory([
+    { role: 'user', text: '蓝鲸的体长是多少' },
+    { role: 'assistant', text: '蓝鲸体长约三十米。' },
+  ]);
+  assert.equal(text, '用户：蓝鲸的体长是多少\n助手：蓝鲸体长约三十米。');
+  const long = composeTurnMemory([{ role: 'user', text: 'x'.repeat(100) }], 10);
+  assert.equal(long.length, 11);
+  assert.ok(long.endsWith('…'));
+  assert.equal(composeTurnMemory([]), '');
 });

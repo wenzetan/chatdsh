@@ -16,6 +16,8 @@ export interface ProjectRecord {
   readonly instructions: string;
   /** 该项目新建会话时的默认模型路由名。 */
   readonly defaultModel?: string;
+  /** 工作区是否共享；共享工作区的记忆写进组 bank。 */
+  readonly shared?: boolean;
   /** 最后修改时刻的毫秒时间戳。 */
   readonly updatedAt: number;
 }
@@ -26,6 +28,7 @@ export const projectSchema = z.object({
   title: z.string(),
   instructions: z.string(),
   defaultModel: z.string().optional(),
+  shared: z.boolean().optional(),
   updatedAt: z.number().int().nonnegative(),
 });
 
