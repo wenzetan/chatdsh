@@ -1,0 +1,6 @@
+# 上下文占用洞察行。窗口按部署的模型写入，默认 128K。
+- insert:
+    - id: chatdsh-context-insights
+      name: '@chatdsh/host-context-insights'
+      config:
+        windowTokens: 131072

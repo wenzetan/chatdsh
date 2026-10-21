@@ -34,7 +34,9 @@
     "@chatdsh/tool-research": "link:../../packages/tool/research",
     "@chatdsh/tool-share": "link:../../packages/tool/share",
     "@chatdsh/host-model-provider": "link:../../packages/host/model-provider",
-    "@chatdsh/client-model-provider": "link:../../packages/client/model-provider"
+    "@chatdsh/client-model-provider": "link:../../packages/client/model-provider",
+    "@chatdsh/host-context-insights": "link:../../packages/host/context-insights",
+    "@chatdsh/client-context-insights": "link:../../packages/client/context-insights"
   },
   "dsh": {
     "profile": {

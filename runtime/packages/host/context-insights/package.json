@@ -1,0 +1,45 @@
+{
+  "name": "@chatdsh/host-context-insights",
+  "version": "0.1.0",
+  "description": "ChatDSH 宿主平面插件：按会话索引与用量投影给出上下文占用洞察",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [],
+      "spans": [
+        "chatdsh.runtime.context.insight"
+      ],
+      "metrics": [
+        "chatdsh_context_usage_ratio"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/core-contracts": "workspace:*",
+    "@chatdsh/core-session-index": "workspace:*",
+    "@chatdsh/host-usage": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-session-projection": "0.2.1-rc.2"
+  }
+}

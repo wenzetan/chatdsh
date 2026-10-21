@@ -21,7 +21,9 @@
     "@chatdsh/host-telemetry": "link:../../packages/host/telemetry",
     "@chatdsh/host-usage": "link:../../packages/host/usage",
     "@chatdsh/host-model-provider": "link:../../packages/host/model-provider",
-    "@chatdsh/client-model-provider": "link:../../packages/client/model-provider"
+    "@chatdsh/client-model-provider": "link:../../packages/client/model-provider",
+    "@chatdsh/host-context-insights": "link:../../packages/host/context-insights",
+    "@chatdsh/client-context-insights": "link:../../packages/client/context-insights"
   },
   "dsh": {
     "profile": {

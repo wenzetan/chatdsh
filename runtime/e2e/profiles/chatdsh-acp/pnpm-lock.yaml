@@ -32,6 +32,9 @@ importers:
       '@chatdsh/host-connectors':
         specifier: link:../../../packages/host/connectors
         version: link:../../../packages/host/connectors
+      '@chatdsh/host-context-insights':
+        specifier: link:../../../packages/host/context-insights
+        version: link:../../../packages/host/context-insights
       '@chatdsh/host-import':
         specifier: link:../../../packages/host/import
         version: link:../../../packages/host/import

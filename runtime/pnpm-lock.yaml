@@ -52,6 +52,8 @@ importers:
 
   packages/client/connectors: {}
 
+  packages/client/context-insights: {}
+
   packages/client/memory: {}
 
   packages/client/model-provider: {}
@@ -144,6 +146,21 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  packages/host/context-insights:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+      '@chatdsh/core-session-index':
+        specifier: workspace:*
+        version: link:../../core/session-index
+      '@chatdsh/host-usage':
+        specifier: workspace:*
+        version: link:../usage
 
   packages/host/import:
     dependencies:

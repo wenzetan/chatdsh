@@ -51,3 +51,7 @@
     # 模型提供方：路由标识、端点与静态请求头，默认空列表。
     - id: chatdsh-model-provider
       name: '@chatdsh/host-model-provider'
+
+    # 上下文占用：按会话索引与用量投影计算，窗口由部署写入。
+    - id: chatdsh-context-insights
+      name: '@chatdsh/host-context-insights'

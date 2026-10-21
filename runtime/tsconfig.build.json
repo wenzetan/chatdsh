@@ -123,6 +123,12 @@
     },
     {
       "path": "packages/client/model-provider"
+    },
+    {
+      "path": "packages/host/context-insights"
+    },
+    {
+      "path": "packages/client/context-insights"
     }
   ]
 }

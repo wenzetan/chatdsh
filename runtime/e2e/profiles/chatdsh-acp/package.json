@@ -16,7 +16,8 @@
     "@chatdsh/core-session-index": "link:../../../packages/core/session-index",
     "@chatdsh/host-telemetry": "link:../../../packages/host/telemetry",
     "@chatdsh/host-usage": "link:../../../packages/host/usage",
-    "@chatdsh/host-model-provider": "link:../../../packages/host/model-provider"
+    "@chatdsh/host-model-provider": "link:../../../packages/host/model-provider",
+    "@chatdsh/host-context-insights": "link:../../../packages/host/context-insights"
   },
   "dsh": {
     "profile": {
