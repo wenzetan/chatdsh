@@ -40,12 +40,34 @@ let clientFace: ClientFace | undefined;
 
 /** 记录一次界面动作，失败不打断界面。 */
 function noteAction(outcome: 'ok' | 'failed'): void {
+  // 浏览器侧不持有 OpenObserve 凭据，直接编成 OTLP 日志载荷交给同源中继；
+  // 中继只转发不解析，形状必须与 client-telemetry 生成的一致。
   void fetch('/chatdsh/telemetry/browser', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-chatdsh-signal': 'logs', 'x-chatdsh-csrf': '1' },
     body: JSON.stringify({
-      events: [{ action: 'automation-toggle', outcome }],
-    }),
+    resourceLogs: [{
+      resource: {
+        attributes: [
+          { key: 'service.name', value: { stringValue: 'chatdsh-browser' } },
+          { key: 'chatdsh.surface', value: { stringValue: 'browser' } },
+        ],
+      },
+      scopeLogs: [{
+        scope: { name: '@chatdsh/client-automation' },
+        logRecords: [{
+          timeUnixNano: String(Date.now() * 1_000_000),
+          severityNumber: 9,
+          severityText: 'INFO',
+          body: { stringValue: 'chatdsh.client.ui.action' },
+          attributes: [
+            { key: 'action', value: { stringValue: 'automation-toggle' } },
+            { key: 'outcome', value: { stringValue: outcome } },
+          ],
+        }],
+      }],
+    }],
+  }),
     keepalive: true,
   }).catch(() => undefined);
 }

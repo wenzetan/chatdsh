@@ -25,6 +25,8 @@ interface ClientFace {
   readonly remote?: {
     readonly chatdshConnectors?: {
       list?: () => Promise<ConnectorRecord[]>;
+      setEnabled?: (id: string, enabled: boolean) => Promise<ConnectorRecord>;
+      syncMcpRows?: () => Promise<unknown>;
     };
   };
 }
@@ -47,10 +49,45 @@ function targetOf(record: ConnectorRecord): string {
   return `${record.command ?? '命令未填写'}${args}`;
 }
 
+/** 记录一次界面动作，失败不打断界面。 */
+function noteAction(outcome: 'ok' | 'failed'): void {
+  // 浏览器侧不持有 OpenObserve 凭据，直接编成 OTLP 日志载荷交给同源中继；
+  // 中继只转发不解析，形状必须与 client-telemetry 生成的一致。
+  void fetch('/chatdsh/telemetry/browser', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-chatdsh-signal': 'logs', 'x-chatdsh-csrf': '1' },
+    body: JSON.stringify({
+    resourceLogs: [{
+      resource: {
+        attributes: [
+          { key: 'service.name', value: { stringValue: 'chatdsh-browser' } },
+          { key: 'chatdsh.surface', value: { stringValue: 'browser' } },
+        ],
+      },
+      scopeLogs: [{
+        scope: { name: '@chatdsh/client-connectors' },
+        logRecords: [{
+          timeUnixNano: String(Date.now() * 1_000_000),
+          severityNumber: 9,
+          severityText: 'INFO',
+          body: { stringValue: 'chatdsh.client.ui.action' },
+          attributes: [
+            { key: 'action', value: { stringValue: 'connector-toggle' } },
+            { key: 'outcome', value: { stringValue: outcome } },
+          ],
+        }],
+      }],
+    }],
+  }),
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 /** 设置页区段。 */
 function ConnectorsSection() {
   const [connectors, setConnectors] = useState<ConnectorRecord[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,27 +109,63 @@ function ConnectorsSection() {
     };
   }, []);
 
+  /**
+   * 切换一个连接器的启用状态。
+   *
+   * 停用后必须再调一次 `syncMcpRows`：加载器行由这条同步按记录重建，只改记录不会让
+   * 已挂载的 MCP 行消失。
+   */
+  function toggle(record: ConnectorRecord): void {
+    const remote = clientFace?.remote?.chatdshConnectors;
+    if (remote?.setEnabled === undefined || remote.syncMcpRows === undefined) {
+      setError('连接器接口不可用');
+      return;
+    }
+    remote.setEnabled.call(remote, record.id, !record.enabled).then(
+      (updated) => {
+        setConnectors((current) => (current ?? []).map((item) => (item.id === updated.id ? updated : item)));
+        setError(undefined);
+        return remote.syncMcpRows?.call(remote).then(() => noteAction('ok'), () => {
+          setError('记录已更新，但加载器行同步失败');
+          noteAction('failed');
+        });
+      },
+      () => {
+        setError('切换连接器状态失败');
+        noteAction('failed');
+      },
+    );
+  }
+
   if (failed) return <p style={{ fontSize: 13, opacity: 0.7 }}>连接器列表暂不可用。</p>;
   if (connectors === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取连接器…</p>;
   if (connectors.length === 0) return <p style={{ fontSize: 13, opacity: 0.7 }}>还没有登记外部连接器。</p>;
 
   return (
-    <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 13 }}>
-      {connectors.map((record) => (
-        <li key={record.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-          <div style={{ fontWeight: 600 }}>
-            {record.name}
-            {record.enabled ? '' : '（已停用）'}
-          </div>
-          <div style={{ opacity: 0.7 }}>
-            {record.transport} · {targetOf(record)}
-          </div>
-          {record.credentialEnv === undefined ? null : (
-            <div style={{ opacity: 0.6 }}>凭据来自环境变量 {record.credentialEnv}</div>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div style={{ fontSize: 13 }}>
+      {error === undefined ? null : <p style={{ color: '#b42318', margin: '0 0 8px' }}>{error}</p>}
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        {connectors.map((record) => (
+          <li key={record.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontWeight: 600 }}>
+                {record.name}
+                {record.enabled ? '' : '（已停用）'}
+              </span>
+              <button type="button" onClick={() => toggle(record)} style={{ fontSize: 12 }}>
+                {record.enabled ? '停用' : '启用'}
+              </button>
+            </div>
+            <div style={{ opacity: 0.7 }}>
+              {record.transport} · {targetOf(record)}
+            </div>
+            {record.credentialEnv === undefined ? null : (
+              <div style={{ opacity: 0.6 }}>凭据来自环境变量 {record.credentialEnv}</div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

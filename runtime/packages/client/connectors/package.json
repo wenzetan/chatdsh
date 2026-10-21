@@ -35,5 +35,21 @@
   },
   "peerDependencies": {
     "react": ">=19"
+  },
+  "chatdsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    },
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action"
+      ],
+      "spans": [],
+      "metrics": []
+    }
   }
 }
