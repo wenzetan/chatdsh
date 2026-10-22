@@ -29,5 +29,7 @@ export { renderSharePage } from './render.ts';
 export type { ShareEvent } from './render.ts';
 export { createGatewayServer } from './server.ts';
 export { handleLlmRequest, LlmQuotaLedger } from './llm.ts';
+export { McpRegistry, McpRegistryError, toServerName } from './mcp-registry.ts';
+export type { McpEndpointRecord, McpServerInput, McpSnapshot, McpTransport } from './mcp-registry.ts';
 export type { LlmGatewayConfig, LlmQuotaConfig } from './llm.ts';
 export type { GatewayServer } from './server.ts';

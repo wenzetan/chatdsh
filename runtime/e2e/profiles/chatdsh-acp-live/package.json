@@ -22,7 +22,8 @@
     "@chatdsh/host-skills": "link:../../../packages/host/skills",
     "@chatdsh/bundle-memory-hindsight": "link:../../../packages/bundle/memory-hindsight",
     "@chatdsh/host-memory": "link:../../../packages/host/memory",
-    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server"
+    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server",
+    "@deepseek-ai/dsh-mcp-client": "0.2.1-rc.2"
   },
   "dsh": {
     "profile": {

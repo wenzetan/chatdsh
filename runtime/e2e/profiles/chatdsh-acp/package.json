@@ -20,7 +20,8 @@
     "@chatdsh/host-llm-router": "link:../../../packages/host/llm-router",
     "@chatdsh/host-context-insights": "link:../../../packages/host/context-insights",
     "@chatdsh/host-skills": "link:../../../packages/host/skills",
-    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server"
+    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server",
+    "@deepseek-ai/dsh-mcp-client": "0.2.1-rc.2"
   },
   "dsh": {
     "profile": {

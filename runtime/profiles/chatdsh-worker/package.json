@@ -29,7 +29,8 @@
     "@chatdsh/client-skills": "link:../../packages/client/skills",
     "@chatdsh/tool-skill-manage": "link:../../packages/tool/skill-manage",
     "@chatdsh/client-automation": "link:../../packages/client/automation",
-    "@chatdsh/host-mcp-server": "link:../../packages/host/mcp-server"
+    "@chatdsh/host-mcp-server": "link:../../packages/host/mcp-server",
+    "@deepseek-ai/dsh-mcp-client": "0.2.1-rc.2"
   },
   "dsh": {
     "profile": {

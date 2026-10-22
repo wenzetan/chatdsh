@@ -22,7 +22,8 @@
   },
   "dependencies": {
     "@chatdsh/adapter": "link:../../../../dsh-adapter",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@chatdsh/core-contracts": "workspace:*"
   },
   "chatdsh": {
     "telemetry": {

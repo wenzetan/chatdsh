@@ -329,7 +329,7 @@ flowchart TB
 | `@chatdsh/host-artifacts` | 制品存储与版本，制品虚拟文件系统 | `ctx.storageDomain`、`ctx.attachments` |
 | `@chatdsh/host-memory` | 记忆接入层：向存储层召回并注入、定期摘要写入，按工作区与会话类型决定召回哪些 bank；`memoryBackend` 为 `none` 时不加载 | `agent/pre-step` |
 | `@chatdsh/host-assistants` | 自定义助手写入 preset 声明并注册 | `dsh-agent-preset-registry` |
-| `@chatdsh/host-connectors` | 按用户生成 MCP 服务器配置与凭据 | MCP 客户端行、`ctx.authorization.registerFlow` |
+| `@chatdsh/host-connectors` | MCP 接入：从控制平面读全局注册与按设备的端点，按本机那段生成 DSH 原生 MCP 客户端行；协议细节由上游客户端承担 | MCP 客户端行、`ctx.authorization.registerFlow` |
 | `@chatdsh/host-approval` | 把 Hermes 的审批请求写成 `plugin:` 记录，接收应答并回传；`chatBackend` 为 `hermes` 时加载 | `appendPluginRecord`、自建 Remote 方法 |
 | `@chatdsh/host-usage` | 取每轮用量并上报控制平面 | `ctx.sessionProjections` |
 | `@chatdsh/host-push` | 把会话事件（回合结束、待审批）上报控制平面 | `ctx.schedule` 之外的自建上报 |
@@ -344,11 +344,26 @@ flowchart TB
 
 ### 4.4 MCP 服务端
 
-`@chatdsh/host-mcp-server` 是独立子系统，不是一行路由注册。协议实现复用上游 `@modelcontextprotocol/core` 的公开 schema 与版本常量，服务端自己负责四件事：JSON-RPC 请求解析与错误码、能力协商、按调用方解析工具目录、把调用交给 `ctx.tools` 执行。
+`@chatdsh/host-mcp-server` 是能力出口，设计保留、默认关闭。协议实现复用上游 `@modelcontextprotocol/core` 的公开 schema 与版本常量，服务端自己负责四件事：JSON-RPC 请求解析与错误码、能力协商、按调用方解析工具目录、把调用交给 `ctx.tools` 执行。当前没有消费方，本部署不打开它。
 
 协议入口是一条独立的 HTTP 路由 `/mcp`，不经过 `remoteAccess.decide()`。鉴权由插件自己的 Bearer 令牌承担，令牌从配置给出的环境变量名读取，不落配置文件；没有令牌的请求在协议层之前返回 401。默认关闭，打开时必须同时给出 `tokenEnv` 与挂载路径，缺任一项在构造阶段就地抛出。
 
 工具目录按调用方过滤。请求带 `x-chatdsh-session-id` 且该会话有活动 agent 时，目录取这个 agent 可见的工具集合，与模型自己看到的集合一致；不带会话标识时只暴露全局工具。不可见的工具在 `tools/list` 里不出现，`tools/call` 也按参数错误拒绝，不让调用方借错误码探测别的会话有什么工具。
+
+### 4.4.1 MCP 接入
+
+MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协议细节不由本项目实现，`@chatdsh/host-connectors` 只做配置分发，连接、握手、工具注册与重连交给 DSH 原生的 `dsh-mcp-client` 插件，远端工具以 `mcp__<server>__<name>` 进入工具目录。
+
+配置是全局注册的。控制平面持有两张表：
+
+- `mcp_servers` 记录这个账号下有哪些 MCP。任一设备上报的服务器都进这里，所有设备都能读到，因此在 A 端配置的 MCP 在 B 端也看得见。
+- `mcp_endpoints` 是每端一段连接参数，主键是（账号，服务器名，设备标识）。同一台服务器在内网机器上可以是 `npx` 启动，在外网设备上只能是 HTTPS 地址；两段共享同一个服务器名，模型看到的是同一项能力。
+
+配置格式沿用 VSCode 的 `mcp.json`：顶层 `servers` 字典，键是服务器名，值给出 `type`、`command`/`args` 或 `url`/`headers`。设备通过 `PUT /chatdsh/gateway/mcp` 覆盖式上报自己那一组，通过 `GET` 读取全局快照，通过 `DELETE ?server=` 移除本段。设备标识取身份头，与控制平面记录设备用的是同一个值。
+
+启用状态不进控制平面：是否接入某台服务器由各端自己决定。凭据值也不进：端点记录只保存环境变量名，各端从自己的环境里取值填入 `env` 或 `headers`，取不到就由原生客户端报告不可达。
+
+连接失败是允许的。某台服务器在 A 端能连、在 B 端因网络条件连不上时，B 端记录里仍有这一段，工具目录里没有它的工具，其他端不受影响。
 
 上面这张清单是宿主平面的设计集合。已实现的是其中十八个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-llm-router`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`、`host-mcp-server`。表中其余两项尚未实现，各自的状态与替代方式如下：
 
@@ -758,7 +773,7 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 | 团队与工作区 | 控制平面的成员表与进程边界 |
 | 定时任务 | 控制平面统一调度，动作分唤醒运行时与直接推送 |
 | 移动端推送 | 控制平面按设备订阅投递，前台走长连接、后台走本地通知 |
-| 外部程序接入工具 | 未实现：需要一份把工具暴露为 MCP 服务的包，上游只提供客户端侧的 `dsh-mcp-client` |
+| 外部程序接入工具 | `host-mcp-server` 已实现，设计保留、默认关闭；当前没有消费方 |
 
 ## 十、与 ChatGPT 的差距
 

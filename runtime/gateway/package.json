@@ -38,7 +38,8 @@
         "chatdsh.gateway.schedule.run",
         "chatdsh.gateway.share.render",
         "chatdsh.gateway.webhook",
-        "chatdsh.gateway.llm"
+        "chatdsh.gateway.llm",
+        "chatdsh.gateway.mcp.registry"
       ],
       "metrics": [
         "chatdsh_http_request_duration_seconds",
@@ -46,7 +47,8 @@
         "chatdsh_push_deliveries_total",
         "chatdsh_schedule_runs_total",
         "chatdsh_webhook_receipts_total",
-        "chatdsh_llm_requests_total"
+        "chatdsh_llm_requests_total",
+        "chatdsh_mcp_registry_writes_total"
       ]
     }
   },

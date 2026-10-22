@@ -165,6 +165,7 @@ flowchart TB
 | metric | `chatdsh_schedule_runs_total` | 定时任务 | `action`、`outcome` |
 | metric | `chatdsh_power_policy_active` | 当前生效的保活与阻止睡眠档位 | `power.mode` |
 | metric | `chatdsh_webhook_receipts_total` | webhook 投递结果 | `outcome` |
+| metric | `chatdsh_mcp_registry_writes_total` | MCP 端点上报次数 | `outcome` |
 
 ### 6.2 运行时宿主平面
 
@@ -226,6 +227,7 @@ flowchart TB
 |---|---|---|---|
 | span | `chatdsh.llm.stream` | 一次模型请求 | `provider`、`model`、`outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.llm` | 控制平面模型入口的一次请求 | `provider`、`outcome` |
+| span | `chatdsh.gateway.mcp.registry` | MCP 全局注册与端点记录的读写 | `outcome`、`error.code` |
 | span | `chatdsh.llm.retry` | 重试 | `attempt`、`error.code` |
 | event | `chatdsh.llm.request.completed` | 请求结束 | `provider`、`model`、`prompt.tokens`、`completion.tokens`、`outcome` |
 | event | `chatdsh.llm.quota.rejected` | 额度拒绝 | `account.id`、`error.code` |

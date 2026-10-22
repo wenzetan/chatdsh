@@ -18,3 +18,4 @@ export * from './chat-backend.ts';
 export * from './memory-backend.ts';
 export * from './model-backend.ts';
 export * from './automation.ts';
+export * from './mcp.ts';

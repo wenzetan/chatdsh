@@ -101,13 +101,19 @@
     provider: gateway
     model: xhs/dots3-note-prev
 
-# MCP 服务端：打开协议入口，令牌从 CHATDSH_MCP_TOKEN 读。
+# MCP 服务端：设计保留，本部署不打开。
 #
-# 入口只接受 Bearer 令牌；令牌缺失时插件在构造阶段抛出，运行时会报告这一行未激活，
-# 不会留下半个可用的协议入口。
+# 它把本执行器的工具目录暴露给外部程序，属于能力出口；当前没有消费方，因此保持关闭。
+# 需要时把 enabled 改成 true，并给出访问令牌所在的环境变量名。
+# 连接器：MCP 注册表从控制平面拉取，按本设备那段生成 DSH 原生 MCP 客户端行。
+# deviceId 与 chatdsh-push 用的是同一台设备的标识。
+- id: chatdsh-connectors
+  name: '@chatdsh/host-connectors'
+  config:
+    gatewayUrl: http://127.0.0.1:3170
+    deviceId: local
+
 - id: chatdsh-mcp-server
   name: '@chatdsh/host-mcp-server'
   config:
-    enabled: true
-    path: /mcp
-    tokenEnv: CHATDSH_MCP_TOKEN
+    enabled: false

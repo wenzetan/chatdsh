@@ -489,3 +489,47 @@ node --test e2e/unit/mcp-server.test.mjs
 它覆盖初始化协商、工具目录列举、工具调用、未鉴权拒绝、未知方法与未知工具的错误码、按作用域与会话过滤目录，以及标准 MCP 客户端的完整握手。协议 schema 与版本常量复用 `@modelcontextprotocol/core`，不另写一份。
 
 默认关闭。打开时配置 `enabled: true`、`path` 与 `tokenEnv`；令牌缺失时插件在构造阶段抛出，运行时会报告这一行未激活，不会留下半个可用的协议入口。
+
+## 二十二、MCP 接入
+
+**通过。** MCP 接入把外部 MCP 服务的能力接进执行器。协议细节不由本项目实现：`@chatdsh/host-connectors` 只做配置分发，连接、握手、工具注册与重连交给 DSH 原生的 `dsh-mcp-client` 插件。
+
+配置是全局注册的。控制平面的 `mcp_servers` 记录这个账号下有哪些 MCP，`mcp_endpoints` 按设备保存连接参数。任一设备上报的服务器其他设备都能读到，因此 A 端配置的 MCP 在 B 端也看得见；同一台服务器在不同设备上可以是不同的连接方式。
+
+```bash
+node scripts/verify-mcp-registry.mjs
+```
+
+最近一次结果：
+
+```
+设备 A 上报通过：注册 1 台服务器，端点 1 段
+设备 B 读取与上报通过：同一服务器 2 段端点，设备 device-a、device-b
+按记录真实接入通过：2 个工具（resolve-library-id、query-docs）
+单设备移除通过：另一段端点保留，全局注册仍在
+MCP 注册表验收通过
+```
+
+这条脚本起真实控制平面，用两台设备标识上报与读取，再用设备 B 的记录经标准 MCP 客户端真实连接 context7 并列举工具。另有单元验收：
+
+```bash
+node --test e2e/unit/gateway-mcp-registry.test.mjs
+node --test e2e/unit/mcp-config.test.mjs
+```
+
+覆盖全局注册、按设备端点、覆盖式上报、单设备移除后全局注册的保留与清理、账号隔离、凭据只存环境变量名，以及 VSCode `mcp.json` 格式的解析与端点转加载器配置。
+
+配置格式沿用 VSCode 的 `mcp.json`：
+
+```json
+{
+  "servers": {
+    "context7": { "type": "http", "url": "https://mcp.context7.com/mcp" },
+    "notes": { "type": "stdio", "command": "npx", "args": ["-y", "notes-mcp"], "credentialEnv": "NOTES_TOKEN" }
+  }
+}
+```
+
+启用状态与凭据值都不进控制平面：是否接入由各端自己决定，凭据只同步环境变量名，值留在各端环境里。某台服务器在 A 端能连、B 端因网络条件连不上时，B 端记录仍在，工具目录里没有它的工具，其他端不受影响。
+
+**MCP 服务端设计保留、默认关闭。** `@chatdsh/host-mcp-server` 把本执行器的工具目录暴露给外部程序，当前没有消费方，`chatdsh-web` 的补丁层把它设为 `enabled: false`。协议层与验收命令见第二十一节。

@@ -18,10 +18,14 @@ import {
 import { UPSTREAM_MCP_CLIENT } from '@chatdsh/adapter/upstream';
 import { CONNECTORS_DOMAIN, TRANSPORTS, type ConnectorRecord } from './domain.ts';
 import { buildMcpRows, loaderEntryOf, planMcpSync, type McpRowResult, type McpSyncPlan } from './mcp.ts';
+import { toLoaderConfig, MCP_ROW_PREFIX } from './config.ts';
+import { McpRegistryClient } from './registry-client.ts';
 
 export type { ConnectorRecord } from './domain.ts';
 export { CONNECTORS_DOMAIN, TRANSPORTS } from './domain.ts';
 export { buildMcpRow, buildMcpRows, loaderEntryOf, planMcpSync, rowIdOf, toServerName } from './mcp.ts';
+export { McpConfigError, parseMcpConfig, resolveEnvReference, rowsOf } from './config.ts';
+export type { HttpRow, McpLoaderRow, McpServerEntry, StdioRow } from './config.ts';
 export type {
   ConnectorSpec,
   HttpRowConfig,
@@ -91,13 +95,40 @@ interface ConnectorsTelemetry {
 }
 
 /** 连接器服务。 */
+/** 连接器服务配置。 */
+export interface ConnectorsConfig {
+  /** 控制平面地址；缺省不拉取注册表。 */
+  readonly gatewayUrl?: string;
+  /** 本设备标识，与控制平面的设备记录一致。 */
+  readonly deviceId?: string;
+  /** 读取注册表的超时，单位毫秒。 */
+  readonly requestTimeoutMs?: number;
+}
+
 export class ChatdshConnectorService extends TypertRemoteService {
   static inject = ['storageDomain', 'loader'];
 
+  private readonly config: { gatewayUrl?: string; deviceId: string; requestTimeoutMs: number };
+
   private connectors: Table<ConnectorRecord> | undefined;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: ConnectorsConfig = {}) {
     super(ctx, SERVICE_NAME);
+    this.config = {
+      ...(config.gatewayUrl === undefined ? {} : { gatewayUrl: config.gatewayUrl }),
+      deviceId: config.deviceId ?? 'local',
+      requestTimeoutMs: config.requestTimeoutMs ?? 5000,
+    };
+  }
+
+  /** 控制平面客户端；没有配置地址时返回 undefined。 */
+  private registryClient(): McpRegistryClient | undefined {
+    if (this.config.gatewayUrl === undefined) return undefined;
+    return new McpRegistryClient({
+      gatewayUrl: this.config.gatewayUrl,
+      deviceId: this.config.deviceId,
+      requestTimeoutMs: this.config.requestTimeoutMs,
+    });
   }
 
   /** 取遥测客户端；关闭遥测时返回 undefined。 */
@@ -105,12 +136,14 @@ export class ChatdshConnectorService extends TypertRemoteService {
     return this.ctx.reflect.get('chatdshTelemetry') as ConnectorsTelemetry | undefined;
   }
 
-  /** 打开存储域，并把已启用的连接器同步成加载器行。 */
+  /** 打开存储域，把已启用的连接器同步成加载器行，并从控制平面拉取 MCP 注册表。 */
   async [TypertRemoteService.init](): Promise<void> {
     const domain = await storageDomainOf(this.ctx).open(CONNECTORS_DOMAIN);
     this.connectors = domain.table('connectors') as unknown as Table<ConnectorRecord>;
     // 启动时同步一次：连接器记录是持久化的，加载器行是派生物，重启后要让两者重新对上。
     await this.syncMcpRows();
+    // 控制平面里的 MCP 注册表是本机接入的来源；拉取失败不阻断启动，只记一条告警。
+    await this.refreshMcpRegistry();
   }
 
   /** 列出全部连接器，按名字排序。 */
@@ -179,7 +212,44 @@ export class ChatdshConnectorService extends TypertRemoteService {
     });
   }
 
-  /** 建立或更新一个连接器。 */
+  /**
+   * 从控制平面拉取 MCP 注册表，按本设备的端点重建加载器行。
+   *
+   * 只取 `deviceId` 与自己一致的那一段：同一台服务器在不同设备上可以是完全不同的连接
+   * 方式。加载器行指向 DSH 原生的 MCP 客户端插件，连接与工具注册由它承担。
+   * @returns 本设备接入的服务器数量；控制平面不可达时返回 `undefined`。
+   */
+  @Remote('refreshMcpRegistry')
+  async refreshMcpRegistry(): Promise<{ servers: number; endpoints: number } | undefined> {
+    const client = this.registryClient();
+    if (client === undefined) return undefined;
+    let snapshot;
+    try {
+      snapshot = await client.snapshot();
+    } catch {
+      // 控制平面不可达时保留现有加载器行：本机已接入的能力不该因为一次读取失败而消失。
+      return undefined;
+    }
+    const mine = snapshot.endpoints.filter((endpoint) => endpoint.deviceId === this.config.deviceId);
+    const desired = mine.map((endpoint) => ({
+      rowId: `${MCP_ROW_PREFIX}${endpoint.server}`,
+      name: MCP_CLIENT_PACKAGE,
+      config: toLoaderConfig(endpoint),
+    }));
+    const existing = [...loaderOf(this.ctx).entries()].map((entry) => entry.options.id);
+    const existingSet = new Set(existing.filter((id) => id.startsWith(MCP_ROW_PREFIX)));
+    for (const row of desired) {
+      if (existingSet.has(row.rowId)) await loaderOf(this.ctx).update(row.rowId, { config: row.config });
+      else await loaderOf(this.ctx).create({ id: row.rowId, name: row.name, config: row.config } as EntryOptions, null);
+    }
+    const desiredIds = new Set(desired.map((row) => row.rowId));
+    for (const id of existingSet) {
+      if (!desiredIds.has(id)) loaderOf(this.ctx).remove(id);
+    }
+    return { servers: snapshot.servers.length, endpoints: desired.length };
+  }
+
+  /** 建立或更新一个连接器。 */  /** 建立或更新一个连接器。 */
   @Remote('save')
   async save(input: ConnectorInput): Promise<ConnectorRecord> {
     const check = validateConnector(input);

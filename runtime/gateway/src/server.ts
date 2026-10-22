@@ -19,6 +19,7 @@ import type { PushHub } from './push.ts';
 import { renderSharePage } from './render.ts';
 import { AutomationStore, handleWebhook } from './automation.ts';
 import { handleLlmRequest, LlmQuotaLedger } from './llm.ts';
+import { McpRegistry } from './mcp-registry.ts';
 
 /** 服务实例。 */
 export interface GatewayServer {
@@ -57,6 +58,7 @@ function routeOf(_method: string, path: string): string {
   if (path === '/chatdsh/gateway/events') return 'events';
   if (path.startsWith('/chatdsh/gateway/webhook/')) return 'webhook';
   if (path === '/chatdsh/gateway/automations') return 'automations';
+  if (path === '/chatdsh/gateway/mcp') return 'mcp';
   if (path === '/chatdsh/gateway/llm') return 'llm';
   if (path.startsWith('/s/')) return 'snapshot';
   if (path.startsWith('/api/')) return 'api';
@@ -100,6 +102,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
   const accessProvider: AccessProvider = config.accessProvider === 'manual' ? manualProvider() : tailscaleProvider();
   const automations = new AutomationStore(store.handle());
   const llmLedger = new LlmQuotaLedger(store, config.llmGateway.quota);
+  const mcpRegistry = new McpRegistry(store.handle());
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const path = (request.url ?? '/').split('?')[0] ?? '/';
@@ -215,6 +218,66 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
             accountId: account.id,
           });
         });
+        return;
+      }
+
+      // MCP 全局注册：GET 读快照，PUT 覆盖本设备的端点。设备标识取身份头。
+      if (route === 'mcp') {
+        if (request.method === 'GET') {
+          await telemetry.runSpan('chatdsh.gateway.mcp.registry', { action: 'read' }, async (span) => {
+            const snapshot = mcpRegistry.snapshot(account.id);
+            span.setAttribute('outcome', 'ok');
+            sendJson(response, 200, { accountId: account.id, ...snapshot });
+          });
+          return;
+        }
+        if (request.method === 'PUT') {
+          const deviceId = request.headers[IDENTITY_HEADERS.deviceId];
+          if (typeof deviceId !== 'string' || deviceId === '') {
+            sendJson(response, 400, { error: 'missing-device-id' });
+            return;
+          }
+          const body = await readBody(request, 256 * 1024);
+          const parsed = JSON.parse(body) as { servers?: unknown };
+          if (typeof parsed.servers !== 'object' || parsed.servers === null || Array.isArray(parsed.servers)) {
+            sendJson(response, 400, { error: 'missing-servers' });
+            return;
+          }
+          await telemetry.runSpan('chatdsh.gateway.mcp.registry', { action: 'write' }, async (span) => {
+            try {
+              const written = mcpRegistry.upsertServers(account.id, deviceId, parsed.servers as never);
+              span.setAttribute('outcome', 'ok');
+              telemetry.counter('chatdsh_mcp_registry_writes_total', { description: 'MCP 端点上报次数' })
+                .add(1, { outcome: 'ok' });
+              sendJson(response, 200, { written, ...mcpRegistry.snapshot(account.id) });
+            } catch (error) {
+              span.setAttribute('outcome', 'failed');
+              span.setAttribute('error.code', 'mcp-registry/invalid');
+              telemetry.counter('chatdsh_mcp_registry_writes_total', { description: 'MCP 端点上报次数' })
+                .add(1, { outcome: 'failed' });
+              sendJson(response, 400, { error: error instanceof Error ? error.message : 'invalid' });
+            }
+          });
+          return;
+        }
+        if (request.method === 'DELETE') {
+          const deviceId = request.headers[IDENTITY_HEADERS.deviceId];
+          const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'gateway'}`);
+          const server = url.searchParams.get('server');
+          if (typeof deviceId !== 'string' || deviceId === '' || server === null) {
+            sendJson(response, 400, { error: 'missing-device-id-or-server' });
+            return;
+          }
+          await telemetry.runSpan('chatdsh.gateway.mcp.registry', { action: 'delete' }, async (span) => {
+            mcpRegistry.removeServer(account.id, deviceId, server);
+            span.setAttribute('outcome', 'ok');
+            telemetry.counter('chatdsh_mcp_registry_writes_total', { description: 'MCP 端点上报次数' })
+              .add(1, { outcome: 'ok' });
+            sendJson(response, 200, mcpRegistry.snapshot(account.id));
+          });
+          return;
+        }
+        sendJson(response, 405, { error: 'method-not-allowed' });
         return;
       }
 

@@ -44,7 +44,8 @@
     "@chatdsh/client-automation": "link:../../packages/client/automation",
     "@chatdsh/bundle-chat-hermes": "link:../../packages/bundle/chat-hermes",
     "@chatdsh/host-chat-hermes": "link:../../packages/host/chat-hermes",
-    "@chatdsh/host-mcp-server": "link:../../packages/host/mcp-server"
+    "@chatdsh/host-mcp-server": "link:../../packages/host/mcp-server",
+    "@deepseek-ai/dsh-mcp-client": "0.2.1-rc.2"
   },
   "dsh": {
     "profile": {

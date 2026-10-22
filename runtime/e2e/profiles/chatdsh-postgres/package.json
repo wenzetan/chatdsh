@@ -44,7 +44,8 @@
     "@chatdsh/client-automation": "link:../../../packages/client/automation",
     "@chatdsh/bundle-storage-postgres": "link:../../../packages/bundle/storage-postgres",
     "@chatdsh/core-session-persistence-postgres": "link:../../../packages/core/session-persistence-postgres",
-    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server"
+    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server",
+    "@deepseek-ai/dsh-mcp-client": "0.2.1-rc.2"
   },
   "dsh": {
     "profile": {

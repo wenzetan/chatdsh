@@ -47,7 +47,8 @@
     "@chatdsh/e2e-client-remote-bridge": "link:../../fixtures/client-remote-bridge",
     "@chatdsh/bundle-memory-hindsight": "link:../../../packages/bundle/memory-hindsight",
     "@chatdsh/host-memory": "link:../../../packages/host/memory",
-    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server"
+    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server",
+    "@deepseek-ai/dsh-mcp-client": "0.2.1-rc.2"
   },
   "dsh": {
     "profile": {
