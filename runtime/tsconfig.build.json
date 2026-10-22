@@ -122,6 +122,9 @@
       "path": "packages/host/model-provider"
     },
     {
+      "path": "packages/host/llm-router"
+    },
+    {
       "path": "packages/client/model-provider"
     },
     {

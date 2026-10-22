@@ -324,7 +324,7 @@ flowchart TB
 |---|---|---|
 | `@chatdsh/core-identity` | 从控制平面注入的头部取身份，供运行时的分派与审计使用 | `ctx.provide` |
 | `@chatdsh/core-session-index` | 注册会话读模型投影，供列表、检索、用量视图 | `ctx.sessionProjections` |
-| `@chatdsh/host-llm-router` | 模型适配器，转发到控制平面的模型入口，在 `stream()` 入口做额度检查 | `ctx.llm.registerAdapter` |
+| `@chatdsh/host-llm-router` | 模型适配器，转发到控制平面的模型入口，在 `stream()` 入口做额度检查；请求与分块的 OpenAI 兼容翻译在控制平面入口完成 | `ctx.llm.registerAdapter` |
 | `@chatdsh/host-projects` | 在工作区注册表之上扩展标题、指令、模型默认值 | `ctx.storageDomain`、`dsh-agent-instructions` |
 | `@chatdsh/host-artifacts` | 制品存储与版本，制品虚拟文件系统 | `ctx.storageDomain`、`ctx.attachments` |
 | `@chatdsh/host-memory` | 记忆接入层：向存储层召回并注入、定期摘要写入，按工作区与会话类型决定召回哪些 bank；`memoryBackend` 为 `none` 时不加载 | `agent/pre-step` |
@@ -346,11 +346,10 @@ flowchart TB
 
 `@chatdsh/mcp-server` 是独立子系统，不是一行路由注册。它要自建协议会话初始化、能力协商、`tools/list`、`tools/call`、错误码与流式响应，并定义鉴权模型：新开的协议入口不经过 `remoteAccess.decide()`，工具目录的可见性要按控制平面的会话归属过滤后再生效。
 
-上面这张清单是宿主平面的设计集合。已实现的是其中十六个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。表中其余四项尚未实现，各自的状态与替代方式如下：
+上面这张清单是宿主平面的设计集合。已实现的是其中十七个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-llm-router`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。表中其余三项尚未实现，各自的状态与替代方式如下：
 
 | 未实现的包 | 现状 |
 |---|---|
-| `@chatdsh/host-llm-router` | 没有实现。模型调用走内置的 DeepSeek 适配器；`host-model-provider` 只登记路由信息（端点与静态请求头），不代理请求，也不做额度检查 |
 | `@chatdsh/host-voice` | 没有实现。语音输入依赖上游实验组合包 `dsh-experimental-voice-input-bundle`，本部署未纳入；语音输出没有对应上游接缝 |
 | `@chatdsh/host-images` | 没有实现。图像生成与编辑由会话平面的 `@chatdsh/tool-image` 直接请求外部供应方，没有独立的图像服务端 |
 | `@chatdsh/mcp-server` | 没有实现，设计见下一节。上游只提供 MCP 客户端，外部程序接入工具这条能力目前缺失 |
@@ -526,6 +525,14 @@ Electron 主进程承担原生能力与运行时编排，控制平面、运行�
 ### 7.3 额度与用量
 
 模型调用统一经控制平面的模型入口，额度检查在 `@chatdsh/host-llm-router` 的 `stream()` 入口完成。额度拒绝使用独立错误码并禁止进入请求失败的恢复路径，否则会被当作可恢复失败触发重试与压缩。
+
+调用链有三段，每段的职责单一：
+
+- 运行时侧：`host-llm-router` 为每条路由登记一个 `GatewayLlmAdapter`。`stream()` 先查本地额度守卫，再向入口发一次请求；把入口返回的分块原样交给 Agent 循环。用量分块到达时累加本地读数，下一次请求因此能在本地提前拒绝。
+- 控制平面入口：`POST /chatdsh/gateway/llm` 按身份头部定位账号，读 SQLite 账本的已用额度；拒绝时返回 402 与 `quota-exceeded`，并且不向上游发出任何请求。放行时把 DSH 的消息结构翻译成 OpenAI 兼容请求，把上游 SSE 翻译回 DSH 的分块。
+- 上游模型网关：只接受 OpenAI 兼容请求与流式响应。凭据由控制平面按环境变量名读取，不下发给运行时。
+
+额度失败有两层码。内核可路由的码是 `QUOTA`，Agent 循环与重试策略按它判断不可恢复；跨组件的码是 `quota-exceeded`，写进遥测的 `error.code`。两者同时带在 `LlmQuotaError` 上，调用方读字段，不解析消息文本。上游返回 402、429 或错误体里出现额度、余额一类词时，入口与适配器都映射成 `QUOTA`。
 
 单机形态下用户也可以用 `llm-pi-ai` 的 `providers` 或 `llm-deepseek-api-key` 直接配模型路由，那条路径的额度是事后统计而非事前拦截，账本仍然记录。
 

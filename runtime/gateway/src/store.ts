@@ -11,6 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { LlmGatewayConfig } from './llm.ts';
 
 /** 控制平面配置。 */
 export interface GatewayConfig {
@@ -34,6 +35,8 @@ export interface GatewayConfig {
   readonly pushMode: 'all-at-once' | 'two-stage';
   /** 两段式通知的升级阈值，单位毫秒。 */
   readonly pushEscalationMs: number;
+  /** 模型入口：上游地址、额度与凭据环境变量名。 */
+  readonly llmGateway: LlmGatewayConfig;
 }
 
 /** 一条账号记录。 */
@@ -88,6 +91,31 @@ export function parseRuntimeRoutes(raw: string | undefined): Record<string, stri
   return routes;
 }
 
+function parseOptionalCount(raw: string | undefined, name: string): number | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${name} 必须是非负整数：${raw}`);
+  return value;
+}
+
+/**
+ * 解析模型入口配置。上游地址未配置时入口返回 503，不会静默转给别的地址。
+ * @param env - 进程环境变量。
+ * @returns 模型入口配置。
+ */
+export function parseLlmGateway(env: NodeJS.ProcessEnv): LlmGatewayConfig {
+  const upstreamUrl = env.CHATDSH_LLM_GATEWAY_URL;
+  if (upstreamUrl !== undefined) new URL(upstreamUrl);
+  return {
+    upstreamUrl,
+    quota: {
+      limit: parseOptionalCount(env.CHATDSH_LLM_QUOTA_LIMIT, 'CHATDSH_LLM_QUOTA_LIMIT'),
+      used: parseOptionalCount(env.CHATDSH_LLM_QUOTA_USED, 'CHATDSH_LLM_QUOTA_USED'),
+    },
+    apiKeyEnv: env.CHATDSH_LLM_API_KEY_ENV,
+  };
+}
+
 /**
  * 读取配置。环境变量优先，缺省值面向单机自托管。
  * @param env - 进程环境变量。
@@ -106,6 +134,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     version: env.CHATDSH_VERSION ?? '0.1.0',
     pushMode: env.CHATDSH_PUSH_MODE === 'all-at-once' ? 'all-at-once' : 'two-stage',
     pushEscalationMs: Number.parseInt(env.CHATDSH_PUSH_ESCALATION_MS ?? '120000', 10),
+    llmGateway: parseLlmGateway(env),
   };
 }
 
@@ -196,6 +225,10 @@ export class GatewayStore {
         escalate_at integer
       );
       create index if not exists push_queue_by_account on push_queue(account_id);
+      create table if not exists llm_quota (
+        account_id text primary key,
+        used integer not null
+      );
       create table if not exists read_receipts (
         session_id text not null,
         device_id text not null,
@@ -226,6 +259,21 @@ export class GatewayStore {
     if (!columns.some((column) => column.name === 'payload')) {
       this.database.exec('alter table replica_events add column payload text');
     }
+  }
+
+  /** 取一个账号的模型额度已用量。 */
+  llmQuotaUsed(accountId: string): number {
+    const row = this.database.prepare('select used from llm_quota where account_id = ?').get(accountId) as { used: number } | undefined;
+    return row?.used ?? 0;
+  }
+
+  /** 累加一个账号的模型额度用量。 */
+  recordLlmQuota(accountId: string, tokens: number): number {
+    if (!Number.isInteger(tokens) || tokens < 0) throw new Error('额度用量必须是非负整数');
+    this.database.prepare(
+      'insert into llm_quota (account_id, used) values (?, ?) on conflict(account_id) do update set used = used + excluded.used',
+    ).run(accountId, tokens);
+    return this.llmQuotaUsed(accountId);
   }
 
   /** 按登录名取账号，不存在时建立。 */

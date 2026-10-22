@@ -3,6 +3,9 @@
  *
  * 用 `pnpm run` 跑脚本时 pnpm 会重置 PATH，全局安装的 `dsh` 常常不在其中。这里按三处线索
  * 依次查找：`DSH_BIN` 环境变量、与当前 node 同目录的 `dsh`、PATH 里的 `dsh`。
+ *
+ * 找到的可执行文件依赖它安装时的 node 版本；调用方要用找到的启动器直接执行，
+ * 不经过 `env node` 重新解析，否则会落到当前 PATH 上另一个版本的 node。
  */
 
 import { existsSync } from 'node:fs';

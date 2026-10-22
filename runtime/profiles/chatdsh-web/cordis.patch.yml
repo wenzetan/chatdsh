@@ -82,3 +82,21 @@
   name: "@deepseek-ai/dsh-client-ui-settings-general"
   config:
     welcomeNoticeVersion: 2026-09-28.1
+
+# 模型路由器：把网关 provider 接管过来，默认模型改选它。
+#
+# 入口地址与控制平面同机；账号取运行时注入的身份头部，入口侧按账号累计额度。
+# 上游测试网关地址与密钥由控制平面的 CHATDSH_LLM_GATEWAY_URL 与 CHATDSH_LLM_API_KEY_ENV
+# 给出；额度上限由 CHATDSH_LLM_QUOTA_LIMIT 给出，留空表示不限制。
+- id: chatdsh-llm-router
+  name: '@chatdsh/host-llm-router'
+  config:
+    baseUrl: 'http://127.0.0.1:3170/chatdsh/gateway/llm'
+    routes:
+      - provider: gateway
+
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config:
+    provider: gateway
+    model: xhs/dots3-note-prev

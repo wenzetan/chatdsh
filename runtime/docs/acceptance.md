@@ -341,13 +341,33 @@ node scripts/extensions.mjs remove  @chatdsh/bundle-worker   --profile chatdsh-w
 
 ## 十八、端到端
 
-**部分。** `node --test` 覆盖十三个模块的纯函数与三处真实外部依赖（浏览器、桌面启动编排、SQLite），共 71 个用例。协议层的检验在 `verify-acp.mjs` 里，不走 `--test`：
+**通过。** 端到端验收用真实进程与真实依赖，不用替身：
 
 ```bash
-node --test 'e2e/unit/*.test.mjs'
+export PATH=/usr/local/nvm/versions/node/v24.19.0/bin:$PATH
+node scripts/verify-llm-router-live.mjs
 ```
 
-浏览器层没有 Playwright 那样的完整界面自动化。本机的 Chrome 通过调试协议做过一次流程验收（见第五项），走完欢迎页、密钥页、工作区页并在预设页断言自建预设出现；从输入到结果的完整操作路径仍缺一次能进主界面的会话。
+模型主链路是这一轮新增的端到端项：
+
+```
+控制平面模型入口通过：200，可见文本 4 个字符，结束原因 stop
+路由器模型调用通过：可见文本 4 个字符，结束原因 stop，上游请求增加 1 次
+运行时装配通过：http://127.0.0.1:3099/，路由器插件无激活告警
+额度拒绝通过：402，错误码 quota-exceeded，上游请求未增加
+模型主链路验收通过
+```
+
+这条脚本做四件事：起一个观测代理记录发往测试模型网关的请求数；起控制平面，断言入口把上游响应翻译成 DSH 分块并带回可见文本与 `stop`；用路由器导出的适配器走完整链路完成一次真实模型调用；最后把控制平面换到额度耗尽的实例，断言 402、`quota-exceeded`，且上游请求数不增加。凭据只从 `deploy/.env` 或环境变量读，脚本不打印请求体与模型输出原文。
+
+控制平面入口与路由器另有单元验收：
+
+```bash
+node --test e2e/unit/gateway-llm-http.test.mjs
+node --test e2e/unit/llm-router.test.mjs
+```
+
+它们覆盖真实 HTTP 入口的鉴权顺序与额度前置检查、请求结构到 OpenAI 消息的翻译、上游增量到 DSH 分块的翻译、额度守卫按账号计数、错误码映射，以及路由器服务的 `static inject` 与配置校验。
 
 ## 十九、上游契约一致性
 
@@ -412,6 +432,30 @@ node scripts/check-upstream-names.mjs
 
 这几条在单机自托管下不影响使用——没有登录层就不需要那些账号字段，不换 Postgres 也不需要格式统一。它们会在启用登录层或切换存储后端时变成一次数据迁移。
 
-**模型凭据。** 本机没有 `DEEPSEEK_API_KEY`，涉及模型调用的验收项都只能做到「加载与激活」这一层。
+**模型凭据。** 本机没有 `DEEPSEEK_API_KEY`；模型调用验收走宿主上的测试模型网关，密钥来自 `deploy/.env` 的 `CHATDSH_TEST_GATEWAY_API_KEY`，不依赖 DeepSeek 平台账号。
 
 **浏览器驱动。** 本机装有 Chrome，可以通过调试协议驱动；第五项的界面验收用它走完了首次进入流程并断言了自建预设。缺的是 Playwright 一类的完整界面自动化，以及能进主界面的真实回合。
+
+## 二十、模型主链路与额度
+
+**通过。** `@chatdsh/host-llm-router` 把控制平面的模型入口注册成 DSH 的模型适配器，`stream()` 入口做额度检查；控制平面新增 `POST /chatdsh/gateway/llm`，按账号读 SQLite 额度账本，把 DSH 请求翻译成 OpenAI 兼容请求，并把上游 SSE 翻译回 DSH 分块。
+
+```bash
+node scripts/verify-llm-router-live.mjs
+```
+
+最近一次结果：
+
+```
+控制平面模型入口通过：200，可见文本 4 个字符，结束原因 stop
+路由器模型调用通过：可见文本 4 个字符，结束原因 stop，上游请求增加 1 次
+运行时装配通过：http://127.0.0.1:3099/，路由器插件无激活告警
+额度拒绝通过：402，错误码 quota-exceeded，上游请求未增加
+模型主链路验收通过
+```
+
+额度拒绝有两条独立证据。控制平面侧由 `e2e/unit/gateway-llm-http.test.mjs` 断言 402、`quota-exceeded` 与上游请求数为零；运行时侧由 `e2e/unit/llm-router.test.mjs` 断言 `LlmQuotaError` 同时带 `QUOTA` 与 `quota-exceeded`，且在发出请求之前抛出。上游返回 402、429 或额度类错误码时映射成 `QUOTA`，不进入可恢复失败的重试路径。
+
+额度账本落在控制平面的 `llm_quota` 表，按账号累计，进程重启不丢。启动初值由 `CHATDSH_LLM_QUOTA_USED` 给出，上限由 `CHATDSH_LLM_QUOTA_LIMIT` 给出，留空表示不限制。
+
+运行时装配的回归点：路由器服务把 `llm` 写在 `static inject` 上，`e2e/unit/llm-router.test.mjs` 断言这条依赖清单。

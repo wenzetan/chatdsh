@@ -83,6 +83,9 @@ importers:
       '@chatdsh/host-import':
         specifier: link:../../../packages/host/import
         version: link:../../../packages/host/import
+      '@chatdsh/host-llm-router':
+        specifier: link:../../../packages/host/llm-router
+        version: link:../../../packages/host/llm-router
       '@chatdsh/host-model-provider':
         specifier: link:../../../packages/host/model-provider
         version: link:../../../packages/host/model-provider

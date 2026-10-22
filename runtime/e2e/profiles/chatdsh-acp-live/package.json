@@ -17,6 +17,7 @@
     "@chatdsh/host-telemetry": "link:../../../packages/host/telemetry",
     "@chatdsh/host-usage": "link:../../../packages/host/usage",
     "@chatdsh/host-model-provider": "link:../../../packages/host/model-provider",
+    "@chatdsh/host-llm-router": "link:../../../packages/host/llm-router",
     "@chatdsh/host-context-insights": "link:../../../packages/host/context-insights",
     "@chatdsh/host-skills": "link:../../../packages/host/skills",
     "@chatdsh/bundle-memory-hindsight": "link:../../../packages/bundle/memory-hindsight",

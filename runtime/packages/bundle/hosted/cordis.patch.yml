@@ -52,6 +52,11 @@
     - id: chatdsh-model-provider
       name: '@chatdsh/host-model-provider'
 
+    # 模型路由器：把控制平面的模型入口注册成模型适配器，stream() 入口做额度检查。
+    # 入口地址与接管的路由由部署补丁层写入；缺省时这一项留给部署层覆盖。
+    - id: chatdsh-llm-router
+      name: '@chatdsh/host-llm-router'
+
     # 上下文占用：按会话索引与用量投影计算，窗口由部署写入。
     - id: chatdsh-context-insights
       name: '@chatdsh/host-context-insights'

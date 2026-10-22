@@ -6,7 +6,7 @@
  * @module @chatdsh/gateway
  */
 
-export { GatewayStore, PushQueue, ReplicaStore, ScheduleStore, ShareStore, readConfig, dataRoot } from './store.ts';
+export { GatewayStore, PushQueue, ReplicaStore, ScheduleStore, ShareStore, readConfig, dataRoot, parseLlmGateway } from './store.ts';
 export type {
   AccountRecord,
   DeviceRecord,
@@ -28,4 +28,6 @@ export type { DeliveryResult, PushHub } from './push.ts';
 export { renderSharePage } from './render.ts';
 export type { ShareEvent } from './render.ts';
 export { createGatewayServer } from './server.ts';
+export { handleLlmRequest, LlmQuotaLedger } from './llm.ts';
+export type { LlmGatewayConfig, LlmQuotaConfig } from './llm.ts';
 export type { GatewayServer } from './server.ts';

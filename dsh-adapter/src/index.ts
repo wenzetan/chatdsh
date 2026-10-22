@@ -61,7 +61,15 @@ export type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader';
 // ── 模型调用 ────────────────────────────────────────────────────
 // 适配器基类与请求、块流、用量、模型元数据的类型。业务包实现自定义 provider 时
 // 继承 `LlmAdapter`，从模型接入层到这里的路径只有这一条。
-export { LlmAdapter } from '@deepseek-ai/dsh-llm';
+export {
+  ACCOUNT_QUOTA_EXCEEDED_CODE,
+  HarnessError,
+  LlmAdapter,
+  LlmError,
+  QUOTA_EXCEEDED_CODE,
+  attributionHeaders,
+  isQuotaExceededError,
+} from '@deepseek-ai/dsh-llm';
 export type {
   GenerateOptions,
   LlmConfigurableProvider,

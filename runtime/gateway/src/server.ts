@@ -18,6 +18,7 @@ import type { GatewayConfig, GatewayStore, ReceiptStore, ReplicaStore, ScheduleS
 import type { PushHub } from './push.ts';
 import { renderSharePage } from './render.ts';
 import { AutomationStore, handleWebhook } from './automation.ts';
+import { handleLlmRequest, LlmQuotaLedger } from './llm.ts';
 
 /** 服务实例。 */
 export interface GatewayServer {
@@ -56,6 +57,7 @@ function routeOf(_method: string, path: string): string {
   if (path === '/chatdsh/gateway/events') return 'events';
   if (path.startsWith('/chatdsh/gateway/webhook/')) return 'webhook';
   if (path === '/chatdsh/gateway/automations') return 'automations';
+  if (path === '/chatdsh/gateway/llm') return 'llm';
   if (path.startsWith('/s/')) return 'snapshot';
   if (path.startsWith('/api/')) return 'api';
   if (path.startsWith('/plugins/')) return 'plugins';
@@ -97,6 +99,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
   // 可达性提供方按配置选择：Tailscale 取 Serve 注入的头部，手动反代没有来源身份。
   const accessProvider: AccessProvider = config.accessProvider === 'manual' ? manualProvider() : tailscaleProvider();
   const automations = new AutomationStore(store.handle());
+  const llmLedger = new LlmQuotaLedger(store, config.llmGateway.quota);
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const path = (request.url ?? '/').split('?')[0] ?? '/';
@@ -198,6 +201,20 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
         } else {
           sendJson(response, 200, { accountId: account.id, devices: store.listDevices(account.id) });
         }
+        return;
+      }
+
+      // 模型入口：额度前置检查与流式转发，身份取控制平面注入的账号头部。
+      if (route === 'llm') {
+        await telemetry.runSpan('chatdsh.gateway.llm', { provider: 'gateway' }, async (span) => {
+          span.setAttribute('outcome', 'forwarded');
+          await handleLlmRequest(request, response, {
+            config: config.llmGateway,
+            ledger: llmLedger,
+            telemetry,
+            accountId: account.id,
+          });
+        });
         return;
       }
 

@@ -46,6 +46,7 @@ async function startGateway() {
       version: '0.0.0',
       pushMode: 'all-at-once',
       pushEscalationMs: 1000,
+      llmGateway: { quota: {} },
     },
     store,
     replica,

@@ -224,7 +224,8 @@ flowchart TB
 
 | 信号 | 名称 | 触发点 | 必需属性 |
 |---|---|---|---|
-| span | `chatdsh.llm.stream` | 一次模型请求 | `provider`、`model`、`outcome` |
+| span | `chatdsh.llm.stream` | 一次模型请求 | `provider`、`model`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.llm` | 控制平面模型入口的一次请求 | `provider`、`outcome` |
 | span | `chatdsh.llm.retry` | 重试 | `attempt`、`error.code` |
 | event | `chatdsh.llm.request.completed` | 请求结束 | `provider`、`model`、`prompt.tokens`、`completion.tokens`、`outcome` |
 | event | `chatdsh.llm.quota.rejected` | 额度拒绝 | `account.id`、`error.code` |
@@ -232,6 +233,8 @@ flowchart TB
 | metric | `chatdsh_llm_request_duration_seconds` | 请求耗时 | `provider` |
 | metric | `chatdsh_llm_first_token_seconds` | 首 token 延迟 | `provider` |
 | metric | `chatdsh_llm_tokens_total` | token 计数 | `provider`、`model`、`kind` |
+
+额度拒绝的 `error.code` 取 `quota-exceeded`；控制平面入口与运行时路由器都会发这一条事件，两边按 `chatdsh.surface` 区分。重试 span 由重试策略产生，路由器只在自己的请求失败时补 `error.type` 与 `error.code`。
 
 ### 6.5 浏览器客户端
 
