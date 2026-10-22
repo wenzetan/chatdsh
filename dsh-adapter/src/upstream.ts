@@ -63,6 +63,13 @@ export const UPSTREAM_AGENT_ROWS = {
 export const UPSTREAM_MCP_CLIENT = '@deepseek-ai/dsh-mcp-client';
 
 /**
+ * MCP 协议实现：服务端只复用它的 schema 与协议版本常量，不引它的运行时。
+ *
+ * 它不随 DSH 安装提供，由使用它的包声明 peerDependencies。
+ */
+export const UPSTREAM_MCP_CORE = '@modelcontextprotocol/core';
+
+/**
  * 上游的投影表包名，业务包对它做类型增强。
  *
  * 声明合并必须写上游的真实包名，写成别名会挂不上，因此这个字符串出现在业务包里。
@@ -195,6 +202,7 @@ export const UPSTREAM_PACKAGE_NAMES: readonly string[] = [
   ...Object.values(UPSTREAM_TOOL_ROWS),
   ...Object.values(UPSTREAM_AGENT_ROWS),
   UPSTREAM_MCP_CLIENT,
+  UPSTREAM_MCP_CORE,
   UPSTREAM_PROJECTION_TYPES,
   UPSTREAM_APPROVAL_TYPES,
   ...Object.values(UPSTREAM_CAPABILITY_PACKAGES),

@@ -338,21 +338,24 @@ flowchart TB
 | `@chatdsh/host-skills` | 技能目录与启用状态：读 `ctx.skills` 的摘要，维护本项目的开关 | `ctx.chatdshSkills` |
 | `@chatdsh/host-voice` | 语音识别，复用内置实验性接口 | `dsh-experimental-api-speech-to-text` 行 |
 | `@chatdsh/host-images` | 图像生成与编辑工具的服务端部分 | `ctx.tools`、`ctx.attachments` |
-| `@chatdsh/mcp-server` | 把工具目录暴露为 MCP 服务端 | 独立子系统，见 4.4 |
+| `@chatdsh/host-mcp-server` | 把工具目录暴露为 MCP 服务端 | `ctx.webServer.register`、独立子系统，见 4.4 |
 | `@chatdsh/core-diagnostics` | 各端共享的纯诊断库：客户端、配置、脱敏、自建 W3C 链路上下文、有界环形缓冲与三条进程内导出管道 | 无，由各端客户端与宿主插件引用 |
 | `@chatdsh/host-telemetry` | 宿主平面唯一遥测出口：`ctx.chatdshTelemetry`、状态端点、自检端点、浏览器与移动端中继、开关切换与配置重载 | `ctx.provide`、`ctx.webServer.register`、`dsh-session-telemetry-otel` 行 |
 
 ### 4.4 MCP 服务端
 
-`@chatdsh/mcp-server` 是独立子系统，不是一行路由注册。它要自建协议会话初始化、能力协商、`tools/list`、`tools/call`、错误码与流式响应，并定义鉴权模型：新开的协议入口不经过 `remoteAccess.decide()`，工具目录的可见性要按控制平面的会话归属过滤后再生效。
+`@chatdsh/host-mcp-server` 是独立子系统，不是一行路由注册。协议实现复用上游 `@modelcontextprotocol/core` 的公开 schema 与版本常量，服务端自己负责四件事：JSON-RPC 请求解析与错误码、能力协商、按调用方解析工具目录、把调用交给 `ctx.tools` 执行。
 
-上面这张清单是宿主平面的设计集合。已实现的是其中十七个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-llm-router`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`。表中其余三项尚未实现，各自的状态与替代方式如下：
+协议入口是一条独立的 HTTP 路由 `/mcp`，不经过 `remoteAccess.decide()`。鉴权由插件自己的 Bearer 令牌承担，令牌从配置给出的环境变量名读取，不落配置文件；没有令牌的请求在协议层之前返回 401。默认关闭，打开时必须同时给出 `tokenEnv` 与挂载路径，缺任一项在构造阶段就地抛出。
+
+工具目录按调用方过滤。请求带 `x-chatdsh-session-id` 且该会话有活动 agent 时，目录取这个 agent 可见的工具集合，与模型自己看到的集合一致；不带会话标识时只暴露全局工具。不可见的工具在 `tools/list` 里不出现，`tools/call` 也按参数错误拒绝，不让调用方借错误码探测别的会话有什么工具。
+
+上面这张清单是宿主平面的设计集合。已实现的是其中十八个：`core-identity`、`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-llm-router`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`、`host-mcp-server`。表中其余两项尚未实现，各自的状态与替代方式如下：
 
 | 未实现的包 | 现状 |
 |---|---|
 | `@chatdsh/host-voice` | 没有实现。语音输入依赖上游实验组合包 `dsh-experimental-voice-input-bundle`，本部署未纳入；语音输出没有对应上游接缝 |
 | `@chatdsh/host-images` | 没有实现。图像生成与编辑由会话平面的 `@chatdsh/tool-image` 直接请求外部供应方，没有独立的图像服务端 |
-| `@chatdsh/mcp-server` | 没有实现，设计见下一节。上游只提供 MCP 客户端，外部程序接入工具这条能力目前缺失 |
 
 ### 4.5 会话平面插件
 

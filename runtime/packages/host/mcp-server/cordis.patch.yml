@@ -1,0 +1,6 @@
+# MCP 服务端宿主行。协议入口默认关闭，由部署按需打开并配置鉴权。
+- insert:
+    - id: chatdsh-mcp-server
+      name: '@chatdsh/host-mcp-server'
+      config:
+        enabled: false

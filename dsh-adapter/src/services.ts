@@ -21,6 +21,7 @@ import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry
 import type { SystemPrompt } from '@deepseek-ai/dsh-system-prompt';
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver';
 import type { SettingsForms } from '@deepseek-ai/dsh-settings';
+import type { AgentRegistry } from '@deepseek-ai/dsh-agent';
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm';
 import type { SkillRegistry } from '@deepseek-ai/dsh-skill';
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent';
@@ -75,6 +76,11 @@ export function hostWebServerOf(ctx: Context): WebServer {
 /** 设置面：`ctx.settings`。 */
 export function settingsOf(ctx: Context): SettingsForms {
   return ctx.settings;
+}
+
+/** agent 注册表：`ctx.agents`，按会话标识取活动的 agent。 */
+export function agentsOf(ctx: Context): AgentRegistry {
+  return ctx.agents;
 }
 
 /** 模型运行时：`ctx.llm`，提供适配器注册与流式调用。 */

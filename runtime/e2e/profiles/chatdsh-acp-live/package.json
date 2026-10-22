@@ -21,7 +21,8 @@
     "@chatdsh/host-context-insights": "link:../../../packages/host/context-insights",
     "@chatdsh/host-skills": "link:../../../packages/host/skills",
     "@chatdsh/bundle-memory-hindsight": "link:../../../packages/bundle/memory-hindsight",
-    "@chatdsh/host-memory": "link:../../../packages/host/memory"
+    "@chatdsh/host-memory": "link:../../../packages/host/memory",
+    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server"
   },
   "dsh": {
     "profile": {

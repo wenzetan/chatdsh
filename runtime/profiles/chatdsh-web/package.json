@@ -41,7 +41,8 @@
     "@chatdsh/host-skills": "link:../../packages/host/skills",
     "@chatdsh/client-skills": "link:../../packages/client/skills",
     "@chatdsh/tool-skill-manage": "link:../../packages/tool/skill-manage",
-    "@chatdsh/client-automation": "link:../../packages/client/automation"
+    "@chatdsh/client-automation": "link:../../packages/client/automation",
+    "@chatdsh/host-mcp-server": "link:../../packages/host/mcp-server"
   },
   "dsh": {
     "profile": {

@@ -295,9 +295,9 @@ flowchart TB
 
 | 信号 | 名称 | 触发点 | 必需属性 |
 |---|---|---|---|
-| span | `chatdsh.mcp.session.initialize` | 协议会话初始化 | `protocol.version`、`outcome` |
-| span | `chatdsh.mcp.tools.list` | 工具目录列举 | `tool.count` |
-| span | `chatdsh.mcp.tools.call` | 工具调用 | `tool.name`、`outcome` |
+| span | `chatdsh.mcp.session.initialize` | 协议会话初始化 | `protocol.version`、`outcome`、`error.type` |
+| span | `chatdsh.mcp.tools.list` | 工具目录列举 | `tool.count`、`outcome`、`error.type` |
+| span | `chatdsh.mcp.tools.call` | 工具调用 | `tool.name`、`outcome`、`error.type` |
 | event | `chatdsh.mcp.auth.rejected` | 鉴权拒绝 | `error.code` |
 | metric | `chatdsh_mcp_calls_total` | 调用数 | `method`、`outcome` |
 | metric | `chatdsh_mcp_call_duration_seconds` | 调用耗时 | `method` |

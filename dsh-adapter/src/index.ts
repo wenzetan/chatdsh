@@ -138,6 +138,7 @@ export {
 } from './upstream.ts';
 export {
   agentPresetsOf,
+  agentsOf,
   hostWebServerOf,
   llmOf,
   loaderOf,

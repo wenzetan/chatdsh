@@ -125,6 +125,9 @@
       "path": "packages/host/llm-router"
     },
     {
+      "path": "packages/host/mcp-server"
+    },
+    {
       "path": "packages/client/model-provider"
     },
     {

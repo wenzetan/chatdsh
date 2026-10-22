@@ -100,3 +100,14 @@
   config:
     provider: gateway
     model: xhs/dots3-note-prev
+
+# MCP 服务端：打开协议入口，令牌从 CHATDSH_MCP_TOKEN 读。
+#
+# 入口只接受 Bearer 令牌；令牌缺失时插件在构造阶段抛出，运行时会报告这一行未激活，
+# 不会留下半个可用的协议入口。
+- id: chatdsh-mcp-server
+  name: '@chatdsh/host-mcp-server'
+  config:
+    enabled: true
+    path: /mcp
+    tokenEnv: CHATDSH_MCP_TOKEN

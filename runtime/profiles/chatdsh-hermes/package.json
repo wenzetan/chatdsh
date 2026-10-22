@@ -43,7 +43,8 @@
     "@chatdsh/tool-skill-manage": "link:../../packages/tool/skill-manage",
     "@chatdsh/client-automation": "link:../../packages/client/automation",
     "@chatdsh/bundle-chat-hermes": "link:../../packages/bundle/chat-hermes",
-    "@chatdsh/host-chat-hermes": "link:../../packages/host/chat-hermes"
+    "@chatdsh/host-chat-hermes": "link:../../packages/host/chat-hermes",
+    "@chatdsh/host-mcp-server": "link:../../packages/host/mcp-server"
   },
   "dsh": {
     "profile": {

@@ -46,7 +46,8 @@
     "@chatdsh/host-chat-hermes": "link:../../../packages/host/chat-hermes",
     "@chatdsh/e2e-client-remote-bridge": "link:../../fixtures/client-remote-bridge",
     "@chatdsh/bundle-memory-hindsight": "link:../../../packages/bundle/memory-hindsight",
-    "@chatdsh/host-memory": "link:../../../packages/host/memory"
+    "@chatdsh/host-memory": "link:../../../packages/host/memory",
+    "@chatdsh/host-mcp-server": "link:../../../packages/host/mcp-server"
   },
   "dsh": {
     "profile": {

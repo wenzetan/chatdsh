@@ -21,6 +21,8 @@ const DEFAULT_OPTIONAL = [
   '@deepseek-ai/dsh-subagent-claude-code',
   '@deepseek-ai/dsh-subagent-acp',
   '@deepseek-ai/dsh-subagent-dsh-sdk',
+  // MCP 协议实现不随 DSH 安装提供，由使用它的包声明 peerDependencies。
+  '@modelcontextprotocol/core',
 ];
 
 /** 解析 --allow-missing。 */

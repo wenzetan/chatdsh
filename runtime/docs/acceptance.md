@@ -462,3 +462,30 @@ node scripts/verify-llm-router-live.mjs
 额度账本落在控制平面的 `llm_quota` 表，按账号累计，进程重启不丢。启动初值由 `CHATDSH_LLM_QUOTA_USED` 给出，上限由 `CHATDSH_LLM_QUOTA_LIMIT` 给出，留空表示不限制。
 
 运行时装配的回归点：路由器服务把 `llm` 写在 `static inject` 上，`e2e/unit/llm-router.test.mjs` 断言这条依赖清单。
+
+## 二十一、MCP 服务端
+
+**通过。** `@chatdsh/host-mcp-server` 把宿主工具目录暴露为 MCP 服务端。协议入口是一条独立的 HTTP 路由 `/mcp`，用 Bearer 令牌鉴权，不经过 `remoteAccess.decide()`；工具目录按调用方的会话归属过滤后再暴露，工具执行交给同一个 `ctx.tools` 注册表。
+
+```bash
+node scripts/verify-mcp-server.mjs
+```
+
+最近一次结果：
+
+```
+运行时已启动：http://127.0.0.1:3095/
+MCP 握手通过：协议版本 chatdsh，工具 1 个
+MCP 工具调用通过：返回 50 个字符
+MCP 服务端验收通过
+```
+
+这条脚本起一个真实的 `chatdsh-web` 运行时并打开协议入口，用标准 MCP 客户端完成握手、列举与调用，同时断言没有令牌的请求返回 401。协议层另有单元验收：
+
+```bash
+node --test e2e/unit/mcp-server.test.mjs
+```
+
+它覆盖初始化协商、工具目录列举、工具调用、未鉴权拒绝、未知方法与未知工具的错误码、按作用域与会话过滤目录，以及标准 MCP 客户端的完整握手。协议 schema 与版本常量复用 `@modelcontextprotocol/core`，不另写一份。
+
+默认关闭。打开时配置 `enabled: true`、`path` 与 `tokenEnv`；令牌缺失时插件在构造阶段抛出，运行时会报告这一行未激活，不会留下半个可用的协议入口。
