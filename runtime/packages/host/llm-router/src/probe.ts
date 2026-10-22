@@ -32,7 +32,7 @@ export async function probeRoute(adapter: GatewayLlmAdapter, model: string, sign
     provider: 'gateway',
     model,
     messages: [{ role: 'user', content: [{ type: 'text', text: '只回复两个字：收到' }] }],
-    maxTokens: 32,
+    maxTokens: 256,
     ...(signal === undefined ? {} : { signal }),
   };
   let visibleChars = 0;
@@ -41,5 +41,6 @@ export async function probeRoute(adapter: GatewayLlmAdapter, model: string, sign
     if (chunk.type === 'text-delta') visibleChars += chunk.text.length;
     if (chunk.type === 'finish') finish = chunk.reason.kind;
   }
-  return { ok: visibleChars > 0 && (finish === 'stop' || finish === 'tool-calls'), visibleChars, ...(finish === undefined ? {} : { finish }) };
+  // 推理模型会先用掉一部分预算；只要拿到可见文本，预算耗尽也算探测成功。
+  return { ok: visibleChars > 0, visibleChars, ...(finish === undefined ? {} : { finish }) };
 }
