@@ -529,10 +529,12 @@ Electron 主进程承担原生能力与运行时编排，控制平面、运行�
 调用链有三段，每段的职责单一：
 
 - 运行时侧：`host-llm-router` 为每条路由登记一个 `GatewayLlmAdapter`。`stream()` 先查本地额度守卫，再向入口发一次请求；把入口返回的分块原样交给 Agent 循环。用量分块到达时累加本地读数，下一次请求因此能在本地提前拒绝。
-- 控制平面入口：`POST /chatdsh/gateway/llm` 按身份头部定位账号，读 SQLite 账本的已用额度；拒绝时返回 402 与 `quota-exceeded`，并且不向上游发出任何请求。放行时把 DSH 的消息结构翻译成 OpenAI 兼容请求，把上游 SSE 翻译回 DSH 的分块。
+- 控制平面入口：`POST /chatdsh/gateway/llm` 按身份头部定位账号，读 SQLite 账本的已用额度；拒绝时返回 402 与 `quota-exceeded`，并且不向上游发出任何请求。放行时把 DSH 的消息结构翻译成 OpenAI 兼容请求，把上游响应翻译回 DSH 的分块。上游返回非 2xx 时，入口按原状态码、原 `content-type` 与原响应体回传，不解析也不重组错误体。
+
+上游响应按 `content-type` 分流。`text/event-stream` 逐帧翻译、边到边发；`application/json` 整段解析后一次发出全部分块，因此上游忽略流式要求、只支持非流式时这条链路同样成立；两者之外的类型无法翻译，入口回 502 并带上上游原文与它给出的 `content-type`，不猜测格式。向外始终是 SSE，运行时的适配器只有一条解析路径。结束原因保留上游原值（`finish.reason.upstreamReason`），`kind` 只做归一。
 - 上游模型网关：只接受 OpenAI 兼容请求与流式响应。凭据由控制平面按环境变量名读取，不下发给运行时。
 
-额度失败有两层码。内核可路由的码是 `QUOTA`，Agent 循环与重试策略按它判断不可恢复；跨组件的码是 `quota-exceeded`，写进遥测的 `error.code`。两者同时带在 `LlmQuotaError` 上，调用方读字段，不解析消息文本。上游返回 402、429 或错误体里出现额度、余额一类词时，入口与适配器都映射成 `QUOTA`。
+额度失败有两层码。内核可路由的码是 `QUOTA`，Agent 循环与重试策略按它判断不可恢复；跨组件的码是 `quota-exceeded`，写进遥测的 `error.code`。两者同时带在 `LlmQuotaError` 上，调用方读字段，不解析消息文本。上游返回 402、429 或错误体里出现额度、余额一类词时，运行时适配器把 `LlmUpstreamError` 标成 `QUOTA`，同时保留上游响应体原文、`content-type` 与上游错误码，请求失败的界面展示的是上游给出的说明。
 
 单机形态下用户也可以用 `llm-pi-ai` 的 `providers` 或 `llm-deepseek-api-key` 直接配模型路由，那条路径的额度是事后统计而非事前拦截，账本仍然记录。
 

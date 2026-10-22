@@ -150,14 +150,17 @@ export class GatewayLlmAdapter extends LlmAdapter {
       signal: options.signal ?? AbortSignal.timeout(this.requestTimeoutMs),
     });
     if (!response.ok) {
+      // 响应原文原样带回：错误码只用于分支，用户拿到的是上游给出的说明。
+      const body = await response.text();
       const failure: UpstreamFailureInput = {
         status: response.status,
-        upstreamCode: readUpstreamCode(await response.text()),
-        detail: `模型入口返回 ${response.status}`,
+        body,
+        contentType: response.headers.get('content-type') ?? undefined,
+        upstreamCode: readUpstreamCode(body),
       };
       throw mapUpstreamFailure(failure);
     }
-    if (response.body === null) throw mapUpstreamFailure({ detail: '模型入口没有返回响应体' });
+    if (response.body === null) throw mapUpstreamFailure({ status: response.status });
 
     let usageSeen = false;
     for await (const chunk of parseSse(response.body)) {
@@ -174,10 +177,15 @@ export class GatewayLlmAdapter extends LlmAdapter {
   }
 }
 
-/** 从错误体里取上游错误码；非 JSON 或形状不符时返回 `undefined`。 */
+/** 从错误体里取上游错误码，只用于分类；非 JSON 或形状不符时返回 `undefined`。 */
 function readUpstreamCode(text: string): string | undefined {
   if (text === '') return undefined;
-  const parsed: unknown = JSON.parse(text);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
   if (typeof parsed !== 'object' || parsed === null) return undefined;
   const error = (parsed as { error?: unknown }).error;
   if (typeof error === 'string') return error;

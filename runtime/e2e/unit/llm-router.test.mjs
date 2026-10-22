@@ -158,3 +158,30 @@ test('配置不合法时在装配阶段就地抛出', () => {
     );
   }
 });
+
+test('上游拒绝时错误对象保留响应原文与上游错误码', async () => {
+  const upstreamText = '{"error":{"code":"insufficient_balance","message":"账户余额不足，请充值"}}';
+  const { server, baseUrl } = await serve((_request, response) => {
+    response.writeHead(402, { 'content-type': 'application/json; charset=utf-8' });
+    response.end(upstreamText);
+  });
+  const adapter = new GatewayLlmAdapter({
+    baseUrl: `${baseUrl}/chatdsh/gateway/llm`,
+    accountId: 'acct-4',
+    quota: { limit: 100, used: 0 },
+  });
+  try {
+    await assert.rejects(
+      collect(adapter.stream(options())),
+      (error) => error.name === 'LlmUpstreamError'
+        && error.code === 'QUOTA'
+        && error.status === 402
+        && error.body === upstreamText
+        && error.contentType === 'application/json; charset=utf-8'
+        && error.upstreamCode === 'insufficient_balance'
+        && error.message.includes('账户余额不足'),
+    );
+  } finally {
+    server.close();
+  }
+});

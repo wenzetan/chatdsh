@@ -121,7 +121,21 @@ test('额度耗尽时模型入口返回 402 且不转发到上游', async () => 
   }
 });
 
+/** 解析模型入口返回的 SSE，取出可见文本与结束原因。 */
+function readSse(text) {
+  let visible = '';
+  let finish;
+  for (const line of text.split('\n')) {
+    if (!line.startsWith('data: ')) continue;
+    const chunk = JSON.parse(line.slice('data: '.length));
+    if (chunk.type === 'text-delta') visible += chunk.text;
+    if (chunk.type === 'finish') finish = chunk.reason;
+  }
+  return { visible, finish };
+}
+
 test('翻译器把上游增量翻译成分块，并在结束时补齐用量与结束原因', async () => {
+  // 结束原因保留上游原值，`kind` 只做归一。
   const { createStreamTranslator } = await import('../../gateway/lib/stream.js');
   const translator = createStreamTranslator();
   const first = translator.push('data: {"choices":[{"delta":{"content":"a"}}]}\n\ndata: {"choices":[{"delta":{"content":"b"}}]}\n\n');
@@ -136,7 +150,7 @@ test('翻译器把上游增量翻译成分块，并在结束时补齐用量与�
   assert.deepEqual(finished, []);
   assert.deepEqual(translator.flush(), [
     { type: 'usage', usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 } },
-    { type: 'finish', reason: { kind: 'stop' } },
+    { type: 'finish', reason: { kind: 'stop', upstreamReason: 'stop' } },
   ]);
 });
 
@@ -162,4 +176,112 @@ test('请求翻译把内容块拼成 OpenAI 消息并打开流式', async () => 
     { role: 'tool', content: '结果', tool_call_id: 'c1' },
   ]);
   assert.equal(request.max_tokens, 64);
+});
+
+test('上游非 2xx 的响应体与 content-type 原样回传', async () => {
+  const upstreamText = '{"error":{"code":"insufficient_balance","message":"账户余额不足，请充值"}}';
+  const upstream = createServer((_request, response) => {
+    response.writeHead(402, { 'content-type': 'application/json; charset=utf-8' });
+    response.end(upstreamText);
+  });
+  await new Promise((done) => upstream.listen(0, '127.0.0.1', done));
+  const { server, store } = await startGateway(`http://127.0.0.1:${upstream.address().port}/v1/chat/completions`, { limit: 1000, used: 0 });
+  try {
+    const response = await fetch(`${server.url()}/chatdsh/gateway/llm`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'tailscale-user-login': 'alice' },
+      body: JSON.stringify({ provider: 'gateway', model: 'test-model', messages: [] }),
+    });
+    assert.equal(response.status, 402);
+    assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+    assert.equal(await response.text(), upstreamText);
+  } finally {
+    await server.stop();
+    upstream.close();
+    store.close();
+  }
+});
+
+test('上游返回非流式 JSON 时翻译成同样的分块', async () => {
+  const upstream = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: '收到', reasoning_content: '思考中' },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
+    }));
+  });
+  await new Promise((done) => upstream.listen(0, '127.0.0.1', done));
+  const { server, store } = await startGateway(`http://127.0.0.1:${upstream.address().port}/v1/chat/completions`, { limit: 1000, used: 0 });
+  try {
+    const response = await fetch(`${server.url()}/chatdsh/gateway/llm`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'tailscale-user-login': 'alice' },
+      body: JSON.stringify({ provider: 'gateway', model: 'test-model', messages: [] }),
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /text\/event-stream/);
+    const { visible } = readSse(await response.text());
+    assert.equal(visible, '收到');
+  } finally {
+    await server.stop();
+    upstream.close();
+    store.close();
+  }
+});
+
+test('上游返回无法翻译的 content-type 时回 502 并保留响应原文', async () => {
+  const upstream = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/plain' });
+    response.end('plain text body');
+  });
+  await new Promise((done) => upstream.listen(0, '127.0.0.1', done));
+  const { server, store } = await startGateway(`http://127.0.0.1:${upstream.address().port}/v1/chat/completions`, { limit: 1000, used: 0 });
+  try {
+    const response = await fetch(`${server.url()}/chatdsh/gateway/llm`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'tailscale-user-login': 'alice' },
+      body: JSON.stringify({ provider: 'gateway', model: 'test-model', messages: [] }),
+    });
+    assert.equal(response.status, 502);
+    const payload = await response.json();
+    assert.equal(payload.error.code, 'llm-upstream-unsupported-content-type');
+    assert.equal(payload.error.body, 'plain text body');
+    assert.match(payload.error.message, /text\/plain/);
+  } finally {
+    await server.stop();
+    upstream.close();
+    store.close();
+  }
+});
+
+test('翻译器把非流式响应整段翻译成与流式一致的分块', async () => {
+  const { createStreamTranslator } = await import('../../gateway/lib/stream.js');
+  const translator = createStreamTranslator();
+  const chunks = translator.pushResponse({
+    choices: [{
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: '收到',
+        reasoning_content: '思考中',
+        tool_calls: [{ id: 'c1', function: { name: 'fs', arguments: '{"path":"a"}' } }],
+      },
+      finish_reason: 'tool_calls',
+    }],
+    usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
+  });
+  assert.deepEqual(chunks, [
+    { type: 'text-delta', index: 0, text: '收到' },
+    { type: 'reasoning-delta', index: 1, text: '思考中' },
+    { type: 'tool-call-delta', index: 10, id: 'c1', name: 'fs', argumentsDelta: '{"path":"a"}' },
+  ]);
+  assert.deepEqual(translator.flush(), [
+    { type: 'usage', usage: { inputTokens: 4, outputTokens: 3, totalTokens: 7 } },
+    { type: 'finish', reason: { kind: 'tool-calls', upstreamReason: 'tool_calls' } },
+  ]);
+  assert.throws(() => translator.pushResponse('not an object'), /JSON 对象/);
 });

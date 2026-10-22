@@ -143,30 +143,65 @@ export async function handleLlmRequest(
       method: 'POST',
       headers: { ...headers, 'content-length': Buffer.byteLength(body) },
     }, (upstreamResponse) => {
-      if ((upstreamResponse.statusCode ?? 500) >= 400) {
-        const chunks: Buffer[] = [];
-        upstreamResponse.on('data', (chunk: Buffer) => chunks.push(chunk));
+      // 非 2xx 原样回传：状态码、content-type 与响应体都是上游给出的，入口不解析也不重组。
+      // 错误码的分支由运行时适配器在收到响应后做，只用于重试与遥测。
+      if ((upstreamResponse.statusCode ?? 500) >= 300) {
+        response.writeHead(upstreamResponse.statusCode ?? 502, {
+          'content-type': upstreamResponse.headers['content-type'] ?? 'application/octet-stream',
+        });
+        upstreamResponse.pipe(response);
+        upstreamResponse.on('end', () => resolve());
+        return;
+      }
+      const contentType = String(upstreamResponse.headers['content-type'] ?? '');
+      const translator = createStreamTranslator();
+      if (contentType.includes('text/event-stream')) {
+        // 流式：逐帧翻译，边到边发。
+        response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' });
+        upstreamResponse.setEncoding('utf8');
+        upstreamResponse.on('data', (chunk: string) => {
+          for (const frame of translator.push(chunk)) writeFrame(response, frame);
+        });
         upstreamResponse.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
-          response.writeHead(upstreamResponse.statusCode ?? 502, { 'content-type': 'application/json' });
-          response.end(JSON.stringify({ error: { code: upstreamCodeOf(text), message: '上游模型网关拒绝请求' } }));
+          for (const frame of translator.flush()) writeFrame(response, frame);
+          response.end();
+          resolve();
+        });
+        upstreamResponse.on('error', () => {
+          response.end();
           resolve();
         });
         return;
       }
-      response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' });
-      const translator = createStreamTranslator();
-      upstreamResponse.setEncoding('utf8');
-      upstreamResponse.on('data', (chunk: string) => {
-        for (const frame of translator.push(chunk)) writeFrame(response, frame);
-      });
+      if (contentType.includes('application/json')) {
+        // 非流式：整段解析后一次发出全部分块；上游忽略流式要求时也走这条。
+        response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' });
+        const chunks: Buffer[] = [];
+        upstreamResponse.on('data', (chunk: Buffer) => chunks.push(chunk));
+        upstreamResponse.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          for (const frame of translator.pushResponse(JSON.parse(text))) writeFrame(response, frame);
+          for (const frame of translator.flush()) writeFrame(response, frame);
+          response.end();
+          resolve();
+        });
+        upstreamResponse.on('error', () => {
+          response.end();
+          resolve();
+        });
+        return;
+      }
+      // 既不是流也不是 JSON：无法翻译，回 502 并写明上游给的 content-type，不猜测格式。
+      const chunks: Buffer[] = [];
+      upstreamResponse.on('data', (chunk: Buffer) => chunks.push(chunk));
       upstreamResponse.on('end', () => {
-        for (const frame of translator.flush()) writeFrame(response, frame);
-        response.end();
-        resolve();
-      });
-      upstreamResponse.on('error', () => {
-        response.end();
+        sendJson(response, 502, {
+          error: {
+            code: 'llm-upstream-unsupported-content-type',
+            message: `上游模型网关返回了无法翻译的 content-type：${contentType}`,
+            body: Buffer.concat(chunks).toString('utf8'),
+          },
+        });
         resolve();
       });
     });
@@ -177,18 +212,6 @@ export async function handleLlmRequest(
     });
     upstream.end(body);
   });
-}
-
-/** 从上游错误体里取错误码；解析失败时返回 `upstream-error`。 */
-function upstreamCodeOf(text: string): string {
-  try {
-    const parsed = JSON.parse(text) as { error?: { code?: unknown } | string };
-    if (typeof parsed.error === 'string') return parsed.error;
-    const code = parsed.error?.code;
-    return typeof code === 'string' ? code : 'upstream-error';
-  } catch {
-    return 'upstream-error';
-  }
 }
 
 /** 读取请求体；超过上限时抛出，由调用方按协议错误处理。 */

@@ -67,18 +67,24 @@ async function stop(child) {
   if (child.exitCode === null) child.kill('SIGKILL');
 }
 
-/** 上游模型网关的观测代理：记录请求次数并转发到真实测试网关。 */
-async function startProxy(credentials) {
+/**
+ * 上游模型网关的观测代理：记录请求次数并转发到真实测试网关。
+ * @param credentials - 测试网关地址与密钥。
+ * @param nonStream - 是否让上游返回非流式 JSON；为 false 时原样转发流式响应。
+ * @returns 代理地址与请求计数。
+ */
+async function startProxy(credentials, nonStream = false) {
   let requests = 0;
   const target = `${credentials.url}/chat/completions`;
   const server = createServer(async (request, response) => {
     requests += 1;
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
+    const incoming = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     const upstream = await fetch(target, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${credentials.key}` },
-      body: Buffer.concat(chunks).toString('utf8'),
+      body: JSON.stringify({ ...incoming, ...(nonStream ? { stream: false } : {}) }),
     });
     response.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' });
     response.end(Buffer.from(await upstream.arrayBuffer()));
@@ -211,6 +217,26 @@ try {
   }
   if (proxy.count() !== 1) failures.push(`模型入口的一次调用应当产生 1 次上游请求，实际 ${proxy.count()} 次`);
   console.log(`控制平面模型入口通过：${first.status}，可见文本 ${entry.visible.length} 个字符，结束原因 ${entry.finish.kind}`);
+
+  // 一点五段：上游只返回非流式 JSON 时，入口同样翻译成 SSE 分块。
+  const nonStreamProxy = await startProxy(credentials, true);
+  const nonStreamGateway = await startGateway({
+    home: tempHome('llm-router-live-nonstream'),
+    upstreamUrl: nonStreamProxy.url,
+    limit: 1_000_000,
+    used: 0,
+  });
+  children.push(nonStreamGateway.child);
+  const nonStreamCall = await callGateway(nonStreamGateway.url, 'llm-router-nonstream');
+  if (nonStreamCall.status !== 200) throw new Error(`非流式入口返回 ${nonStreamCall.status}`);
+  if (!nonStreamCall.text.includes('text/event-stream') && !nonStreamCall.text.startsWith('data: ')) {
+    throw new Error('非流式入口没有返回 SSE 分块');
+  }
+  const nonStreamEntry = readSse(nonStreamCall.text);
+  if (nonStreamEntry.visible === '') failures.push('非流式上游没有翻译出可见文本');
+  console.log(`非流式上游通过：可见文本 ${nonStreamEntry.visible.length} 个字符，结束原因 ${String(nonStreamEntry.finish?.kind)}`);
+  nonStreamProxy.server.close();
+  await stop(nonStreamGateway.child);
 
   // 第二段：运行时侧的路由器经同一个入口完成一次真实模型调用。
   //

@@ -352,13 +352,14 @@ node scripts/verify-llm-router-live.mjs
 
 ```
 控制平面模型入口通过：200，可见文本 4 个字符，结束原因 stop
+非流式上游通过：可见文本 4 个字符，结束原因 stop
 路由器模型调用通过：可见文本 4 个字符，结束原因 stop，上游请求增加 1 次
 运行时装配通过：http://127.0.0.1:3099/，路由器插件无激活告警
 额度拒绝通过：402，错误码 quota-exceeded，上游请求未增加
 模型主链路验收通过
 ```
 
-这条脚本做四件事：起一个观测代理记录发往测试模型网关的请求数；起控制平面，断言入口把上游响应翻译成 DSH 分块并带回可见文本与 `stop`；用路由器导出的适配器走完整链路完成一次真实模型调用；最后把控制平面换到额度耗尽的实例，断言 402、`quota-exceeded`，且上游请求数不增加。凭据只从 `deploy/.env` 或环境变量读，脚本不打印请求体与模型输出原文。
+这条脚本做五件事：起一个观测代理记录发往测试模型网关的请求数；起控制平面，断言入口把流式上游响应翻译成 DSH 分块并带回可见文本与 `stop`；让代理强制上游返回非流式 JSON，断言入口同样翻译出可见文本；用路由器导出的适配器走完整链路完成一次真实模型调用；最后把控制平面换到额度耗尽的实例，断言 402、`quota-exceeded`，且上游请求数不增加。凭据只从 `deploy/.env` 或环境变量读，脚本不打印请求体与模型输出原文。
 
 控制平面入口与路由器另有单元验收：
 
@@ -453,6 +454,8 @@ node scripts/verify-llm-router-live.mjs
 额度拒绝通过：402，错误码 quota-exceeded，上游请求未增加
 模型主链路验收通过
 ```
+
+上游响应按 `content-type` 分流：`text/event-stream` 逐帧翻译，`application/json` 整段翻译成同样的一组分块，其余类型回 502 并保留上游原文。`e2e/unit/gateway-llm-http.test.mjs` 覆盖三种分支。上游非 2xx 的响应按原状态码、原 `content-type` 与原响应体回传给调用方，入口不解析也不重组错误体。`e2e/unit/gateway-llm-http.test.mjs` 断言 402 的响应体与 `content-type` 原样到达，`e2e/unit/llm-router.test.mjs` 断言 `LlmUpstreamError` 带 `body`、`contentType` 与 `upstreamCode`，消息里是上游原文；`code` 只用于重试与遥测分支。
 
 额度拒绝有两条独立证据。控制平面侧由 `e2e/unit/gateway-llm-http.test.mjs` 断言 402、`quota-exceeded` 与上游请求数为零；运行时侧由 `e2e/unit/llm-router.test.mjs` 断言 `LlmQuotaError` 同时带 `QUOTA` 与 `quota-exceeded`，且在发出请求之前抛出。上游返回 402、429 或额度类错误码时映射成 `QUOTA`，不进入可恢复失败的重试路径。
 
