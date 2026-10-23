@@ -21,7 +21,14 @@ export interface AssistantRecord {
   readonly order: number;
   /** 助手的指令文本，注入为 persona 前缀。 */
   readonly instructions: string;
-  /** 该助手允许使用的工具行 id；空表示沿用默认工具面。 */
+  /**
+   * 工具档位；缺省按默认档位装配。
+   *
+   * 档位决定挂载哪些工具行与模型看到的形态，声明在 `@chatdsh/core-contracts` 的
+   * `tool-tiers` 里。记录上不存具体行列表：档位演进时既有助手自动跟随。
+   */
+  readonly tier?: 'chat' | 'work' | 'full';
+  /** 在档位之上额外追加的工具行 id；空表示只挂档位自带的那些。 */
   readonly tools: readonly string[];
   /** 创建时刻的毫秒时间戳。 */
   readonly createdAt: number;
@@ -36,6 +43,7 @@ export const assistantSchema = z.object({
   description: z.string(),
   order: z.number().int(),
   instructions: z.string(),
+  tier: z.enum(['chat', 'work', 'full']).optional(),
   tools: z.array(z.string()),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),

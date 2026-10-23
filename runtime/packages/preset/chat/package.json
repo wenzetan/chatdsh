@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/preset-chat",
   "version": "0.1.0",
-  "description": "ChatDSH 的会话平面组合包：声明 chatdsh 预设，挂载工作会话与聊天会话使用的工具行",
+  "description": "ChatDSH 的会话平面组合包：声明三档 agent preset，按档位挂载工具行",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -20,6 +20,9 @@
   "license": "MIT",
   "engines": {
     "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "dependencies": {
+    "@chatdsh/core-contracts": "link:../../core/contracts"
   },
   "dsh": {
     "bundle": {

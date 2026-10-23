@@ -38,13 +38,29 @@ export const UPSTREAM_CLIENT_UI = {
 export const UPSTREAM_TOOL_ROWS = {
   'tool-bash': '@deepseek-ai/dsh-tool-bash',
   'tool-pwsh': '@deepseek-ai/dsh-tool-pwsh',
+  'tool-bash-persistent': '@deepseek-ai/dsh-tool-bash-persistent',
+  'tool-pwsh-persistent': '@deepseek-ai/dsh-tool-pwsh-persistent',
   'tool-fs': '@deepseek-ai/dsh-tool-fs',
   'tool-fs-search': '@deepseek-ai/dsh-tool-fs-search',
+  'tool-str-replace-editor': '@deepseek-ai/dsh-tool-str-replace-editor',
+  'tool-terminal': '@deepseek-ai/dsh-tool-terminal',
+  'tool-working-directory': '@deepseek-ai/dsh-tool-working-directory',
+  'tool-workspace-dependencies': '@deepseek-ai/dsh-tool-workspace-dependencies',
   'skill-filesystem': '@deepseek-ai/dsh-skill-filesystem',
   'tool-skill': '@deepseek-ai/dsh-tool-skill',
   'tool-jobs': '@deepseek-ai/dsh-tool-jobs',
   'tool-todo': '@deepseek-ai/dsh-tool-todo',
   'tool-web': '@deepseek-ai/dsh-tool-web',
+  'tool-ask-user': '@deepseek-ai/dsh-tool-ask-user',
+  'tool-goal': '@deepseek-ai/dsh-tool-goal',
+  'tool-present': '@deepseek-ai/dsh-tool-present',
+  'tool-session-query': '@deepseek-ai/dsh-tool-session-query',
+  'tool-schedule': '@deepseek-ai/dsh-tool-schedule',
+  'tool-workflow': '@deepseek-ai/dsh-tool-workflow',
+  'tool-subagent': '@deepseek-ai/dsh-tool-subagent',
+  'tool-subagent-control': '@deepseek-ai/dsh-tool-subagent-control',
+  'tool-worktree': '@deepseek-ai/dsh-experimental-tool-worktree',
+  'tool-cordis': '@deepseek-ai/dsh-tool-cordis',
 } as const;
 
 /** 上游的人格与指令行：行 id → 包名。会话预设按行 id 挂载它们。 */
@@ -155,6 +171,14 @@ export const UPSTREAM_CAPABILITY_PACKAGES = {
   subprocessLocal: '@deepseek-ai/dsh-subprocess-local',
   /** ACP 服务端。 */
   acp: '@deepseek-ai/dsh-acp',
+  /** 会话级的工具呈现选择，preset 用它声明 native 或 ptc。 */
+  toolPresentation: '@deepseek-ai/dsh-agent-tool-presentation',
+  /** PTC 运行时接缝。 */
+  ptcRuntime: '@deepseek-ai/dsh-ptc-runtime',
+  /** PTC 的 Node 执行后端，提供 TypeScript 程序运行面。 */
+  ptcRuntimeNode: '@deepseek-ai/dsh-ptc-runtime-node',
+  /** 连续重复调用同一工具的提醒，只提醒不否决。 */
+  repeatToolReminder: '@deepseek-ai/dsh-repeat-tool-reminder',
 } as const;
 
 /**
@@ -193,6 +217,12 @@ export const UPSTREAM_ROWS = {
   'web-deepseek-api': '@deepseek-ai/dsh-web-deepseek-api',
   /** 浏览器侧的 DeepSeek 搜索。 */
   'web-search-deepseek': '@deepseek-ai/dsh-web-search-deepseek',
+  /** 会话级的工具呈现选择；preset 带这一行即切换 native 与 ptc。 */
+  'tool-presentation': '@deepseek-ai/dsh-agent-tool-presentation',
+  /** PTC 的 Node 执行后端；组合里没有它时 ptc 档在挂载阶段失败。 */
+  'ptc-runtime': '@deepseek-ai/dsh-ptc-runtime-node',
+  /** 连续重复调用的提醒。 */
+  'repeat-tool-reminder': '@deepseek-ai/dsh-repeat-tool-reminder',
 } as const;
 
 /** 全部登记过的上游包名，校验脚本据此核对各处清单。 */

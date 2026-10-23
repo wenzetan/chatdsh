@@ -1,35 +1,41 @@
 /**
  * 会话平面组合包。
  *
- * `chatdsh` 预设声明在这个组合包的补丁层里：它列出会话要挂载的行，工具可见范围由预设差异
- * 与 `ctx.tools.restrict` 收敛。工作会话与聊天会话共用这个预设；聊天会话在 `chatBackend`
- * 为 `hermes` 时改用空组合，执行由 Hermes 承载。
+ * 三档 preset 声明在这个组合包的补丁层里：它们列出会话要挂载的行，工具可见范围由预设
+ * 差异与 `ctx.tools.restrict` 收敛。档位从轻到重是聊天、工作、全量，工作档为默认。
+ * 聊天会话在 `chatBackend` 为 `hermes` 时改用空组合，执行由 Hermes 承载。
+ *
+ * 档位的声明同时存在于 `@chatdsh/core-contracts` 的 `tool-tiers` 里：装配助手与校验脚本
+ * 从那里读，补丁层按同一顺序书写，改动时两处同步。
  * @module @chatdsh/preset-chat
  */
 
-/** 预设标识，会话的 `agentPreset` 取这个值。 */
-export const CHATDSH_PRESET_ID = 'chatdsh';
+import {
+  CHAT_TIER,
+  DEFAULT_TOOL_TIER,
+  FULL_TIER,
+  WORK_TIER,
+  presetIdOf,
+  type ChatdshToolTier,
+} from '@chatdsh/core-contracts';
 
-/** 预设挂载的行 id，按补丁层里的书写顺序。 */
+export { CHAT_TIER, DEFAULT_TOOL_TIER, FULL_TIER, WORK_TIER, presetIdOf };
+export type { ChatdshToolTier };
+
+/** 默认预设标识，会话的 `agentPreset` 取这个值。 */
+export const CHATDSH_PRESET_ID = presetIdOf(DEFAULT_TOOL_TIER);
+
+/** 全部档位，按排序值排列。 */
+export const CHATDSH_PRESETS: readonly ChatdshToolTier[] = [CHAT_TIER, WORK_TIER, FULL_TIER];
+
+/** 人格、指令与时间上下文这三行所有档位共用。 */
+export const CHATDSH_COMMON_ROWS = ['persona', 'agent-instructions', 'time-context'] as const;
+
+/** 工作档挂载的行 id，按补丁层里的书写顺序；保留旧名以兼容既有引用。 */
 export const CHATDSH_PRESET_ROWS = [
-  'persona',
-  'agent-instructions',
-  'time-context',
-  'tool-bash',
-  'tool-pwsh',
-  'tool-fs',
-  'tool-fs-search',
-  'skill-filesystem',
-  'tool-skill',
-  'tool-jobs',
-  'tool-todo',
-  'tool-web',
-  'chatdsh-tool-artifact',
-  'chatdsh-tool-project',
-  'chatdsh-tool-share',
-  'chatdsh-tool-connector',
-  'chatdsh-tool-research',
-  'chatdsh-tool-image',
+  ...CHATDSH_COMMON_ROWS,
+  ...WORK_TIER.upstreamRows,
+  ...WORK_TIER.chatdshRows,
 ] as const;
 
 /** 相对组合包根的补丁文件路径。 */

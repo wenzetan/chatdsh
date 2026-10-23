@@ -2,15 +2,18 @@
  * 自定义助手：把助手记录装配成 agent preset，并提供增删改查。
  *
  * 每条助手记录在启动时注册成一个 preset，因此重启后助手仍在；注册失败会留在预设名册的
- * 诊断里，不静默消失。助手只决定指令与可用工具，不引入第二套插件机制。
+ * 诊断里，不静默消失。助手只决定指令、工具档位与额外工具行，不引入第二套插件机制。
+ *
+ * 工具面按档位装配：档位的权威声明在 `@chatdsh/core-contracts` 的 `tool-tiers` 里，
+ * 记录上只存档位标识与额外追加的行。全量档带 `tool-presentation` 行，模型看到的是单个
+ * `run_code` 与生成的 SDK，工具条目数不再决定请求里的声明长度。
  * @module @chatdsh/host-assistants
  */
 
 import { agentPresetsOf, Service, storageDomainOf, type Context } from '@chatdsh/adapter';
-// 引入两个被注入服务的类型声明，供 `ctx` 的服务名解析使用。
-import { CHATDSH_TOOL_ROWS } from '@chatdsh/core-contracts';
+import { DEFAULT_TOOL_TIER, toolTierOf, type ChatdshToolTierId } from '@chatdsh/core-contracts';
 import { Remote, TypertRemoteService, type PresetDefinition } from '@chatdsh/adapter';
-import { UPSTREAM_AGENT_ROWS, UPSTREAM_TOOL_ROWS } from '@chatdsh/adapter/upstream';
+import { UPSTREAM_AGENT_ROWS, UPSTREAM_ROWS, UPSTREAM_TOOL_ROWS } from '@chatdsh/adapter/upstream';
 import { ASSISTANTS_DOMAIN, type AssistantRecord } from './domain.ts';
 
 export type { AssistantRecord } from './domain.ts';
@@ -23,7 +26,9 @@ export interface AssistantInput {
   readonly name: string;
   readonly description?: string;
   readonly instructions: string;
-  /** 允许使用的工具行 id；省略表示沿用默认工具面。 */
+  /** 工具档位；省略时用默认档位。 */
+  readonly tier?: ChatdshToolTierId;
+  /** 在档位之上额外追加的工具行 id；省略表示只挂档位自带的那些。 */
   readonly tools?: readonly string[];
 }
 
@@ -38,10 +43,22 @@ interface AssistantTable {
   delete(key: string): Promise<boolean>;
 }
 
-/** 当前平台上应当挂载的工具行。 */
-function platformToolRows(): readonly string[] {
+/**
+ * 当前平台上应当挂载的下游工具行。
+ *
+ * 命令执行的两行按平台二选一：Windows 上挂 PowerShell，其余平台挂 bash。
+ */
+function platformRows(rows: readonly string[]): readonly string[] {
   const hidden = process.platform === 'win32' ? 'tool-bash' : 'tool-pwsh';
-  return CHATDSH_TOOL_ROWS.filter((row) => row !== hidden);
+  return rows.filter((row) => row !== hidden);
+}
+
+/** 由行 id 取包名：自建行加 `@chatdsh/` 前缀，上游行查登记表。 */
+function packageOfRow(row: string): string {
+  if (row.startsWith('chatdsh-')) return `@chatdsh/${row.slice('chatdsh-'.length)}`;
+  const upstream = UPSTREAM_TOOL_ROWS[row as keyof typeof UPSTREAM_TOOL_ROWS];
+  if (upstream === undefined) throw new Error(`未登记的工具行：${row}`);
+  return upstream;
 }
 
 /**
@@ -90,6 +107,7 @@ export class ChatdshAssistantsService extends TypertRemoteService {
       description: input.description ?? '',
       order: 100,
       instructions: input.instructions,
+      ...(input.tier === undefined ? {} : { tier: input.tier }),
       tools: input.tools ?? [],
       createdAt: now,
       updatedAt: now,
@@ -99,7 +117,7 @@ export class ChatdshAssistantsService extends TypertRemoteService {
     return record;
   }
 
-  /** 更新一条助手的指令或展示信息，重新装配它的 preset。 */
+  /** 更新一条助手的指令、档位或展示信息，重新装配它的 preset。 */
   @Remote('update')
   async update(id: string, patch: Partial<AssistantInput>): Promise<AssistantRecord> {
     const table = this.requireTable();
@@ -110,6 +128,7 @@ export class ChatdshAssistantsService extends TypertRemoteService {
       name: patch.name ?? current.name,
       description: patch.description ?? current.description,
       instructions: patch.instructions ?? current.instructions,
+      ...(patch.tier === undefined ? {} : { tier: patch.tier }),
       tools: patch.tools ?? current.tools,
       updatedAt: Date.now(),
     };
@@ -153,18 +172,34 @@ export class ChatdshAssistantsService extends TypertRemoteService {
     await dispose();
   }
 
-  /** 按记录组装会话级插件行。 */
-  private composePlugins(record: AssistantRecord): PresetDefinition['plugins'] {
-    const available = platformToolRows();
-    const selected = record.tools.length === 0
-      ? available
-      : available.filter((row) => record.tools.includes(row));
+  /**
+   * 按记录的档位与额外行组装会话级插件行。
+   *
+   * 公开是为了让装配结果可以直接被测试断言：装配结果决定模型看到哪些工具，
+   * 间接验证会漏掉行顺序与呈现声明。
+   */
+  composePlugins(record: AssistantRecord): PresetDefinition['plugins'] {
+    const tier = toolTierOf(record.tier ?? DEFAULT_TOOL_TIER);
+    const upstream = platformRows(tier.upstreamRows);
+    const additional = platformRows(record.tools);
     const rows: unknown[] = [
       { id: 'persona', name: UPSTREAM_AGENT_ROWS.persona, config: { prefix: record.instructions } },
       { id: 'agent-instructions', name: UPSTREAM_AGENT_ROWS['agent-instructions'], config: { maxBytes: 65536 } },
+      { id: 'time-context', name: UPSTREAM_AGENT_ROWS['time-context'] },
     ];
-    for (const row of selected) {
-      rows.push({ id: row, name: UPSTREAM_TOOL_ROWS[row as keyof typeof UPSTREAM_TOOL_ROWS] });
+    for (const row of upstream) rows.push({ id: row, name: packageOfRow(row) });
+    for (const row of tier.chatdshRows) rows.push({ id: row, name: packageOfRow(row) });
+    for (const row of additional) {
+      if (upstream.includes(row) || tier.chatdshRows.includes(row)) continue;
+      rows.push({ id: row, name: packageOfRow(row) });
+    }
+    // 全量档以 PTC 形态呈现：模型只看到 run_code 与生成的 SDK，声明列表不随条目数增长。
+    if (tier.presentation === 'ptc') {
+      rows.push({
+        id: 'tool-presentation',
+        name: UPSTREAM_ROWS['tool-presentation'],
+        config: { mode: 'ptc' },
+      });
     }
     return rows as PresetDefinition['plugins'];
   }
