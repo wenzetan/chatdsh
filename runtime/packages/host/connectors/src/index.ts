@@ -9,6 +9,7 @@
 
 import {
   loaderOf,
+  toolsOf,
   Remote,
   storageDomainOf,
   TypertRemoteService,
@@ -220,15 +221,15 @@ export class ChatdshConnectorService extends TypertRemoteService {
    * @returns 本设备接入的服务器数量；控制平面不可达时返回 `undefined`。
    */
   @Remote('refreshMcpRegistry')
-  async refreshMcpRegistry(): Promise<{ servers: number; endpoints: number } | undefined> {
+  async refreshMcpRegistry(): Promise<{ servers: number; endpoints: number }> {
     const client = this.registryClient();
-    if (client === undefined) return undefined;
+    if (client === undefined) return { servers: 0, endpoints: 0 };
     let snapshot;
     try {
       snapshot = await client.snapshot();
     } catch {
       // 控制平面不可达时保留现有加载器行：本机已接入的能力不该因为一次读取失败而消失。
-      return undefined;
+      return { servers: 0, endpoints: 0 };
     }
     const mine = snapshot.endpoints.filter((endpoint) => endpoint.deviceId === this.config.deviceId);
     const desired = mine.map((endpoint) => ({
@@ -247,6 +248,88 @@ export class ChatdshConnectorService extends TypertRemoteService {
       if (!desiredIds.has(id)) loaderOf(this.ctx).remove(id);
     }
     return { servers: snapshot.servers.length, endpoints: desired.length };
+  }
+
+  /**
+   * 本机 MCP 接入状态：全局注册里有几台、本机生成几条加载器行。
+   *
+   * 只读，供客户端面板与验收读取。它不触发同步，也不连接远端。
+   * @returns 注册表读数；控制平面不可达时返回 `undefined`。
+   */
+  /**
+   * 本机 MCP 接入状态：全局注册里有几台、本机生成几条加载器行。
+   *
+   * 只读，供客户端面板与验收读取。它不触发同步，也不连接远端。
+   * @returns 注册表读数；控制平面不可达时给出零值。
+   */
+  @Remote('mcpStatus')
+  async mcpStatus(): Promise<{ servers: number; endpoints: number; rows: string[] }> {
+    const rows = [...loaderOf(this.ctx).entries()]
+      .map((entry) => String(entry.options.id))
+      .filter((id) => id.startsWith(MCP_ROW_PREFIX));
+    const client = this.registryClient();
+    if (client === undefined) return { servers: 0, endpoints: rows.length, rows };
+    let snapshot;
+    try {
+      snapshot = await client.snapshot();
+    } catch {
+      return { servers: 0, endpoints: rows.length, rows };
+    }
+    const mine = snapshot.endpoints.filter((endpoint) => endpoint.deviceId === this.config.deviceId);
+    return { servers: snapshot.servers.length, endpoints: mine.length, rows };
+  }
+
+  /**
+   * 本机工具目录里来自 MCP 的工具。
+   *
+   * 名字由 DSH 原生客户端生成为 `mcp__<server>__<raw>_<hash>`，这里按前缀筛出来，
+   * 供客户端面板显示「这台服务器接入了哪些工具」与验收核对。
+   * @returns 按服务器名分组的工具名。
+   */
+  @Remote('mcpTools')
+  mcpTools(): Record<string, string[]> {
+    // 远端工具注册在全局层；目录读取失败时返回空表，由加载器行与运行时日志判断接入情况。
+    const tools: Record<string, string[]> = {};
+    let schemas: { name: string }[] = [];
+    try {
+      schemas = toolsOf(this.ctx).schemas(undefined) as { name: string }[];
+    } catch {
+      return tools;
+    }
+    for (const schema of schemas) {
+      if (!schema.name.startsWith('mcp__')) continue;
+      const rest = schema.name.slice('mcp__'.length);
+      const separator = rest.indexOf('__');
+      if (separator < 0) continue;
+      const server = rest.slice(0, separator);
+      const list = tools[server] ?? [];
+      list.push(schema.name);
+      tools[server] = list;
+    }
+    return tools;
+  }
+
+  /**
+   * 调用一个 MCP 工具。
+   *
+   * 这是给验收与诊断用的直通入口：正常使用中模型通过工具目录调用，这里只是把同一条
+   * 执行路径暴露出来，便于在没有会话的情况下核对远端能力确实可用。
+   * @param name - 工具名，带 `mcp__` 前缀。
+   * @param args - 工具参数。
+   * @returns 执行结果的内容与错误标记。
+   */
+  @Remote('callMcpTool')
+  async callMcpTool(name: string, args: Record<string, unknown>): Promise<{ content: string; isError: boolean }> {
+    const result = await toolsOf(this.ctx).execute({
+      callId: `mcp-direct-${Date.now()}` as never,
+      name,
+      arguments: args,
+      signal: AbortSignal.timeout(60_000),
+    });
+    const content = result.content
+      .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+      .join('\n');
+    return { content, isError: result.isError };
   }
 
   /** 建立或更新一个连接器。 */  /** 建立或更新一个连接器。 */

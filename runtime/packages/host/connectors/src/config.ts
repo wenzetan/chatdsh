@@ -15,7 +15,7 @@ import type { McpEndpointRecord } from '@chatdsh/core-contracts';
 export const MCP_CLIENT_PACKAGE = '@deepseek-ai/dsh-mcp-client';
 
 /** 条目 id 前缀，同步时按它识别本插件生成的行。 */
-export const MCP_ROW_PREFIX = 'chatdsh-mcp-';
+export const MCP_ROW_PREFIX = 'chatdsh-mcp-endpoint-';
 
 /** 一条 stdio 服务器的行配置。 */
 export interface StdioRow {

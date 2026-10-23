@@ -96,3 +96,10 @@
     baseURL: http://127.0.0.1:20128/v1
     thinking: enabled
     reasoningEffort: max
+
+# 连接器：MCP 注册表从控制平面拉取，按本设备那段生成 DSH 原生 MCP 客户端行。
+- id: chatdsh-connectors
+  name: '@chatdsh/host-connectors'
+  config:
+    gatewayUrl: http://127.0.0.1:3191
+    deviceId: !!js process.env.CHATDSH_MCP_DEVICE_ID ?? 'local'

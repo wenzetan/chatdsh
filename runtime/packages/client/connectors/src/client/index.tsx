@@ -191,6 +191,10 @@ export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<v
     'chatdshConnectors/save': { parameters: [{ name: 'input', kind: 'json' }] },
     'chatdshConnectors/delete': { parameters: [{ name: 'id', kind: 'string' }] },
     'chatdshConnectors/setEnabled': { parameters: [{ name: 'id', kind: 'string' }, { name: 'enabled', kind: 'boolean' }] },
+    'chatdshConnectors/mcpStatus': { parameters: [] },
+    'chatdshConnectors/mcpTools': { parameters: [] },
+    'chatdshConnectors/refreshMcpRegistry': { parameters: [] },
+    'chatdshConnectors/callMcpTool': { parameters: [{ name: 'name', kind: 'string' }, { name: 'args', kind: 'json' }] },
   }, z));
   await new Promise<void>((resolve) => {
     remoteHost.inject(['remote.chatdshConnectors'], (scope) => {

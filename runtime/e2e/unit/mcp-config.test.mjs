@@ -89,7 +89,7 @@ test('rowsOf 把解析结果转成带条目 id 的加载器行', () => {
   const parsed = parseMcpConfig({ servers: { context7: { url: 'https://mcp.context7.com/mcp' } } });
   const rows = rowsOf(parsed);
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].rowId, 'chatdsh-mcp-context7');
+  assert.equal(rows[0].rowId, 'chatdsh-mcp-endpoint-context7');
   assert.equal(rows[0].name, '@deepseek-ai/dsh-mcp-client');
 });
 

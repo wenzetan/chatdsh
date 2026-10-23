@@ -106,12 +106,12 @@
 # 它把本执行器的工具目录暴露给外部程序，属于能力出口；当前没有消费方，因此保持关闭。
 # 需要时把 enabled 改成 true，并给出访问令牌所在的环境变量名。
 # 连接器：MCP 注册表从控制平面拉取，按本设备那段生成 DSH 原生 MCP 客户端行。
-# deviceId 与 chatdsh-push 用的是同一台设备的标识。
+# deviceId 与 chatdsh-push 用的是同一台设备的标识，可由部署环境覆盖。
 - id: chatdsh-connectors
   name: '@chatdsh/host-connectors'
   config:
     gatewayUrl: http://127.0.0.1:3170
-    deviceId: local
+    deviceId: !!js process.env.CHATDSH_MCP_DEVICE_ID ?? 'local'
 
 - id: chatdsh-mcp-server
   name: '@chatdsh/host-mcp-server'
