@@ -4,6 +4,11 @@
  * 运行时把 DSH 的消息结构原样送来；外部模型网关普遍接受 OpenAI 的 chat completions
  * 格式。这里在入口处做一次单向翻译，并指定 `stream: true`，把上游的 SSE 响应交给
  * 适配器翻译回 `StreamChunk`。
+ *
+ * OpenAI 兼容协议没有「声明列表中途变更」的原生表达：工具只能整体重发，没有
+ * `tool-addition` 与 `tool-removal` 这两种增量块。因此这两类块在这里渲染成一段明确的
+ * 文本说明，放进 developer 消息里，随缓存历史一起追加，而不是丢掉。丢弃会让模型看不到
+ * 工具已经可用或已经撤下，表现为它继续调用不存在的工具。
  * @module @chatdsh/gateway/openai
  */
 
@@ -14,6 +19,8 @@ interface ContentBlock {
   readonly id?: string;
   readonly name?: string;
   readonly arguments?: string;
+  /** `tool-addition` 块里被激活的工具名。 */
+  readonly toolName?: string;
 }
 
 /** DSH 的消息。 */
@@ -86,13 +93,38 @@ function toOpenAiMessage(message: DshMessage): OpenAiMessage {
   return { role: message.role === 'developer' ? 'system' : 'user', content: textOf(message.content) };
 }
 
-/** 把内容块拼成纯文本；图像与文件以占位说明出现。 */
+/** 把内容块拼成纯文本；工具变更块渲染成说明行，图像与文件以占位说明出现。 */
 function textOf(content: string | readonly ContentBlock[]): string {
   if (typeof content === 'string') return content;
-  return content.map((block) => {
-    if (block.type === 'text') return block.text ?? '';
-    if (block.type === 'image') return '[图像]';
-    if (block.type === 'file') return '[文件]';
-    return '';
-  }).join('');
+  const parts: string[] = [];
+  const added: string[] = [];
+  const removed: string[] = [];
+  for (const block of content) {
+    if (block.type === 'text') {
+      if (block.text !== undefined && block.text !== '') parts.push(block.text);
+      continue;
+    }
+    if (block.type === 'image') {
+      parts.push('[图像]');
+      continue;
+    }
+    if (block.type === 'file') {
+      parts.push('[文件]');
+      continue;
+    }
+    if (block.type === 'tool-addition') {
+      if (block.toolName !== undefined) added.push(block.toolName);
+      continue;
+    }
+    if (block.type === 'tool-removal') {
+      if (block.toolName !== undefined) removed.push(block.toolName);
+      continue;
+    }
+  }
+  // 两类变更合成一句放在文本之后：OpenAI 兼容协议没有增量声明，只能靠说明表达。
+  const changes: string[] = [];
+  if (added.length > 0) changes.push(`以下工具现已可用：${added.join('、')}`);
+  if (removed.length > 0) changes.push(`以下工具已撤下，不要继续调用：${removed.join('、')}`);
+  if (changes.length > 0) parts.push(changes.join('；'));
+  return parts.join('\n');
 }

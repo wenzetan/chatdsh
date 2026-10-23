@@ -178,6 +178,31 @@ test('请求翻译把内容块拼成 OpenAI 消息并打开流式', async () => 
   assert.equal(request.max_tokens, 64);
 });
 
+test('工具变更块渲染成说明文本，不被丢弃', async () => {
+  const { toOpenAiRequest } = await import('../../gateway/lib/openai.js');
+  const request = toOpenAiRequest({
+    provider: 'gateway',
+    model: 'test-model',
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: '你好' }] },
+      {
+        role: 'developer',
+        content: [
+          { type: 'text', text: '工具变更' },
+          { type: 'tool-addition', toolName: 'fs' },
+          { type: 'tool-removal', toolName: 'image' },
+        ],
+      },
+    ],
+  });
+  // OpenAI 兼容协议没有增量声明，两类块必须渲染成模型可读的说明而不是消失。
+  const developer = request.messages.at(-1);
+  assert.equal(developer.role, 'system');
+  assert.match(developer.content, /工具变更/);
+  assert.match(developer.content, /以下工具现已可用：fs/);
+  assert.match(developer.content, /以下工具已撤下，不要继续调用：image/);
+});
+
 test('上游非 2xx 的响应体与 content-type 原样回传', async () => {
   const upstreamText = '{"error":{"code":"insufficient_balance","message":"账户余额不足，请充值"}}';
   const upstream = createServer((_request, response) => {
