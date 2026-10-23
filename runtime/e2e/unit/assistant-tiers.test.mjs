@@ -92,3 +92,11 @@ test('人格、指令与时间上下文三行所有档位都挂', async () => {
     }
   }
 });
+
+const { formatAssistantSubtitle } = await import('../../packages/client/assistants/lib/index.js');
+
+test('助手面板副标题写出档位，缺省按工作档', () => {
+  assert.equal(formatAssistantSubtitle({ instructions: '按仓库规则改' }), '工作档 · 按仓库规则改');
+  assert.equal(formatAssistantSubtitle({ tier: 'chat', instructions: '' }), '聊天档 · 没有附加说明');
+  assert.equal(formatAssistantSubtitle({ tier: 'full', instructions: '全量说明' }), '全量档 · 全量说明');
+});

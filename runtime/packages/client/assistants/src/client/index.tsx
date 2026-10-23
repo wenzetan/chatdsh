@@ -9,13 +9,14 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { formatAssistantSubtitle, type AssistantTier } from '../index.ts';
 
 /** 一条助手记录。 */
 interface AssistantRecord {
   readonly id: string;
   readonly name: string;
   readonly instructions: string;
-  readonly enabled: boolean;
+  readonly tier?: AssistantTier;
   readonly updatedAt: number;
 }
 
@@ -72,11 +73,8 @@ function AssistantsSection() {
     <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 13 }}>
       {assistants.map((record) => (
         <li key={record.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-          <div style={{ fontWeight: 600 }}>
-            {record.name}
-            {record.enabled ? '' : '（已停用）'}
-          </div>
-          <div style={{ opacity: 0.7 }}>{record.instructions.length === 0 ? '没有附加说明' : record.instructions}</div>
+          <div style={{ fontWeight: 600 }}>{record.name}</div>
+          <div style={{ opacity: 0.7 }}>{formatAssistantSubtitle(record)}</div>
         </li>
       ))}
     </ul>

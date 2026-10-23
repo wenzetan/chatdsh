@@ -43,7 +43,7 @@ node scripts/check-plugin-contract.mjs
 ```
 
 ```
-插件 26 个、客户端插件 13 个、组合包 6 个、profile 5 个、纯库 0 个
+插件 31 个、客户端插件 13 个、组合包 8 个、profile 9 个、纯库 0 个
 插件契约检查通过
 ```
 
@@ -55,14 +55,14 @@ node scripts/check-plugin-contract.mjs
 
 ## 三、工具可见性
 
-**部分。** 宿主平面注册的工具进入预设的行列表，`chatdsh` 预设的 `plugins` 列出全部自建工具行：制品写入、项目读写、分享建立、连接器列举、检索展开、图像生成六个默认挂载，浏览器操作一个按需挂载。这一层由契约检查覆盖：
+**部分。** 宿主平面注册的工具进入预设的行列表，三档 preset 的 `plugins` 按档位列出工具行：聊天档只有网页抓取、任务清单与会话检索；工作档是默认档，文件、命令与自建产出类七项齐备；全量档在工作档之上补子代理、工作树、定时与浏览器操作。浏览器操作只挂在全量档，由用户显式选用该档位。这一层由契约检查覆盖：
 
 ```bash
 node scripts/check-plugin-contract.mjs
 ```
 
 ```
-工具 7 个；预设挂载 6 个：tool-artifact、tool-project、tool-share、tool-connector、tool-research、tool-image
+工具 8 个；预设挂载 7 个：tool-artifact、tool-project、tool-share、tool-connector、tool-research、tool-image、tool-browser
 插件契约检查通过
 ```
 

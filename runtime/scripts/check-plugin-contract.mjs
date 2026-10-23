@@ -104,14 +104,17 @@ if (existsSync(presetFile)) {
     if (!toolNames.has(packageName)) failures.push(`预设挂载了 ${packageName}，但没有对应的工具包`);
   }
 
-  // 浏览器工具只能出现在显式选用的档位里，默认档位不许挂。
+  // 浏览器工具只挂在全量档：聊天档与工作档出现即失败，全量档缺少也算失配。
   // 按补丁层切分：以 `- id: preset-` 开头的一段属于同一个 preset。
   const blocks = presetText.split(/^\s*- id: preset-/m).slice(1);
   for (const block of blocks) {
     const id = block.match(/^([a-z0-9-]+)/)?.[1] ?? '';
     const mentioned = block.includes('@chatdsh/tool-browser');
-    if (mentioned && id === 'chatdsh-work') failures.push('浏览器工具不应当默认挂进工作档');
+    if (mentioned && id !== 'chatdsh-full') failures.push(`浏览器工具只能挂在全量档，${id} 档里出现了`);
   }
+  const full = blocks.find((block) => block.startsWith('chatdsh-full'));
+  if (full === undefined) failures.push('补丁层里没有声明全量档');
+  else if (!full.includes('@chatdsh/tool-browser')) failures.push('全量档没有挂浏览器工具');
 }
 
 // 依赖声明：src 里 import 的框架包必须写进 peerDependencies 或 dependencies。

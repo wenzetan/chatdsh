@@ -207,7 +207,7 @@ ChatGPT 的做法是在同一个对话里切换形态，DSH 的机制不同：**
 1. 从 Hermes 取出聊天历史；
 2. 转成合法的 DSH 事件序列（`user/message` 与 `assistant/message` 交替，配上回合与步骤边界）；
 3. 用 `buildForkSeed` 或等价方式构造种子；
-4. `ctx.agents.create({ sessionId, seed, inheritedEventCount, meta: { cwd: 目标工作区根, parentSession, isSeeded: true, agentPreset: 'chatdsh' }, setup })`；
+4. `ctx.agents.create({ sessionId, seed, inheritedEventCount, meta: { cwd: 目标工作区根, parentSession, isSeeded: true, agentPreset: 'chatdsh-work' }, setup })`；
 5. 调目标工作区的 `attachSession(childId)`。
 
 **从 DSH 聊天转工作。** 聊天与工作都由 DSH 执行时，聊天会话本身就是一份 DSH 会话日志，转工作只需在同一份日志上以 `buildForkSeed` 构造种子、在新工作区里 `ctx.agents.create` 并 `attachSession`，不需要从 Hermes 取历史。历史前缀已经是合法事件，`parentSession` 指向源聊天会话即可。

@@ -189,7 +189,7 @@ flowchart TB
     S2["tool-fs、tool-fs-search、tool-skill"]
     S3["tool-jobs、tool-todo、tool-web"]
     S4["自建工具行 artifact、project、image、research、connector、share"]
-    S5["tool-browser 默认不挂进 preset"]
+    S5["tool-browser 只挂进全量档"]
     S6["chatBackend 为 hermes 时聊天会话用空 preset"]
   end
   subgraph CLI["客户端平面：浏览器产物"]
@@ -208,7 +208,7 @@ flowchart TB
 
 存储、聊天后端、记忆后端、桌面壳与命令行各自成组合包，由 profile 的 bundles 列表选择。组合包之间不表达「基础」关系，同一组合包在列表里只出现一次。
 
-当前实现的组合包五个：`bundle-hosted`、`bundle-worker`、`bundle-desktop`、`bundle-storage-jsonl`、`bundle-memory-hindsight`；`preset-chat` 是 agent preset 声明，在 `packages/preset/` 下，不算组合包。图中 `bundle-storage-postgres` 与 `bundle-chat-hermes` 尚未实现。
+当前实现的组合包七个：`bundle-hosted`、`bundle-worker`、`bundle-desktop`、`bundle-storage-jsonl`、`bundle-storage-postgres`、`bundle-memory-hindsight`、`bundle-chat-hermes`；`preset-chat` 是 agent preset 声明，在 `packages/preset/` 下，不算组合包。
 
 ```mermaid
 flowchart TB

@@ -4,7 +4,7 @@
 // （`core-contracts` 与 preset 补丁层），不一致时这里失败。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ensureDeps } from '../lib/ensure-deps.mjs';
 
@@ -85,4 +85,30 @@ test('只有全量档声明 ptc 呈现', () => {
   const ptcBlocks = blocks.filter((block) => block.includes('mode: ptc'));
   assert.equal(ptcBlocks.length, 1, '只应有一档声明 ptc');
   assert.ok(ptcBlocks[0].startsWith('chatdsh-full'), 'ptc 应当属于全量档');
+});
+
+test('每个 profile 的默认预设都落在已声明的档位里', () => {
+  const presetText = readFileSync(resolve(REPO, 'runtime/packages/preset/chat/cordis.patch.yml'), 'utf8');
+  const declared = new Set(
+    [...presetText.matchAll(/^\s+- id: preset-([a-z0-9-]+)$/gm)].map((match) => match[1]),
+  );
+  const files = ['runtime/profiles', 'runtime/e2e/profiles'].flatMap((base) =>
+    readdirSync(resolve(REPO, base), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => resolve(REPO, base, entry.name, 'cordis.patch.yml')),
+  ).filter((file) => existsSync(file));
+
+  let checked = 0;
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8');
+    const registry = text.match(/- id: agent-preset-registry[\s\S]*?(?=\n- |\n#|$)/);
+    if (registry === null) continue;
+    const wanted = registry[0].match(/^\s*default:\s*(\S+)$/m)?.[1];
+    assert.ok(wanted !== undefined, `${file} 的 agent-preset-registry 没有 default`);
+    checked += 1;
+    // 档位拆分之后旧的 `chatdsh` 标识不存在了：默认值必须指向补丁层声明过的档位。
+    assert.ok(declared.has(wanted), `${file} 的默认预设 ${wanted} 不在补丁层声明里`);
+    assert.equal(wanted, contracts.presetIdOf(contracts.DEFAULT_TOOL_TIER), `${file} 的默认预设应为工作档`);
+  }
+  assert.ok(checked > 0, '没有找到任何设置默认预设的 profile');
 });

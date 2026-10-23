@@ -386,7 +386,7 @@ MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协�
 
 全量档走 `ptc` 形态：preset 内带 `tool-presentation` 行并把 `mode` 设为 `ptc`，模型只看到单个 `run_code` 与一份生成的 TypeScript SDK，工具定义不逐条进入请求。这样条目数增加而声明列表长度不变，上下文占用与提示词缓存的前缀都稳定。该档依赖宿主平面的 `ptc-runtime` 行，`dsh-base` 已挂载；缺它时这一档在挂载阶段失败并出现在预设名册的诊断里，不拖累另外两档。
 
-浏览器操作 `@chatdsh/tool-browser` 只挂在全量档，由用户显式选用该档位，原因见第 7.8 节。`check-plugin-contract.mjs` 按 preset 分段核对这条约束：工作档里出现浏览器工具即失败。
+浏览器操作 `@chatdsh/tool-browser` 只挂在全量档，由用户显式选用该档位，原因见第 7.8 节。`check-plugin-contract.mjs` 按 preset 分段核对这条约束：聊天档或工作档里出现浏览器工具即失败，全量档缺少它也失败。
 
 桌面控制不进会话 preset。`@deepseek-ai/dsh-computer-use` 的注册位是整棵运行时共用的单例，同一运行时第二次注册会直接抛出异常；提供方又把工具注册进宿主工具表，不随会话销毁。会话级挂载的后果是第二个会话启用时注册冲突、或者每个会话各起一套原生驱动，两种都不可接受。这两行放在宿主平面（桌面壳的组合包）里随进程加载一次，会话平面只做可见范围收敛，见第 7.8 节。
 
@@ -396,7 +396,7 @@ MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协�
 
 **工具声明的中途变更在 OpenAI 兼容路径上靠说明表达。** DSH 侧有 `ToolSchema.deferLoading` 与 `LlmResolvedModelInfo.toolUpdate` 两个字段，后者取 `addition-only` 或 `in-history` 时把新增与移除表达成 developer 消息里的 `tool-addition` 与 `tool-removal` 块，声明前缀因此可以不动。这条路径要求模型适配器按同一协议理解这两种块：Anthropic Messages 与前缀续写类接口支持，OpenAI chat completions 没有对应表达。控制平面的模型入口在 `gateway/src/openai.ts` 里把这两类块渲染成一句模型可读的说明（「以下工具现已可用：…」与「以下工具已撤下，不要继续调用：…」）随缓存历史追加，不丢弃。全量档因此改用 `ptc` 形态取得稳定的声明前缀，不依赖 `toolUpdate`。
 
-聊天会话的 preset 由 `chatBackend` 决定。`chatBackend` 为 `hermes` 时聊天会话是一个不含工具行的空组合，仅安装模型选择，执行由 Hermes 承载；`chatBackend` 为 `dsh` 时聊天会话使用与工作会话相同的 `chatdsh` preset，由 DSH 自己的 agent 执行。
+聊天会话的 preset 由 `chatBackend` 决定。`chatBackend` 为 `hermes` 时聊天会话是一个不含工具行的空组合，仅安装模型选择，执行由 Hermes 承载；`chatBackend` 为 `dsh` 时聊天会话由 DSH 自己的 agent 执行，在创建会话时选用聊天档 `chatdsh-chat`，工作会话用默认的工作档 `chatdsh-work`。档位在会话创建时选定，之后不能换档。
 
 ### 4.6 客户端插件
 

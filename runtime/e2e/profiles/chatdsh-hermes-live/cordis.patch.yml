@@ -13,11 +13,11 @@
     path: !!js dshHomePath('session-index.sqlite')
     openAt: startup
 
-# 新会话默认使用 ChatDSH 自己的预设。
+# 新会话默认使用工作档；三档标识由 @chatdsh/core-contracts 的 tool-tiers 声明。
 - id: agent-preset-registry
   name: '@deepseek-ai/dsh-agent-preset-registry'
   config:
-    default: chatdsh
+    default: chatdsh-work
 
 # 浏览器侧的客户端插件。
 #
