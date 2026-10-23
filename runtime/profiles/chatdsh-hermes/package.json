@@ -27,6 +27,7 @@
     "@chatdsh/host-telemetry": "link:../../packages/host/telemetry",
     "@chatdsh/host-usage": "link:../../packages/host/usage",
     "@chatdsh/preset-chat": "link:../../packages/preset/chat",
+    "@chatdsh/tool-browser": "link:../../packages/tool/browser",
     "@chatdsh/tool-artifact": "link:../../packages/tool/artifact",
     "@chatdsh/tool-connector": "link:../../packages/tool/connector",
     "@chatdsh/tool-image": "link:../../packages/tool/image",

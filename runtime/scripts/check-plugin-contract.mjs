@@ -103,7 +103,15 @@ if (existsSync(presetFile)) {
   for (const packageName of mounted) {
     if (!toolNames.has(packageName)) failures.push(`预设挂载了 ${packageName}，但没有对应的工具包`);
   }
-  if (mounted.includes('@chatdsh/tool-browser')) failures.push('浏览器工具不应当默认挂进预设');
+
+  // 浏览器工具只能出现在显式选用的档位里，默认档位不许挂。
+  // 按补丁层切分：以 `- id: preset-` 开头的一段属于同一个 preset。
+  const blocks = presetText.split(/^\s*- id: preset-/m).slice(1);
+  for (const block of blocks) {
+    const id = block.match(/^([a-z0-9-]+)/)?.[1] ?? '';
+    const mentioned = block.includes('@chatdsh/tool-browser');
+    if (mentioned && id === 'chatdsh-work') failures.push('浏览器工具不应当默认挂进工作档');
+  }
 }
 
 // 依赖声明：src 里 import 的框架包必须写进 peerDependencies 或 dependencies。

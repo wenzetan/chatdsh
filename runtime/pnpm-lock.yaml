@@ -347,7 +347,11 @@ importers:
         specifier: link:../../../../dsh-adapter
         version: link:../../../../dsh-adapter
 
-  packages/preset/chat: {}
+  packages/preset/chat:
+    dependencies:
+      '@chatdsh/core-contracts':
+        specifier: link:../../core/contracts
+        version: link:../../core/contracts
 
   packages/tool/artifact:
     dependencies:
