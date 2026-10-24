@@ -15,6 +15,7 @@
 ## 从哪里开始读
 
 - 总体设计与各子系统设计：[`runtime/docs/architecture.md`](runtime/docs/architecture.md)
+- 客户端界面基础设计：[`runtime/docs/ui-baseline-design.md`](runtime/docs/ui-baseline-design.md)
 - 适配层的设计与版本约定：[`dsh-adapter/README.md`](dsh-adapter/README.md)
 - 逐项验收状态：[`runtime/docs/acceptance.md`](runtime/docs/acceptance.md)
 - 后续清单与解锁条件：[`runtime/docs/next-steps.md`](runtime/docs/next-steps.md)

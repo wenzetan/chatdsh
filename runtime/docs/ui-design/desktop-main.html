@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatDSH · 桌面端主页面</title>
+<link rel="stylesheet" href="./tokens.css" />
+<link rel="stylesheet" href="./app.css" />
+<style>
+  /* 桌面窗口外壳 */
+  .dwin {
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 32px auto minmax(0, 1fr);
+    background: var(--chatdsh-bg);
+  }
+
+  .tbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 0 0 8px;
+    background: var(--chatdsh-panel-2);
+    border-bottom: 1px solid var(--chatdsh-line);
+  }
+
+  .tbar .menu {
+    height: 24px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--chatdsh-muted);
+    font-family: inherit;
+    font-size: 11.5px;
+    cursor: default;
+  }
+
+  .tbar .menu:hover {
+    background: var(--cdh-hover);
+    color: var(--chatdsh-ink-2);
+  }
+
+  .tbar .ttl {
+    flex: 1;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--chatdsh-faint);
+    font-family: var(--cdh-font-mono);
+  }
+
+  .wctl {
+    display: flex;
+    flex: none;
+  }
+
+  .wctl button {
+    width: 44px;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    color: var(--chatdsh-muted);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+
+  .wctl button:hover {
+    background: var(--cdh-hover);
+    color: var(--chatdsh-ink);
+  }
+
+  .wctl button.close:hover {
+    background: var(--chatdsh-danger);
+    color: var(--chatdsh-bg);
+  }
+
+  /* 桌面控制常驻指示条 */
+  .dcbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 34px;
+    padding: 0 14px;
+    background: var(--chatdsh-panel);
+    border-bottom: 1px solid var(--chatdsh-line);
+    border-left: 2px solid var(--chatdsh-warn);
+    font-size: 11.5px;
+    color: var(--chatdsh-ink-2);
+  }
+
+  .dcbar .rec {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--chatdsh-warn);
+    box-shadow: 0 0 0 3px var(--cdh-warn-soft);
+    flex: none;
+  }
+
+  .dcbar .tgt {
+    font-family: var(--cdh-font-mono);
+    font-size: 11px;
+    color: var(--chatdsh-muted);
+  }
+</style>
+</head>
+<body data-color-scheme="dark">
+<div class="dwin">
+
+  <div class="tbar">
+    <button class="menu">文件</button>
+    <button class="menu">编辑</button>
+    <button class="menu">视图</button>
+    <button class="menu">会话</button>
+    <button class="menu">帮助</button>
+    <span class="ttl">修复审批超时后的卡片残留 — ChatDSH</span>
+    <div class="wctl">
+      <button aria-label="最小化"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5h6" stroke="currentColor" stroke-width="1.2" /></svg></button>
+      <button aria-label="最大化"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="2.2" y="2.2" width="5.6" height="5.6" fill="none" stroke="currentColor" stroke-width="1.2" /></svg></button>
+      <button class="close" aria-label="关闭"><svg width="10" height="10" viewBox="0 0 10 10"><path d="m2.4 2.4 5.2 5.2M7.6 2.4 2.4 7.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" /></svg></button>
+    </div>
+  </div>
+
+  <div class="dcbar">
+    <span class="rec"></span>
+    <span style="font-weight: 560">桌面控制进行中</span>
+    <span class="tgt">目标应用 Visual Studio Code · 辅助功能已授权 · 屏幕录制已授权</span>
+    <span class="grow"></span>
+    <span class="cdh-mono" style="font-size: 10.5px; color: var(--chatdsh-faint)">已运行 08:14 · 授权至 18:20</span>
+    <button class="cdh-btn cdh-btn--sm cdh-btn--danger">中断</button>
+  </div>
+
+  <div class="app">
+
+    <aside class="side">
+      <div class="sbrand">
+        <span class="mark">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+            <path d="M3 5.5h10M3 10.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            <circle cx="12.2" cy="10.5" r="1.5" fill="currentColor" />
+          </svg>
+        </span>
+        <div class="grow">
+          <b>ChatDSH</b>
+          <span>桌面端 · Windows x64</span>
+        </div>
+        <button class="cdh-btn cdh-btn--icon" aria-label="命令面板">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="4" stroke="currentColor" stroke-width="1.4" />
+            <path d="m10 10 3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="sws">
+        <span class="dot"></span>
+        <div class="grow">
+          <b>zerocode-web</b>
+          <span>本机目录 · D:\work\zerocode-web</span>
+        </div>
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+          <path d="M4 6.5 8 10.5l4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+      </div>
+
+      <button class="cdh-btn cdh-btn--primary snew">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+          <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        新建会话
+      </button>
+
+      <div class="ssearch">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="4" stroke="currentColor" stroke-width="1.4" />
+          <path d="m10 10 3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        </svg>
+        检索会话、内容与工作区
+        <span class="kbd">⌘</span><span class="kbd">K</span>
+      </div>
+
+      <div class="sscroll">
+        <div class="sgroup">
+          <div class="sgroup-hd"><span>今天</span><span>2</span></div>
+          <a class="sitem is-active">
+            <b>修复审批超时后的卡片残留</b>
+            <span class="mt">14:02 · 本机 · 桌面控制进行中</span>
+            <span class="tr"><span class="cdh-badge cdh-badge--warn"><i class="cdh-dot"></i>运行中</span></span>
+          </a>
+          <a class="sitem">
+            <b>把右栏的网页页签改为诊断页</b>
+            <span class="mt">11:20 · 本机 · 已同步</span>
+            <span class="tr"><span class="cdh-badge">2 个页签</span></span>
+          </a>
+        </div>
+
+        <div class="sgroup">
+          <div class="sgroup-hd"><span>更早</span><span>2</span></div>
+          <a class="sitem">
+            <b>托盘菜单与通知撤回</b>
+            <span class="mt">昨天 19:40 · 来自 mac-mini-2</span>
+            <span class="tr"><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>完成</span></span>
+          </a>
+          <a class="sitem">
+            <b>安全模式启动与恢复入口</b>
+            <span class="mt">10月20日 · 本机</span>
+            <span class="tr"><span class="cdh-badge">只读</span></span>
+          </a>
+        </div>
+      </div>
+
+      <div class="spanels">
+        <div class="spanel">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <path d="M2.5 4.5h11v8h-11z" stroke="currentColor" stroke-width="1.2" />
+            <path d="M2.5 7.5h11" stroke="currentColor" stroke-width="1.2" />
+          </svg>
+          项目<span class="grow"></span><b>5</b>
+        </div>
+        <div class="spanel">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.2" />
+            <path d="M8 8V4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+          </svg>
+          上下文占用<span class="grow"></span><b>41%</b>
+        </div>
+      </div>
+
+      <div class="sfoot">
+        <div class="suser">
+          <span class="av">CD</span>
+          <div class="grow">
+            <b>chatdsh</b>
+            <span>本机会话 · 已连控制平面</span>
+          </div>
+          <span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>在线</span>
+        </div>
+        <button class="cdh-btn cdh-btn--ghost" style="justify-content: flex-start; width: 100%">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.2" />
+            <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+          </svg>
+          设置
+        </button>
+      </div>
+    </aside>
+
+    <main class="center">
+      <div class="goalbar">
+        <span>目标</span>
+        <b>把四个客户端的界面基准统一到同一套令牌</b>
+        <div class="cdh-bar"><i style="width: 80%"></i></div>
+        <span class="cnt">4 / 5 步</span>
+        <span class="grow"></span>
+        <button class="cdh-btn cdh-btn--ghost cdh-btn--sm">清除目标</button>
+      </div>
+
+      <header class="chead">
+        <div class="chead-top">
+          <h1>把右栏的网页页签改为诊断页</h1>
+          <span class="cdh-badge cdh-badge--warn"><i class="cdh-dot"></i>运行中</span>
+          <span class="grow"></span>
+          <button class="cdh-btn cdh-btn--sm">生成快照链接</button>
+          <button class="cdh-btn cdh-btn--sm">轨迹</button>
+          <button class="cdh-btn cdh-btn--icon" aria-label="更多">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <circle cx="8" cy="3" r="1.3" /><circle cx="8" cy="8" r="1.3" /><circle cx="8" cy="13" r="1.3" />
+            </svg>
+          </button>
+        </div>
+        <div class="chead-meta">
+          <span>工作区 zerocode-web</span>
+          <span class="sep"></span>
+          <span>本机 Windows x64 · 原生目录选择器</span>
+          <span class="sep"></span>
+          <span class="chip"><span class="k">模型</span>deepseek-v4-pro</span>
+          <span class="segment" role="group" aria-label="权限档位">
+            <button aria-pressed="false">只读</button>
+            <button aria-pressed="true">询问</button>
+            <button aria-pressed="false">允许</button>
+          </span>
+          <span class="chip chip--brand">工作档</span>
+        </div>
+      </header>
+
+      <div class="flow">
+        <div class="turnbar">
+          <span class="cdh-badge cdh-badge--brand">回合 2</span>
+          <b>步骤 3 / 4</b>
+          <span class="step">运行界面检查脚本</span>
+          <span class="grow"></span>
+          <span class="step">已用 26.8s</span>
+          <button class="cdh-btn cdh-btn--sm">停止</button>
+        </div>
+
+        <div class="msg msg--user">
+          <div class="msg-hd"><span>14:07</span></div>
+          <p>右栏第三个页签应该是控制平面的诊断页，内置在桌面渲染进程里，不需要再起一个浏览器。</p>
+        </div>
+
+        <div class="msg">
+          <div class="msg-hd"><b>ChatDSH</b><span>14:08</span><span class="cdh-mono">deepseek-v4-pro</span></div>
+          <p>已经补上诊断页签，页签按类型唯一。当前正在跑界面检查脚本，确认三栏在 1440 与 1024 两个宽度下都不出现横向滚动。</p>
+        </div>
+
+        <div class="tool" data-state="ok">
+          <div class="tool-hd">
+            <span class="cdh-badge cdh-badge--ok">成功</span>
+            <span class="nm">read_file</span>
+            <span class="args">packages/dsh-client-ui-layout/src/routes.ts</span>
+            <span class="grow"></span>
+            <span class="du">94ms</span>
+          </div>
+        </div>
+
+        <div class="tool" data-state="warn">
+          <div class="tool-hd">
+            <span class="cdh-badge cdh-badge--warn"><i class="cdh-dot"></i>运行中</span>
+            <span class="nm">bash</span>
+            <span class="args">pnpm exec playwright test sidebar-right</span>
+            <span class="grow"></span>
+            <span class="du">12.1s</span>
+          </div>
+          <div class="tool-body">› 3 个用例通过
+› sidebar-right.spec.ts 正在运行（第 4 / 6 个用例）
+<span class="trunc">输出持续追加，界面按增量渲染</span></div>
+        </div>
+
+        <div class="deliver">
+          <div class="deliver-hd">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <path d="M3 2.5h6l4 4v7h-10z" stroke="currentColor" stroke-width="1.2" />
+              <path d="M9 2.5v4h4" stroke="currentColor" stroke-width="1.2" />
+            </svg>
+            本轮产出 1 个文件
+            <span class="grow"></span>
+            <span class="cdh-faint" style="font-size: 10.5px">生成于 14:08</span>
+          </div>
+          <div class="deliver-row">
+            <span class="p">packages/dsh-client-ui-layout/src/routes.ts</span>
+            <span class="grow"></span>
+            <span class="d">+9</span><span class="d minus">−1</span>
+          </div>
+          <div class="deliver-foot">
+            <button class="cdh-btn cdh-btn--sm">查看差异</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">在资源管理器中显示</button>
+            <span class="grow"></span>
+            <span class="cdh-faint" style="font-size: 10.5px">外部打开走系统应用，Web 形态不提供</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-in">
+          <span class="typed">接着把托盘的待审批计数也接上，通知撤回要跟它一致。</span>
+          <span style="color: var(--chatdsh-brand)">▍</span>
+        </div>
+        <div class="composer-dock">
+          <button class="dock-btn">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            </svg>
+            附件
+          </button>
+          <button class="dock-btn">/ 命令</button>
+          <button class="dock-btn">@ 引用</button>
+          <span class="chip"><span class="k">模型</span>deepseek-v4-pro</span>
+          <span class="chip"><span class="k">权限</span>询问</span>
+          <span class="chip chip--brand">计划模式 开</span>
+          <span class="grow"></span>
+          <span class="cdh-faint" style="font-size: 10.5px">回车发送 · Shift 回车换行</span>
+          <button class="send" aria-label="发送">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <path d="M8 13V3.5M4 7.2 8 3.2l4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <aside class="dock">
+      <div class="dtabs">
+        <button class="cdh-tab">文档预览</button>
+        <button class="cdh-tab">文件</button>
+        <button class="cdh-tab">终端</button>
+        <button class="cdh-tab" aria-selected="true">网页</button>
+        <span class="grow"></span>
+        <button class="cdh-btn cdh-btn--icon" aria-label="固定页签">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+            <path d="M6 2.5 9.5 6 6 9.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            <path d="M9.5 6H13v7.5H3V6h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button class="cdh-btn cdh-btn--icon" aria-label="关闭页签">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+            <path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="webbar">
+        <button class="cdh-btn cdh-btn--icon" aria-label="后退">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 3.5 5.5 8l4.5 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+        </button>
+        <button class="cdh-btn cdh-btn--icon" aria-label="前进" disabled>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+        </button>
+        <button class="cdh-btn cdh-btn--icon" aria-label="刷新">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M12.5 8a4.5 4.5 0 1 1-1.6-3.4M12.5 3v2.2h-2.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /></svg>
+        </button>
+        <div class="urlbar">
+          <span class="cdh-badge cdh-badge--ok" style="height: 15px; font-size: 9px; padding: 0 5px">沙箱</span>
+          http://127.0.0.1:5173/diagnostics
+        </div>
+      </div>
+
+      <div class="webview">
+        <h3>诊断</h3>
+        <p>控制平面与运行时的当前状态。读数来自最近一次轮询，控制平面不可达时保留降级时间。</p>
+        <div class="card">
+          <b>遥测</b>
+          <p style="margin: 0">已开启 · 导出到自建 OpenObserve · 最近一次上报 6 秒前</p>
+        </div>
+        <div class="card">
+          <b>连接</b>
+          <p style="margin: 0">SSE 在线 · WebSocket 在线 · 重连次数 0</p>
+        </div>
+        <div class="card">
+          <b>插件清单</b>
+          <p style="margin: 0">13 个客户端插件，其中 10 个注册设置区段，2 个注册左侧栏面板</p>
+        </div>
+        <div class="card">
+          <b>运行版本</b>
+          <p style="margin: 0; font-family: var(--cdh-font-mono); font-size: 11px">dsh 0.4.2 · 运行时 0.4.2 · 控制平面 0.4.2</p>
+        </div>
+      </div>
+
+      <div class="dfoot">
+        <span class="cdh-mono">127.0.0.1:5173</span>
+        <span>·</span>
+        <span>桌面端补回受沙箱网页页签</span>
+        <span class="grow"></span>
+        <span>页签按类型唯一</span>
+      </div>
+    </aside>
+
+    <div class="status">
+      <span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>在线</span>
+      <span class="sep"></span>
+      <span>deepseek-v4-pro</span>
+      <span class="sep"></span>
+      <span>上下文 41% · 剩余 118k</span>
+      <span class="sep"></span>
+      <span class="cdh-badge cdh-badge--warn"><i class="cdh-dot"></i>桌面控制中</span>
+      <span class="sep"></span>
+      <span>保活 已阻止休眠</span>
+      <span class="sep"></span>
+      <span>托盘 运行中</span>
+      <span class="grow"></span>
+      <span>更新 v0.4.2 最新</span>
+      <span class="sep"></span>
+      <span class="v">Windows x64</span>
+    </div>
+  </div>
+</div>
+<script src="./scheme.js"></script>
+</body>
+</html>
