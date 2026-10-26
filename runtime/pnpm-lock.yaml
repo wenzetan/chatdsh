@@ -68,13 +68,20 @@ importers:
 
   packages/bundle/worker: {}
 
-  packages/client/account: {}
+  packages/client/account:
+    dependencies:
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
 
   packages/client/approval:
     dependencies:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -84,6 +91,9 @@ importers:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -93,17 +103,27 @@ importers:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
 
-  packages/client/automation: {}
+  packages/client/automation:
+    dependencies:
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
 
   packages/client/connectors:
     dependencies:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -113,6 +133,9 @@ importers:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -122,6 +145,9 @@ importers:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -131,6 +157,9 @@ importers:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -140,22 +169,38 @@ importers:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
 
-  packages/client/share: {}
+  packages/client/share:
+    dependencies:
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
 
   packages/client/skills:
     dependencies:
       '@chatdsh/core-remote-client':
         specifier: workspace:*
         version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
       zod:
         specifier: 4.4.3
         version: 4.4.3
 
   packages/client/telemetry: {}
+
+  packages/client/theme:
+    dependencies:
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
 
   packages/core/backends:
     dependencies:
@@ -218,6 +263,8 @@ importers:
         specifier: 8.16.3
         version: 8.16.3
 
+  packages/core/ui-kit: {}
+
   packages/host/approval:
     dependencies:
       '@chatdsh/adapter':
@@ -259,6 +306,9 @@ importers:
       '@chatdsh/adapter':
         specifier: link:../../../../dsh-adapter
         version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -283,6 +333,24 @@ importers:
       '@chatdsh/adapter':
         specifier: link:../../../../dsh-adapter
         version: link:../../../../dsh-adapter
+
+  packages/host/llm-router:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+
+  packages/host/mcp-server:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
 
   packages/host/memory:
     dependencies:
