@@ -13,6 +13,8 @@ lib/
 *.tsbuildinfo
 # 脚本辅助模块不是构建产物（scripts/ 下的 .mjs 由人工维护）
 !scripts/lib/
+# 测试辅助模块同样由人工维护
+!e2e/lib/
 
 # DSH 安装内依赖的本地投影（符号链接，由 scripts/link-dsh-deps.mjs 生成）
 .dsh-deps/
