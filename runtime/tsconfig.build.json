@@ -11,6 +11,12 @@
       "path": "packages/core/backends"
     },
     {
+      "path": "packages/core/remote-client"
+    },
+    {
+      "path": "packages/core/diagnostics"
+    },
+    {
       "path": "packages/client/approval"
     },
     {
@@ -78,9 +84,6 @@
     },
     {
       "path": "packages/core/session-index"
-    },
-    {
-      "path": "packages/core/diagnostics"
     },
     {
       "path": "packages/host/usage"
@@ -156,9 +159,6 @@
     },
     {
       "path": "packages/host/chat-hermes"
-    },
-    {
-      "path": "packages/core/remote-client"
     },
     {
       "path": "packages/core/session-persistence-postgres"
