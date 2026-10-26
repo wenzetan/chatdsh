@@ -10,6 +10,7 @@ Windows 桌面端的 Electron 壳。它把 `chatdsh-desktop` 运行时拉起来�
 | `launch.mjs` | 运行时编排：取锁、建启动根、拉起 `dsh --profile chatdsh-desktop`、等带令牌地址、脱敏留存输出 |
 | `preload.cjs` | 页面最小桥：平台、保活状态、窗口动作；不向页面暴露 Node |
 | `splash.html` | 启动页：按身份、运行时、界面三个阶段逐步报进度，失败时就地写明原因 |
+| `telemetry.mjs` | 遥测：把启动阶段、运行时编排与电源阻止编成 OTLP 交运行时中继；地址就绪前先排队 |
 
 ## 依赖与构建
 
