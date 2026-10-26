@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatDSH · 业务设置区段</title>
+<link rel="stylesheet" href="../tokens.css" />
+<link rel="stylesheet" href="../app.css" />
+<link rel="stylesheet" href="../pages.css" />
+<style>
+  .biz-hd {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--chatdsh-line);
+    font-size: 12px;
+    color: var(--chatdsh-ink);
+    font-weight: 560;
+  }
+
+  .biz-hd .ord {
+    font-family: var(--cdh-font-mono);
+    font-size: 9.5px;
+    color: var(--chatdsh-faint);
+    border: 1px solid var(--chatdsh-line-2);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-weight: 500;
+  }
+
+  .biz-hd .pkg {
+    margin-left: auto;
+    font-family: var(--cdh-font-mono);
+    font-size: 9.5px;
+    color: var(--chatdsh-faint);
+    font-weight: 500;
+  }
+
+  .art-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--chatdsh-line);
+    font-size: 12px;
+  }
+
+  .art-row:last-child {
+    border-bottom: 0;
+  }
+
+  .art-row .kind {
+    width: 46px;
+    flex: none;
+    font-family: var(--cdh-font-mono);
+    font-size: 9.5px;
+    color: var(--chatdsh-faint);
+    border: 1px solid var(--chatdsh-line);
+    border-radius: 3px;
+    text-align: center;
+    padding: 1px 0;
+  }
+
+  .art-row .nm {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--cdh-font-mono);
+    font-size: 11px;
+    color: var(--chatdsh-ink-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tiny-tbl td,
+  .tiny-tbl th {
+    padding: 7px 9px;
+    font-size: 11px;
+  }
+</style>
+</head>
+<body class="plate-body" data-color-scheme="dark">
+<div class="plate">
+
+  <header class="plate-hd">
+    <div class="top"><a href="../catalog.html">← 页面目录</a><span>设置 · 业务区段</span></div>
+    <h1>十个 ChatDSH 业务设置区段</h1>
+    <p class="lead">业务区段接在上游设置之后，按注册顺序 40 到 70 排列。每个区段给出一屏内的列表、表单与状态表达，数据接口尚未补齐的位置用占位说明标注。</p>
+    <div class="tags">
+      <span class="cdh-badge cdh-badge--brand">10 个区段</span>
+      <span class="cdh-badge">列表 + 表单</span>
+      <span class="cdh-badge">危险动作走确认</span>
+      <span class="cdh-badge">接口未接线处标注</span>
+    </div>
+  </header>
+
+  <div class="plate-note">
+    <span class="bar"></span>
+    <div><b>区段内统一三段结构：</b>摘要行给出数量与状态，列表行承载记录，底部表单或详情在选中后原地展开。删除、撤销、清理一律走确认弹窗，写明影响范围。</div>
+  </div>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>制品、助手、模型提供方</h2><em>40 · 45 · 46</em><span class="aside">版本、档位、注册信息</span></div>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">40</span>制品<span class="pkg">@chatdsh/client-artifacts</span><span class="cdh-badge cdh-badge--ok" style="margin-left: 8px"><i class="cdh-dot"></i>12 件</span></div>
+        <div class="demo-bd">
+          <div class="art-row"><span class="kind">MD</span><span class="nm">界面基准评审记录.md</span><span class="small faint mono">v4 · 18 KB</span><span class="cdh-badge">当前版本</span></div>
+          <div class="art-row"><span class="kind">PNG</span><span class="nm">审批卡片-失败态.png</span><span class="small faint mono">v2 · 240 KB</span><button class="cdh-btn cdh-btn--sm cdh-btn--ghost">预览</button></div>
+          <div class="art-row"><span class="kind">HTML</span><span class="nm">诊断页快照.html</span><span class="small faint mono">v1 · 64 KB</span><button class="cdh-btn cdh-btn--sm cdh-btn--ghost">预览</button></div>
+          <div class="art-row"><span class="kind">BIN</span><span class="nm">session-pack.bin</span><span class="small faint mono">v1 · 2.1 MB</span><span class="cdh-badge cdh-badge--warn">不支持预览</span></div>
+          <div class="rowflex" style="margin-top: 12px">
+            <button class="cdh-btn cdh-btn--sm">按会话筛选</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">版本列表</button>
+            <span class="grow"></span>
+            <span class="small faint">写入由会话工具完成，界面只读</span>
+          </div>
+        </div>
+        <div class="demo-cap">二进制与超大内容不预览，给出下载与外部打开；更新制品会递增版本，旧版本保留。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">45</span>助手<span class="pkg">@chatdsh/client-assistants</span><span class="cdh-badge cdh-badge--brand" style="margin-left: 8px">3 个</span></div>
+        <div class="demo-bd">
+          <div class="rows">
+            <div class="rowitem">
+              <span class="ic">助</span>
+              <div class="tx"><b>代码审查</b><span>工作档 · 只读工具加检索 · 修改于 10月24日</span></div>
+              <span class="cdh-badge">工作档</span>
+            </div>
+            <div class="rowitem">
+              <span class="ic">助</span>
+              <div class="tx"><b>资料整理</b><span>聊天档 · 无写入工具 · 修改于 10月21日</span></div>
+              <span class="cdh-badge">聊天档</span>
+            </div>
+            <div class="rowitem">
+              <span class="ic">助</span>
+              <div class="tx"><b>部署排障</b><span>全量档 · 含终端与容器工具 · 修改于 10月18日</span></div>
+              <span class="cdh-badge">全量档</span>
+            </div>
+          </div>
+          <div class="notice" style="margin-top: 12px">
+            <div class="ic">i</div>
+            <div>助手记录同时是 agent preset。修改助手会卸载并重新装配 preset；已经产生回合的会话不显示换档入口。</div>
+          </div>
+          <div class="rowflex" style="margin-top: 12px">
+            <button class="cdh-btn cdh-btn--sm cdh-btn--primary">新建助手</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">编辑</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">删除</button>
+          </div>
+        </div>
+        <div class="demo-cap">档位用徽标常驻；装配失败时该行标红并给出重试，其他助手不受影响。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">46</span>模型提供方<span class="pkg">@chatdsh/client-model-provider</span><span class="cdh-badge" style="margin-left: 8px">只读</span></div>
+        <div class="demo-bd">
+          <table class="tbl tiny-tbl">
+            <thead><tr><th>展示名</th><th>路由名</th><th>基础地址</th></tr></thead>
+            <tbody>
+              <tr><td>DeepSeek 官方</td><td class="mono">deepseek-official</td><td class="mono">https://api.deepseek.com/anthropic</td></tr>
+              <tr><td>本地网关</td><td class="mono">gateway-lite</td><td class="mono">http://127.0.0.1:8788/v1</td></tr>
+            </tbody>
+          </table>
+          <div class="notice warn" style="margin-top: 12px">
+            <div class="ic">!</div>
+            <div>增删提供方需要控制平面写入配置并重启运行时。本面板不提供编辑控件，模型选择在输入区完成。</div>
+          </div>
+        </div>
+        <div class="demo-cap">提供方注册与模型选择分开：这里只呈现注册信息，可选模型由输入区的模型选择器承担。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">—</span>助手编辑<span class="pkg">表单 · 校验失败</span></div>
+        <div class="demo-bd">
+          <div class="form">
+            <div class="field">
+              <span class="lbl">名称</span>
+              <input class="cdh-input" value="代码审查" readonly style="border-color: var(--chatdsh-danger)" />
+              <span class="hint err">名称已存在。请换一个名称，或者编辑已存在的助手。</span>
+            </div>
+            <div class="field">
+              <span class="lbl">档位</span>
+              <div class="rowflex" style="gap: 6px">
+                <span class="cdh-badge">聊天档</span>
+                <span class="cdh-badge cdh-badge--brand">工作档</span>
+                <span class="cdh-badge">全量档</span>
+              </div>
+            </div>
+            <div class="field">
+              <span class="lbl">附加工具</span>
+              <div class="tag-input"><span class="t">read</span><span class="t">grep</span><span class="t">bash</span><span class="small faint">+ 添加</span></div>
+            </div>
+            <div class="field">
+              <span class="lbl">指令</span>
+              <div class="ta mono">先读改动范围内的事件台账，再按状态矩阵核对每一处状态落点。结论写进产出卡片。</div>
+            </div>
+          </div>
+        </div>
+        <div class="demo-cap">名称冲突就地报错不提交；离开页面时提示未保存。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>技能、自动化、分享</h2><em>47 · 48 · 50</em><span class="aside">来源、触发、快照</span></div>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">47</span>技能<span class="pkg">@chatdsh/client-skills</span><span class="cdh-badge cdh-badge--ok" style="margin-left: 8px">已启用 9 / 14</span></div>
+        <div class="demo-bd">
+          <div class="rowflex" style="margin-bottom: 10px">
+            <input class="cdh-input" style="height: 28px; width: 200px" value="按名称与说明过滤" readonly />
+            <span class="grow"></span>
+            <span class="cdh-badge">内置 6</span>
+            <span class="cdh-badge">工作区 5</span>
+            <span class="cdh-badge">用户 3</span>
+          </div>
+          <div class="rows">
+            <div class="rowitem">
+              <span class="ic">技</span>
+              <div class="tx"><b>ui-review</b><span>工作区 · 按清单核对界面状态与令牌</span></div>
+              <span class="sw" data-on="true"></span>
+            </div>
+            <div class="rowitem">
+              <span class="ic">技</span>
+              <div class="tx"><b>db-migrate</b><span>用户 · 生成迁移脚本并核对回滚路径</span></div>
+              <span class="sw" data-on="true"></span>
+            </div>
+            <div class="rowitem">
+              <span class="ic">技</span>
+              <div class="tx"><b>legacy-import</b><span>用户 · 已停用，目录仍在</span></div>
+              <span class="sw" data-on="false"></span>
+            </div>
+          </div>
+          <div class="small faint" style="margin-top: 10px">目录在运行时启动时扫描一次：运行期只改启用状态，新增技能需要重启运行时。</div>
+        </div>
+        <div class="demo-cap">停用后条目保留并置灰；切换失败的开关回弹并给出错误提示。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">48</span>自动化<span class="pkg">@chatdsh/client-automation</span><span class="cdh-badge cdh-badge--warn" style="margin-left: 8px">接口未接线</span></div>
+        <div class="demo-bd">
+          <div class="rows">
+            <div class="rowitem">
+              <span class="ic">自</span>
+              <div class="tx"><b>夜间依赖巡检</b><span>cron 0 3 * * * · 启动会话 · zerocode-web</span></div>
+              <span class="sw" data-on="true"></span>
+            </div>
+            <div class="rowitem">
+              <span class="ic">自</span>
+              <div class="tx"><b>设计稿变更同步</b><span>webhook · 启动会话 · design-system</span></div>
+              <span class="sw" data-on="false"></span>
+            </div>
+          </div>
+          <div class="field" style="margin-top: 12px">
+            <span class="lbl">webhook 地址</span>
+            <div class="rowflex" style="gap: 8px">
+              <input class="cdh-input mono" value="/chatdsh/gateway/webhook/auto_3f9c" readonly />
+              <button class="cdh-btn cdh-btn--sm">复制</button>
+            </div>
+            <span class="hint">密钥环境变量未配置时投递会被拒绝，地址仍然显示。</span>
+          </div>
+          <div class="notice warn" style="margin-top: 10px">
+            <div class="ic">!</div>
+            <div>当前控制平面只提供列表，启停与创建接口缺失。界面保留动作与投递记录位置，接口补齐后直接接入。</div>
+          </div>
+        </div>
+        <div class="demo-cap">未接线处如实标注，控件不做假成功；投递记录区先占位。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">50</span>分享<span class="pkg">@chatdsh/client-share</span><span class="cdh-badge" style="margin-left: 8px">3 条记录</span></div>
+        <div class="demo-bd">
+          <table class="tbl tiny-tbl">
+            <thead><tr><th>会话</th><th>快照水位</th><th>状态</th><th>访问</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="mono">sess_7f3c</td><td class="mono">#412</td>
+                <td><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>有效</span></td>
+                <td class="num">12</td><td class="num"><button class="cdh-btn cdh-btn--sm">撤销</button></td>
+              </tr>
+              <tr>
+                <td class="mono">sess_2a91</td><td class="mono">#88</td>
+                <td><span class="cdh-badge cdh-badge--warn">已过期</span></td>
+                <td class="num">3</td><td class="num"><span class="small faint">不可撤销</span></td>
+              </tr>
+              <tr>
+                <td class="mono">sess_c40d</td><td class="mono">#205</td>
+                <td><span class="cdh-badge cdh-badge--danger">已撤销</span></td>
+                <td class="num">0</td><td class="num"><span class="small faint">10月22日</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="rowflex" style="margin-top: 12px">
+            <button class="cdh-btn cdh-btn--sm cdh-btn--primary">创建分享</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">复制链接</button>
+            <span class="grow"></span>
+            <span class="small faint">快照建立后不再变化，不提供继续对话</span>
+          </div>
+        </div>
+        <div class="demo-cap">三种状态各有颜色与文案；撤销后列表原地刷新，不重新加载页面。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">—</span>创建分享<span class="pkg">表单 · 副本缺失</span></div>
+        <div class="demo-bd">
+          <div class="form">
+            <div class="field">
+              <span class="lbl">会话</span>
+              <div class="sel mono">sess_9b12 · 界面基准评审<span class="caret">▾</span></div>
+            </div>
+            <div class="field">
+              <span class="lbl">快照上界</span>
+              <div class="sel mono">#320 · 当前最新<span class="caret">▾</span></div>
+            </div>
+            <div class="field">
+              <span class="lbl">有效期</span>
+              <div class="rowflex" style="gap: 6px">
+                <span class="cdh-badge">1 天</span>
+                <span class="cdh-badge cdh-badge--brand">7 天</span>
+                <span class="cdh-badge">30 天</span>
+              </div>
+            </div>
+            <div class="notice danger">
+              <div class="ic">!</div>
+              <div>该会话的控制平面副本缺失，无法生成快照。需要源设备在线并完成一次同步。</div>
+            </div>
+            <button class="cdh-btn cdh-btn--primary cdh-btn--sm" disabled>生成链接</button>
+          </div>
+        </div>
+        <div class="demo-cap">副本缺失时按钮禁用并说明原因，不生成空快照。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>账号与设备、记忆、审批、连接器</h2><em>55 · 60 · 65 · 70</em><span class="aside">设备、后端、决定、协议</span></div>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">55</span>账号与设备<span class="pkg">@chatdsh/client-account</span><span class="cdh-badge cdh-badge--ok" style="margin-left: 8px">3 台在线</span></div>
+        <div class="demo-bd">
+          <table class="tbl tiny-tbl">
+            <thead><tr><th>平台</th><th>设备标识</th><th>最后在线</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Windows x64</td><td class="mono">dev_3a21</td><td class="mono">2 分钟前</td>
+                <td class="num"><span class="cdh-badge cdh-badge--brand">本机</span></td>
+              </tr>
+              <tr>
+                <td>macOS 15</td><td class="mono">dev_7c04</td><td class="mono">8 分钟前</td>
+                <td class="num"><button class="cdh-btn cdh-btn--sm">撤销</button></td>
+              </tr>
+              <tr>
+                <td>iPadOS 18</td><td class="mono">dev_9e16</td><td class="mono">6 小时前</td>
+                <td class="num"><button class="cdh-btn cdh-btn--sm">撤销</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="notice" style="margin-top: 12px">
+            <div class="ic">i</div>
+            <div>撤销设备需要二次确认，写明该设备上待发送的队列会被清空。当前设备标记依赖设备标识，接口未返回时显示为普通行。</div>
+          </div>
+        </div>
+        <div class="demo-cap">设备标识由控制平面登记，界面不显示任何网络地址；撤销动作走确认弹窗。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">60</span>记忆<span class="pkg">@chatdsh/client-memory</span><span class="cdh-badge cdh-badge--ok" style="margin-left: 8px">可用</span></div>
+        <div class="demo-bd">
+          <dl class="kv"><dt>后端</dt><dd>Hindsight 内置存储</dd></dl>
+          <dl class="kv"><dt>地址</dt><dd class="mono">http://127.0.0.1:9420</dd></dl>
+          <dl class="kv"><dt>召回上限</dt><dd class="mono">4096 token</dd></dl>
+          <dl class="kv"><dt>额外 bank</dt><dd class="mono">zerocode-web、design-system</dd></dl>
+          <div class="rowflex" style="margin-top: 12px">
+            <button class="cdh-btn cdh-btn--sm">浏览 bank</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">检索记忆</button>
+            <span class="grow"></span>
+            <span class="cdh-badge cdh-badge--warn">写入待同步 3 条</span>
+          </div>
+          <div class="notice warn" style="margin-top: 10px">
+            <div class="ic">!</div>
+            <div>写入失败的项目进入待写队列并上报遥测，界面只显示数量与最近一次失败时间。</div>
+          </div>
+        </div>
+        <div class="demo-cap">后端未启用时整段替换为启用说明与入口，不显示连接参数。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">65</span>审批<span class="pkg">@chatdsh/client-approval</span><span class="cdh-badge cdh-badge--warn" style="margin-left: 8px">1 个待处理</span></div>
+        <div class="demo-bd">
+          <div class="rows">
+            <div class="rowitem">
+              <span class="ic">审</span>
+              <div class="tx"><b>apply_patch</b><span>sess_7f3c · 13:59 提出 · 写入 2 个文件</span></div>
+              <button class="cdh-btn cdh-btn--sm cdh-btn--primary">本次允许</button>
+              <button class="cdh-btn cdh-btn--sm cdh-btn--danger">拒绝</button>
+            </div>
+          </div>
+          <div class="field" style="margin-top: 12px">
+            <span class="lbl">等待应答的关联键</span>
+            <div class="tag-input"><span class="t">call_9f2a</span><span class="t">call_a71c</span></div>
+          </div>
+          <div class="notice" style="margin-top: 10px">
+            <div class="ic">i</div>
+            <div>本面板只做单次决定。要把策略改为「本会话允许」或「始终允许」，在会话内用命令调整。</div>
+          </div>
+        </div>
+        <div class="demo-cap">作答后该行立即消失并刷新列表；另一端已处理时给出提示并移除。</div>
+      </div>
+
+      <div class="demo">
+        <div class="biz-hd"><span class="ord">70</span>连接器<span class="pkg">@chatdsh/client-connectors</span><span class="cdh-badge" style="margin-left: 8px">3 个记录</span></div>
+        <div class="demo-bd">
+          <div class="rows">
+            <div class="rowitem">
+              <span class="ic">连</span>
+              <div class="tx"><b>本地文件服务</b><span>stdio · npx -y @modelcontextprotocol/server-filesystem · FILES_ROOT</span></div>
+              <span class="sw" data-on="true"></span>
+            </div>
+            <div class="rowitem">
+              <span class="ic">连</span>
+              <div class="tx"><b>内网检索</b><span>http · http://127.0.0.1:8765/mcp · SEARCH_TOKEN</span></div>
+              <span class="sw" data-on="true"></span>
+            </div>
+            <div class="rowitem">
+              <span class="ic">连</span>
+              <div class="tx"><b>浏览器控制</b><span>stdio · 未配置凭据环境变量</span></div>
+              <span class="sw" data-on="false"></span>
+            </div>
+          </div>
+          <div class="rowflex" style="margin-top: 12px">
+            <button class="cdh-btn cdh-btn--sm cdh-btn--primary">新建连接器</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">同步加载器</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">测试工具</button>
+            <span class="grow"></span>
+            <span class="cdh-badge cdh-badge--ok">6 个工具可用</span>
+          </div>
+          <div class="small faint" style="margin-top: 10px">停用连接器后必须同步加载器行，否则已挂载的 MCP 行不会消失。</div>
+        </div>
+        <div class="demo-cap">记录只保存凭据所在的环境变量名；工具测试给出参数校验错误与结果截断提示。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>业务区段的共同状态</h2><em>跨区段</em><span class="aside">加载 · 空 · 失败 · 忙</span></div>
+    <p class="sect-lead">十个区段共用同一组状态版式，尺寸与位置固定，切换状态时列表容器不跳动。</p>
+
+    <div class="state-grid">
+      <div class="state-cell">
+        <div class="cap">加载中<em>骨架行等高</em></div>
+        <div class="bd">
+          <div class="cdh-skel" style="height: 12px; width: 62%"></div>
+          <div class="cdh-skel" style="height: 12px; width: 84%"></div>
+          <div class="cdh-skel" style="height: 12px; width: 48%"></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">空<em>给出下一步</em></div>
+        <div class="bd">
+          <div class="empty">
+            <b>还没有连接器</b>
+            <span>新建连接器后，工具会出现在会话的引用列表里。</span>
+            <button class="cdh-btn cdh-btn--sm">新建连接器</button>
+          </div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">失败<em>指明接口与重试</em></div>
+        <div class="bd">
+          <div class="errbox">
+            <b>技能目录读取失败</b>
+            <span class="mono">chatdshSkills/catalog · 503</span>
+            <div class="rowflex" style="margin-top: 6px">
+              <button class="cdh-btn cdh-btn--sm">重试</button>
+              <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">查看诊断</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">作答中<em>按钮锁定</em></div>
+        <div class="bd">
+          <div class="rowitem">
+            <span class="ic">审</span>
+            <div class="tx"><b>apply_patch</b><span>正在提交决定…</span></div>
+            <button class="cdh-btn cdh-btn--sm" disabled>提交中</button>
+          </div>
+          <div class="small faint">提交期间禁止重复作答，失败后按钮恢复并给出原因。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+<script src="../scheme.js"></script>
+</body>
+</html>

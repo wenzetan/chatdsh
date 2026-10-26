@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatDSH · 会话同步与控制平面</title>
+<link rel="stylesheet" href="../tokens.css" />
+<link rel="stylesheet" href="../app.css" />
+<link rel="stylesheet" href="../pages.css" />
+<style>
+  .usage-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 120px 92px;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--chatdsh-line);
+    font-size: 11.5px;
+  }
+
+  .usage-row:last-child {
+    border-bottom: 0;
+  }
+
+  .usage-row .nm {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--chatdsh-ink-2);
+  }
+
+  .usage-row .nm span {
+    color: var(--chatdsh-faint);
+    font-family: var(--cdh-font-mono);
+    font-size: 10px;
+    margin-left: 6px;
+  }
+
+  .usage-row .num {
+    text-align: right;
+    font-family: var(--cdh-font-mono);
+    font-size: 10.5px;
+    color: var(--chatdsh-muted);
+  }
+
+  .chain {
+    display: grid;
+    gap: 0;
+    font-family: var(--cdh-font-mono);
+    font-size: 11px;
+    color: var(--chatdsh-muted);
+    border-left: 1px solid var(--chatdsh-line-2);
+    margin-left: 6px;
+    padding-left: 12px;
+  }
+
+  .chain .n {
+    position: relative;
+    padding: 5px 0;
+  }
+
+  .chain .n::before {
+    content: "";
+    position: absolute;
+    left: -16px;
+    top: 12px;
+    width: 8px;
+    height: 1px;
+    background: var(--chatdsh-line-2);
+  }
+
+  .chain .n b {
+    color: var(--chatdsh-ink-2);
+    font-weight: 500;
+  }
+
+  .chain .n span {
+    font-size: 10px;
+    color: var(--chatdsh-faint);
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body class="plate-body" data-color-scheme="dark">
+<div class="plate">
+
+  <header class="plate-hd">
+    <div class="top"><a href="../catalog.html">← 页面目录</a><span>控制平面 · 会话同步</span></div>
+    <h1>会话归属、同步与用量</h1>
+    <p class="lead">控制平面维护会话副本、设备与通知。页面覆盖会话归属表、同步状态、用量与副本清理、跨设备导入、导入链、删除收件箱、附件同步开关与通知设置。</p>
+    <div class="tags">
+      <span class="cdh-badge cdh-badge--brand">控制平面</span>
+      <span class="cdh-badge">副本水位</span>
+      <span class="cdh-badge">导入预估</span>
+      <span class="cdh-badge">通知两段式</span>
+    </div>
+  </header>
+
+  <div class="plate-note">
+    <span class="bar"></span>
+    <div><b>副本与权威日志分开。</b>清理只删控制平面副本，不影响运行时的会话日志；导入把源会话的事件写入当前设备的副本，额度按事件条数、字符数与附件大小估算。</div>
+  </div>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>会话归属与同步状态</h2><em>CP-01 · CP-02</em><span class="aside">六列固定</span></div>
+    <p class="sect-lead">归属表按最后活动倒序，同步状态用徽标表达：已同步、同步中、落后 N 条、仅本地。落后条数直接给出队列深度。</p>
+
+    <div class="demo">
+      <div class="demo-hd">会话归属<span class="tag">4 个会话 · 1 个落后</span></div>
+      <div class="demo-bd flush">
+        <table class="tbl">
+          <thead>
+            <tr><th>会话</th><th>账号</th><th>工作区</th><th>设备</th><th>类型</th><th>建立时间</th><th>同步</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b style="color: var(--chatdsh-ink); font-weight: 520">界面基准评审</b><div class="mono small">sess_7f3c</div></td>
+              <td>chatdsh</td>
+              <td class="mono">zerocode-web</td>
+              <td>windows-node</td>
+              <td><span class="cdh-badge">工作</span></td>
+              <td class="mono">10月26日 09:12</td>
+              <td><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>已同步</span></td>
+            </tr>
+            <tr>
+              <td><b style="color: var(--chatdsh-ink-2); font-weight: 520">审批卡片超时</b><div class="mono small">sess_2a91</div></td>
+              <td>chatdsh</td>
+              <td class="mono">zerocode-web</td>
+              <td>mac-mini-2</td>
+              <td><span class="cdh-badge">工作</span></td>
+              <td class="mono">10月26日 08:40</td>
+              <td><span class="cdh-badge cdh-badge--warn"><i class="cdh-dot"></i>落后 12 条</span></td>
+            </tr>
+            <tr>
+              <td><b style="color: var(--chatdsh-ink-2); font-weight: 520">部署排障记录</b><div class="mono small">sess_c40d</div></td>
+              <td>chatdsh</td>
+              <td class="mono">infra</td>
+              <td>windows-node</td>
+              <td><span class="cdh-badge">聊天</span></td>
+              <td class="mono">10月25日 22:04</td>
+              <td><span class="cdh-badge cdh-badge--warn">同步中</span></td>
+            </tr>
+            <tr>
+              <td><b style="color: var(--chatdsh-ink-2); font-weight: 520">离线草稿</b><div class="mono small">sess_9b12</div></td>
+              <td>chatdsh</td>
+              <td class="mono">design-system</td>
+              <td>ipad-2</td>
+              <td><span class="cdh-badge">聊天</span></td>
+              <td class="mono">10月25日 19:20</td>
+              <td><span class="cdh-badge cdh-badge--brand">仅本地</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="demo-cap">「仅本地」表示副本尚未上传；来源设备离线的会话不可导入，行内给出禁用原因。</div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>用量与副本清理</h2><em>CP-03 · CP-04</em><span class="aside">按会话 · 工作区 · 设备</span></div>
+    <p class="sect-lead">占用按副本追加的字节数累计。清理入口给出可释放空间与影响说明，二次确认后执行，不影响权威日志。</p>
+
+    <div class="grid-side">
+      <div class="stack">
+        <div class="stats">
+          <div><span class="n">4.2</span><span class="k">副本总量 GB</span><span class="d">+128 MB 本周</span></div>
+          <div><span class="n">1.8</span><span class="k">可释放 GB</span><span class="d">43%</span></div>
+          <div><span class="n">6</span><span class="k">工作区</span><span class="d">3 台设备</span></div>
+          <div><span class="n">812</span><span class="k">会话</span><span class="d">未读 12</span></div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">按会话占用<span class="tag">前 5 项</span></div>
+          <div class="demo-bd">
+            <div class="usage-row"><span class="nm">界面基准评审<span>sess_7f3c</span></span><div class="cdh-bar"><i style="width: 84%"></i></div><span class="num">412 MB</span></div>
+            <div class="usage-row"><span class="nm">部署排障记录<span>sess_c40d</span></span><div class="cdh-bar"><i style="width: 62%"></i></div><span class="num">286 MB</span></div>
+            <div class="usage-row"><span class="nm">审批卡片超时<span>sess_2a91</span></span><div class="cdh-bar"><i style="width: 41%"></i></div><span class="num">188 MB</span></div>
+            <div class="usage-row"><span class="nm">设计稿走查<span>sess_4e18</span></span><div class="cdh-bar"><i style="width: 22%"></i></div><span class="num">96 MB</span></div>
+            <div class="usage-row"><span class="nm">离线草稿<span>sess_9b12</span></span><div class="cdh-bar"><i style="width: 9%"></i></div><span class="num">38 MB</span></div>
+          </div>
+          <div class="demo-cap">条形长度按当前最大会话归一；右侧数值保留三位有效数字。</div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">副本清理<span class="tag">状态 · 确认</span></div>
+          <div class="demo-bd">
+            <div class="stage" style="min-height: 250px; padding: 0">
+              <div class="scrim"></div>
+              <div class="dlg">
+                <div class="hd">
+                  <h4>清理控制平面副本</h4>
+                  <p>清理后这些会话的跨设备浏览与分享不可用，权威日志仍在源设备上。</p>
+                </div>
+                <div class="bd">
+                  <div class="kv"><dt>范围</dt><dd>30 天前未活动的 214 个会话</dd></div>
+                  <div class="kv"><dt>可释放</dt><dd class="mono">1.8 GB</dd></div>
+                  <div class="kv"><dt>保留</dt><dd>收藏、已分享、待导入的会话</dd></div>
+                  <div class="notice warn"><div class="ic">!</div><div>清理不可撤销。需要恢复时从源设备重新同步。</div></div>
+                </div>
+                <div class="ft">
+                  <button class="cdh-btn cdh-btn--danger">开始清理</button>
+                  <button class="cdh-btn cdh-btn--ghost">取消</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="demo-cap">执行时弹窗内原地显示进度与已释放字节，不关闭弹窗。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">同步落后<span class="tag">状态 · 队列积压</span></div>
+          <div class="demo-bd">
+            <div class="notice warn">
+              <div class="ic">!</div>
+              <div><b class="mono">sess_2a91</b> 落后 12 条，队列最深时 42 条。来源设备 <b class="mono">mac-mini-2</b> 在线但上行拥塞。</div>
+            </div>
+            <div class="chart" style="height: 60px; margin-top: 10px">
+              <i style="height: 30%"></i><i style="height: 46%"></i><i style="height: 72%"></i><i class="peak" style="height: 100%"></i><i style="height: 84%"></i><i style="height: 58%"></i><i style="height: 40%"></i><i style="height: 26%"></i>
+            </div>
+            <div class="chart-x"><span>-40m</span><span>-30m</span><span>-20m</span><span>-10m</span><span>-5m</span><span>现在</span></div>
+          </div>
+          <div class="demo-cap">队列深度按 10 分钟聚合；恢复后深度回落并清零领先标记。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>跨设备导入</h2><em>CP-05 · CP-06</em><span class="aside">预估 · 链</span></div>
+    <p class="sect-lead">导入把源会话的事件写入当前设备副本。预估块给出事件条数、字符数、附件大小与副本水位，确认后开始导入。</p>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">导入表单<span class="tag">状态 · 待确认</span></div>
+        <div class="demo-bd">
+          <div class="form">
+            <div class="field">
+              <span class="lbl">源会话</span>
+              <div class="sel mono">sess_c40d · 部署排障记录<span class="caret">▾</span></div>
+            </div>
+            <div class="field">
+              <span class="lbl">粒度</span>
+              <div class="rowflex" style="gap: 6px">
+                <span class="cdh-badge">全部事件</span>
+                <span class="cdh-badge cdh-badge--brand">仅对话与工具调用</span>
+                <span class="cdh-badge">仅产出</span>
+              </div>
+            </div>
+            <div class="rowflex" style="gap: 10px">
+              <div class="field" style="flex: 1">
+                <span class="lbl">事件上限</span>
+                <div class="sel mono">4 000<span class="caret">▾</span></div>
+              </div>
+              <div class="field" style="flex: 1">
+                <span class="lbl">附件</span>
+                <div class="sel mono">不导入<span class="caret">▾</span></div>
+              </div>
+            </div>
+            <div class="notice info">
+              <div class="ic">i</div>
+              <div>预计写入 <b class="mono">3 214</b> 条事件、<b class="mono">8.6M</b> 字符、<b class="mono">0 B</b> 附件；副本水位从 <b class="mono">#88</b> 推进到 <b class="mono">#412</b>。</div>
+            </div>
+            <div class="rowflex">
+              <button class="cdh-btn cdh-btn--primary cdh-btn--sm">开始导入</button>
+              <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">重新预估</button>
+              <span class="grow"></span>
+              <span class="small faint">导入是单向追加，不回写源设备</span>
+            </div>
+          </div>
+        </div>
+        <div class="demo-cap">预估在参数变化后自动重算；超出额度时按钮禁用并给出上限说明。</div>
+      </div>
+
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">导入链<span class="tag">状态 · 三级来源</span></div>
+          <div class="demo-bd">
+            <div class="chain">
+              <div class="n"><b>sess_c40d</b> 部署排障记录<span>原始 · windows-node</span></div>
+              <div class="n"><b>sess_4e18</b> 设计稿走查<span>导入自 sess_c40d · 10月24日</span></div>
+              <div class="n"><b>sess_7f3c</b> 界面基准评审<span>导入自 sess_4e18 · 10月26日</span></div>
+            </div>
+            <div class="small faint" style="margin-top: 10px">每一级记录来源会话与导入时间；导入不复制来源链之外的上下文。</div>
+          </div>
+          <div class="demo-cap">链最多展示三级，超出的部分折叠为「更早的 2 级」。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">删除收件箱<span class="tag">状态 · 可撤销</span></div>
+          <div class="demo-bd">
+            <div class="rows">
+              <div class="rowitem">
+                <span class="ic">删</span>
+                <div class="tx"><b>sess_2a91 · 审批卡片超时</b><span>10月24日删除 · 剩余保留 12 天 · 副本 188 MB</span></div>
+                <button class="cdh-btn cdh-btn--sm">撤销删除</button>
+              </div>
+              <div class="rowitem">
+                <span class="ic">删</span>
+                <div class="tx"><b>sess_1f09 · 旧版界面走查</b><span>10月11日删除 · 剩余保留 2 天 · 副本 64 MB</span></div>
+                <button class="cdh-btn cdh-btn--sm">撤销删除</button>
+              </div>
+            </div>
+            <div class="notice warn" style="margin-top: 10px">
+              <div class="ic">!</div>
+              <div>保留期结束后副本与分享链接一并失效，撤销窗口关闭。</div>
+            </div>
+          </div>
+          <div class="demo-cap">剩余保留天数按天显示；最后 24 小时改为小时计数。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>附件同步、通知与未读</h2><em>CP-08 · CP-10 · CP-11 · CP-12</em><span class="aside">会话级开关 · 两段式</span></div>
+    <p class="sect-lead">附件同步按会话开启，开启后需要源设备在线。通知分一次性与两段式，两段式给出两级时长；未读计数与已读上报按设备同步。</p>
+
+    <div class="grid2">
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">附件同步开关<span class="tag">状态 · 需源设备在线</span></div>
+          <div class="demo-bd">
+            <div class="field-row">
+              <span class="lbl">附件同步</span>
+              <div class="ctl">
+                <div class="rowflex" style="gap: 9px">
+                  <span class="sw" data-on="true"></span>
+                  <span class="small muted">本会话的附件副本同步到控制平面</span>
+                </div>
+                <span class="hint">开启后每位参与设备增加最多 1.2 GB 副本占用，上行按 30 KB/s 限速。</span>
+              </div>
+            </div>
+            <div class="notice warn">
+              <div class="ic">!</div>
+              <div>来源设备 <b class="mono">mac-mini-2</b> 当前离线，队列中的 2 个附件会在设备上线后补传。</div>
+            </div>
+          </div>
+          <div class="demo-cap">开关状态写进会话记录；离线时开关可改，队列在设备上线后继续。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">未读与已读<span class="tag">状态 · 跨端同步</span></div>
+          <div class="demo-bd">
+            <div class="rowflex" style="justify-content: space-between; font-size: 11.5px">
+              <span class="muted">会话未读</span><span class="mono ink">12 条 · 3 个会话</span>
+            </div>
+            <div class="rows" style="margin-top: 8px">
+              <div class="rowitem" style="padding: 8px 0; border-bottom: 1px solid var(--chatdsh-line)">
+                <span class="ic">未</span>
+                <div class="tx"><b>界面基准评审</b><span>4 条 · 2 分钟前 · windows-node 已上报</span></div>
+                <span class="cdh-badge cdh-badge--brand">本设备已读</span>
+              </div>
+              <div class="rowitem" style="padding: 8px 0; border: 0">
+                <span class="ic">未</span>
+                <div class="tx"><b>审批卡片超时</b><span>8 条 · 12 分钟前 · iPad 未读</span></div>
+                <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">标记已读</button>
+              </div>
+            </div>
+          </div>
+          <div class="demo-cap">已读上报按设备分别记录；另一台设备仍显示未读，直到它自己上报。</div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">通知设置<span class="tag">状态 · 两段式</span></div>
+          <div class="demo-bd">
+            <div class="field-row">
+              <span class="lbl">投递模式</span>
+              <div class="ctl">
+                <div class="rowflex" style="gap: 6px">
+                  <span class="cdh-badge">一次性</span>
+                  <span class="cdh-badge cdh-badge--brand">两段式</span>
+                </div>
+                <span class="hint">两段式先发一条安静通知，超过第一级时长仍未处理再补一条显著通知。</span>
+              </div>
+            </div>
+            <div class="field-row">
+              <span class="lbl">第一级时长</span>
+              <div class="ctl"><div class="sel mono">2 分钟<span class="caret">▾</span></div></div>
+            </div>
+            <div class="field-row">
+              <span class="lbl">第二级时长</span>
+              <div class="ctl"><div class="sel mono">10 分钟<span class="caret">▾</span></div></div>
+            </div>
+            <div class="field-row">
+              <span class="lbl">通知撤回</span>
+              <div class="ctl">
+                <div class="rowflex" style="gap: 9px">
+                  <span class="sw" data-on="true"></span>
+                  <span class="small muted">任一端处理后撤回其他端的通知</span>
+                </div>
+                <span class="hint">撤回依赖推送连接；离线设备在下次上线时收到撤销事件。</span>
+              </div>
+            </div>
+          </div>
+          <div class="demo-cap">时长选项固定四档；选择两段式后第二级时长必须大于第一级。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">通知撤回<span class="tag">状态 · 已处理</span></div>
+          <div class="demo-bd">
+            <div class="stage" style="min-height: 140px; padding: 12px">
+              <div class="toast">
+                <span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>已处理</span>
+                审批已在 <b class="mono" style="margin: 0 4px">Windows x64</b> 上作答，其余设备的通知已撤回。
+              </div>
+            </div>
+            <div class="small faint" style="margin-top: 8px">撤回后卡片从通知中心移除；会话内审批卡片同步变为已作答。</div>
+          </div>
+          <div class="demo-cap">提示条 5 秒后自动消失，不阻塞操作。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+<script src="../scheme.js"></script>
+</body>
+</html>

@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatDSH · 状态版式</title>
+<link rel="stylesheet" href="../tokens.css" />
+<link rel="stylesheet" href="../app.css" />
+<link rel="stylesheet" href="../pages.css" />
+<style>
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+  }
+
+  .matrix th {
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--chatdsh-faint);
+    font-weight: 600;
+    border-bottom: 1px solid var(--chatdsh-line-2);
+  }
+
+  .matrix td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--chatdsh-line);
+    color: var(--chatdsh-muted);
+    vertical-align: top;
+    line-height: 1.55;
+  }
+
+  .matrix td:first-child {
+    color: var(--chatdsh-ink-2);
+    font-weight: 540;
+    white-space: nowrap;
+  }
+
+  .quad {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .quad .state-cell > .cap {
+    padding: 7px 10px;
+    font-size: 10.5px;
+  }
+
+  .quad .state-cell > .bd {
+    padding: 10px;
+    min-height: 120px;
+    gap: 7px;
+  }
+
+  .mini-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--chatdsh-line);
+    font-size: 10.5px;
+    color: var(--chatdsh-ink-2);
+  }
+
+  .mini-row:last-child {
+    border-bottom: 0;
+  }
+
+  .mini-row .m {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mini-row .s {
+    font-size: 9px;
+    color: var(--chatdsh-faint);
+    font-family: var(--cdh-font-mono);
+  }
+
+  .mini-field {
+    display: grid;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--chatdsh-faint);
+  }
+
+  .mini-input {
+    height: 26px;
+    border: 1px solid var(--chatdsh-line-2);
+    border-radius: 4px;
+    background: var(--chatdsh-panel);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 10.5px;
+    color: var(--chatdsh-muted);
+  }
+
+  .mini-input[data-disabled="true"] {
+    opacity: 0.5;
+  }
+
+  .mini-msg {
+    font-size: 10.5px;
+    line-height: 1.55;
+    color: var(--chatdsh-ink-2);
+  }
+
+  .mini-msg.dim {
+    color: var(--chatdsh-faint);
+  }
+
+  .mini-bubble {
+    justify-self: end;
+    max-width: 84%;
+    padding: 6px 9px;
+    border-radius: 9px 9px 3px 9px;
+    background: var(--chatdsh-bubble);
+    color: var(--chatdsh-bubble-ink);
+    font-size: 10.5px;
+  }
+
+  .mini-skel {
+    height: 9px;
+    border-radius: 3px;
+  }
+
+  .timeline {
+    display: grid;
+    gap: 5px;
+    font-size: 10.5px;
+    color: var(--chatdsh-muted);
+  }
+
+  .timeline .t {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .timeline .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    border: 1px solid var(--chatdsh-line-2);
+    flex: none;
+  }
+
+  .timeline .t.done .dot {
+    background: var(--chatdsh-ok);
+    border-color: var(--chatdsh-ok);
+  }
+
+  .timeline .t.run .dot {
+    background: var(--chatdsh-brand);
+    border-color: var(--chatdsh-brand);
+  }
+
+  .timeline .t.todo {
+    color: var(--chatdsh-faint);
+  }
+
+  .chips {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+
+  .chips .c {
+    border: 1px solid var(--chatdsh-line-2);
+    border-radius: var(--cdh-r-pill);
+    padding: 2px 8px;
+    font-size: 10px;
+    color: var(--chatdsh-muted);
+  }
+</style>
+</head>
+<body class="plate-body" data-color-scheme="dark">
+<div class="plate">
+
+  <header class="plate-hd">
+    <div class="top"><a href="../catalog.html">← 页面目录</a><span>状态版式 · STATES</span></div>
+    <h1>十种状态与长任务的落位</h1>
+    <p class="lead">每种状态给出四类页面上的版式：列表页、详情页、表单页、对话页。四格并排便于比较，同一行的容器高度一致，状态切换不产生位移。</p>
+    <div class="tags">
+      <span class="cdh-badge cdh-badge--brand">10 + 长任务</span>
+      <span class="cdh-badge">四类页面</span>
+      <span class="cdh-badge">占位等高</span>
+      <span class="cdh-badge">动作清晰</span>
+    </div>
+  </header>
+
+  <div class="plate-note">
+    <span class="bar"></span>
+    <div><b>状态的三个判定标准：</b>用户一眼知道发生了什么、知道下一步能做什么、不会因为内容长度变化而误触。危险动作在四类页面里都要二次确认。</div>
+  </div>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>落位总表</h2><em>OVERVIEW</em><span class="aside">10 + 1 行</span></div>
+    <div class="demo">
+      <div class="demo-bd flush">
+        <table class="matrix">
+          <thead><tr><th>状态</th><th>列表页</th><th>详情页</th><th>表单页</th><th>对话页</th></tr></thead>
+          <tbody>
+            <tr><td>加载中</td><td>骨架行与真实行等高</td><td>骨架块保留标题与操作位</td><td>控件禁用，保留标签</td><td>增量占位，保留输入区</td></tr>
+            <tr><td>空</td><td>空状态加下一步动作</td><td>记录不存在加返回</td><td>填入默认值</td><td>欢迎语加选项卡片</td></tr>
+            <tr><td>失败</td><td>重试按钮，其他区域可用</td><td>列出读取失败的接口</td><td>保留已填内容加错误摘要</td><td>错误卡片加重试</td></tr>
+            <tr><td>只读</td><td>不出现编辑入口</td><td>只读徽标加元数据</td><td>不适用，说明来源</td><td>输入区替换为说明</td></tr>
+            <tr><td>离线</td><td>缓存数据与读取时间</td><td>缓存数据与时间</td><td>禁止提交，草稿保留</td><td>进队列或明确拒绝</td></tr>
+            <tr><td>待处理</td><td>计数徽标</td><td>处理按钮加倒计时</td><td>不适用</td><td>审批或提问接管卡片</td></tr>
+            <tr><td>权限不足</td><td>说明缺项加申请入口</td><td>说明缺项加申请入口</td><td>控件禁用并说明</td><td>工具失败卡片说明缺项</td></tr>
+            <tr><td>已停用</td><td>状态标记</td><td>状态标记与原因</td><td>控件禁用</td><td>能力不可见并说明由哪端提供</td></tr>
+            <tr><td>危险动作</td><td>确认弹窗写明影响范围</td><td>确认弹窗</td><td>二次确认</td><td>审批卡片</td></tr>
+            <tr><td>降级</td><td>降级徽标与时间</td><td>最近一次读数与时间</td><td>禁用保存</td><td>系统提示条</td></tr>
+            <tr><td>长任务</td><td>进度与取消</td><td>步骤时间线</td><td>不适用</td><td>回合进度与停止</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>加载中</h2><em>LOADING</em><span class="aside">占位与真实内容等高</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>骨架行</em></div>
+        <div class="bd">
+          <div class="cdh-skel" style="height: 12px; width: 76%"></div>
+          <div class="cdh-skel" style="height: 12px; width: 92%"></div>
+          <div class="cdh-skel" style="height: 12px; width: 64%"></div>
+          <div class="cdh-skel" style="height: 12px; width: 84%"></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>骨架块</em></div>
+        <div class="bd">
+          <div class="cdh-skel" style="height: 16px; width: 58%"></div>
+          <div class="cdh-skel" style="height: 10px; width: 88%"></div>
+          <div class="cdh-skel" style="height: 10px; width: 72%"></div>
+          <div class="cdh-skel" style="height: 26px; width: 120px; margin-top: 4px"></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>控件禁用</em></div>
+        <div class="bd">
+          <div class="mini-field"><span>工作区</span><div class="mini-input" data-disabled="true">读取中…</div></div>
+          <div class="mini-field"><span>配色</span><div class="mini-input" data-disabled="true">读取中…</div></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>增量占位</em></div>
+        <div class="bd">
+          <div class="mini-msg dim">回合已开始，等待首个片段…</div>
+          <div class="cdh-skel" style="height: 10px; width: 90%"></div>
+          <div class="cdh-skel" style="height: 10px; width: 64%"></div>
+          <div class="mini-input" data-disabled="true">输入区照常可用</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>空</h2><em>EMPTY</em><span class="aside">必须给出下一步</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>空状态加动作</em></div>
+        <div class="bd">
+          <div class="empty" style="padding: 14px 10px">
+            <b>还没有连接器</b>
+            <span>新建后工具会出现在引用列表。</span>
+            <button class="cdh-btn cdh-btn--sm">新建连接器</button>
+          </div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>记录不存在</em></div>
+        <div class="bd">
+          <div class="mini-msg">这个会话在控制平面里找不到，可能已被清理。</div>
+          <div class="chips"><span class="c">返回列表</span><span class="c">从源设备重新同步</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>填入默认值</em></div>
+        <div class="bd">
+          <div class="mini-field"><span>触发方式</span><div class="mini-input">每天 03:00</div></div>
+          <div class="mini-field"><span>动作</span><div class="mini-input">启动会话 · 工作档</div></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>欢迎与建议</em></div>
+        <div class="bd">
+          <div class="mini-msg">这个会话还是空的。可以从下面开始，也可以直接提问。</div>
+          <div class="chips"><span class="c">解释当前工作区</span><span class="c">生成界面基准</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>失败</h2><em>ERROR</em><span class="aside">指明接口与重试</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>局部失败</em></div>
+        <div class="bd">
+          <div class="errbox">
+            <b>制品列表读取失败</b>
+            <span class="mono">artifacts/list · 503</span>
+            <button class="cdh-btn cdh-btn--sm" style="justify-self: start; margin-top: 4px">重试</button>
+          </div>
+          <div class="mini-msg dim">其他区段保持可用。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>读取失败</em></div>
+        <div class="bd">
+          <div class="errbox">
+            <b>诊断读数读取失败</b>
+            <span class="mono">/chatdsh/gateway/diagnostics · ECONNRESET</span>
+          </div>
+          <div class="chips"><span class="c">重试</span><span class="c">返回</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>保留输入</em></div>
+        <div class="bd">
+          <div class="mini-field"><span>名称</span><div class="mini-input">夜间依赖巡检</div></div>
+          <div class="mini-msg dim" style="color: var(--chatdsh-danger)">保存失败：名称已存在。</div>
+          <div class="chips"><span class="c">改名后重试</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>错误卡片</em></div>
+        <div class="bd">
+          <div class="tool" data-state="error">
+            <div class="tool-hd" style="padding: 6px 8px">
+              <span class="cdh-badge cdh-badge--danger" style="height: 16px; font-size: 9px">失败</span>
+              <span class="nm" style="font-size: 10px">apply_patch</span>
+            </div>
+            <div class="tool-err" style="padding: 5px 8px; font-size: 9.5px">只读档位拒绝写入</div>
+          </div>
+          <div class="chips"><span class="c">重试</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>只读</h2><em>READ ONLY</em><span class="aside">跨设备与快照</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>无编辑入口</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">网关设备表撤销入口</span><span class="cdh-badge" style="height: 15px; font-size: 9px">只读</span></div>
+          <div class="mini-row"><span class="m">审批卡片超时</span><span class="cdh-badge" style="height: 15px; font-size: 9px">只读</span></div>
+          <div class="mini-msg dim">行内不出现删除与编辑。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>只读与元数据</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">来源设备</span><span class="s">mac-mini-2</span></div>
+          <div class="mini-row"><span class="m">同步水位</span><span class="s">#412</span></div>
+          <div class="mini-row"><span class="m">权限</span><span class="s">只读</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>不适用</em></div>
+        <div class="bd">
+          <div class="mini-msg dim">该记录只读，编辑入口不显示。需要修改时在来源设备上操作。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>输入区替换</em></div>
+        <div class="bd">
+          <div class="mini-bubble">撤销入口要放在行尾。</div>
+          <div class="notice" style="font-size: 9.5px; padding: 7px 9px">
+            <div class="ic">i</div>
+            <div>来源设备离线，只能查看历史。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>离线</h2><em>OFFLINE</em><span class="aside">缓存时间与队列</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>缓存数据</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">界面基准评审</span><span class="s">14:02 缓存</span></div>
+          <div class="mini-row"><span class="m">审批卡片超时</span><span class="s">14:02 缓存</span></div>
+          <div class="mini-msg dim">列表顶部标注缓存时间。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>缓存与时间</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">健康检查</span><span class="s">14:02</span></div>
+          <div class="mini-row"><span class="m">版本矩阵</span><span class="s">14:02</span></div>
+          <div class="chips"><span class="c">重新探测</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>禁止提交</em></div>
+        <div class="bd">
+          <div class="mini-field"><span>名称</span><div class="mini-input">夜间依赖巡检</div></div>
+          <div class="mini-input" data-disabled="true">保存（离线不可用）</div>
+          <div class="mini-msg dim">草稿保留在本地。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>队列或拒绝</em></div>
+        <div class="bd">
+          <div class="mini-msg">消息已进入队列（2 条）。</div>
+          <div class="notice warn" style="font-size: 9.5px; padding: 7px 9px">
+            <div class="ic">!</div>
+            <div>审批在离线时直接拒绝。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>待处理</h2><em>PENDING</em><span class="aside">计数与倒计时</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>计数徽标</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">修复审批超时后的卡片残留</span><span class="cdh-badge cdh-badge--warn" style="height: 15px; font-size: 9px">1</span></div>
+          <div class="mini-row"><span class="m">界面基准评审</span><span class="cdh-badge cdh-badge--brand" style="height: 15px; font-size: 9px">4</span></div>
+          <div class="mini-msg dim">待审批与未读分开计数。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>处理按钮</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">apply_patch · call_9f2a</span><span class="s">42s</span></div>
+          <div class="chips"><span class="c">本次允许</span><span class="c">拒绝</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>不适用</em></div>
+        <div class="bd">
+          <div class="mini-msg dim">表单页没有待处理概念。审批只出现在对话页与审批区段。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>接管卡片</em></div>
+        <div class="bd">
+          <div class="notice warn" style="font-size: 9.5px; padding: 7px 9px; border-left-width: 2px">
+            <div class="ic">!</div>
+            <div>等待审批 · apply_patch<br />剩余 42 秒</div>
+          </div>
+          <div class="chips"><span class="c">允许一次</span><span class="c">本会话允许</span><span class="c">拒绝</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>权限不足</h2><em>FORBIDDEN</em><span class="aside">说清缺哪一项</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>申请入口</em></div>
+        <div class="bd">
+          <div class="mini-msg">当前账号没有查看设备会话的权限。</div>
+          <div class="chips"><span class="c">申请权限</span><span class="c">查看说明</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>缺项说明</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">导出诊断包</span><span class="s">缺 diagnostics:export</span></div>
+          <div class="mini-msg dim">只读账号可以查看读数与日志尾部。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>禁用并说明</em></div>
+        <div class="bd">
+          <div class="mini-input" data-disabled="true">保存（缺少写入权限）</div>
+          <div class="mini-msg dim">已填入的内容保留。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>工具失败卡片</em></div>
+        <div class="bd">
+          <div class="tool" data-state="error">
+            <div class="tool-hd" style="padding: 6px 8px">
+              <span class="cdh-badge cdh-badge--danger" style="height: 16px; font-size: 9px">失败</span>
+              <span class="nm" style="font-size: 10px">write_file</span>
+            </div>
+            <div class="tool-err" style="padding: 5px 8px; font-size: 9.5px">缺少工作区写入权限</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>已停用</h2><em>DISABLED</em><span class="aside">控件保留并标原因</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>状态标记</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">legacy-web</span><span class="cdh-badge" style="height: 15px; font-size: 9px">目录不存在</span></div>
+          <div class="mini-row"><span class="m">dsh-client-kanban</span><span class="cdh-badge cdh-badge--danger" style="height: 15px; font-size: 9px">不兼容</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>原因说明</em></div>
+        <div class="bd">
+          <div class="mini-msg">该插件声明 dsh ~0.3，当前运行时 0.4.2。条目保留，控件禁用。</div>
+          <div class="chips"><span class="c">查看兼容性</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>控件禁用</em></div>
+        <div class="bd">
+          <div class="mini-input" data-disabled="true">修改密码（单机形态已停用）</div>
+          <div class="mini-msg dim">由「账号与设备」区段替代。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>能力不可见</em></div>
+        <div class="bd">
+          <div class="mini-msg dim">该会话没有启用记忆。启用后在设置里打开，或在会话内用 /memory on。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>危险动作</h2><em>DESTRUCTIVE</em><span class="aside">写明影响范围</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>确认弹窗</em></div>
+        <div class="bd">
+          <div class="mini-msg">删除 2 个文件？</div>
+          <div class="chips"><span class="c">删除</span><span class="c">取消</span></div>
+          <div class="mini-msg dim">弹窗列出路径。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>确认并说明</em></div>
+        <div class="bd">
+          <div class="mini-msg">撤销分享链接后立即失效，刷新返回 410。</div>
+          <div class="chips"><span class="c">撤销链接</span><span class="c">取消</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>二次确认</em></div>
+        <div class="bd">
+          <div class="mini-field"><span>输入 RESET 继续</span><div class="mini-input">RESET</div></div>
+          <div class="mini-input" style="color: var(--chatdsh-danger)">重置本地配置</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>审批卡片</em></div>
+        <div class="bd">
+          <div class="notice warn" style="font-size: 9.5px; padding: 7px 9px">
+            <div class="ic">!</div>
+            <div>写入 2 个文件，等待作答。</div>
+          </div>
+          <div class="chips"><span class="c">允许一次</span><span class="c">拒绝</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>降级</h2><em>DEGRADED</em><span class="aside">保留最近读数与时间</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>降级徽标</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">设备列表</span><span class="cdh-badge cdh-badge--warn" style="height: 15px; font-size: 9px">14:02</span></div>
+          <div class="mini-msg dim">读数来自最近一次成功探测。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>最近读数</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">SSE</span><span class="s">在线 · 14:02</span></div>
+          <div class="mini-row"><span class="m">重连次数</span><span class="s">0 · 14:02</span></div>
+          <div class="chips"><span class="c">重新探测</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>禁用保存</em></div>
+        <div class="bd">
+          <div class="mini-input">启动行为：恢复上次会话</div>
+          <div class="mini-input" data-disabled="true">保存（降级中）</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>系统提示</em></div>
+        <div class="bd">
+          <div class="notice" style="font-size: 9.5px; padding: 7px 9px">
+            <div class="ic">i</div>
+            <div>控制平面不可达 12 分钟，读数为缓存。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>长任务</h2><em>LONG RUNNING</em><span class="aside">进度与停止</span></div>
+    <div class="quad">
+      <div class="state-cell">
+        <div class="cap">列表页<em>进度与取消</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">导入 3 214 条事件</span><span class="s">62%</span></div>
+          <div class="cdh-bar" style="height: 3px"><i style="width: 62%"></i></div>
+          <div class="chips"><span class="c">取消导入</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">详情页<em>步骤时间线</em></div>
+        <div class="bd">
+          <div class="timeline">
+            <div class="t done"><span class="dot"></span>读取源会话</div>
+            <div class="t done"><span class="dot"></span>写入事件 1 984 条</div>
+            <div class="t run"><span class="dot"></span>写入附件</div>
+            <div class="t todo"><span class="dot"></span>校验水位</div>
+          </div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">表单页<em>不适用</em></div>
+        <div class="bd">
+          <div class="mini-msg dim">长任务只出现在导入、清理、导出与回合执行中。</div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="cap">对话页<em>回合进度</em></div>
+        <div class="bd">
+          <div class="mini-row"><span class="m">回合 3 · 步骤 4 / 5</span><span class="s">12.4s</span></div>
+          <div class="cdh-bar" style="height: 3px"><i style="width: 80%"></i></div>
+          <div class="chips"><span class="c">停止</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+<script src="../scheme.js"></script>
+</body>
+</html>

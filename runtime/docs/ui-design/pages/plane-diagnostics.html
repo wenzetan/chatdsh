@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatDSH · 诊断页</title>
+<link rel="stylesheet" href="../tokens.css" />
+<link rel="stylesheet" href="../app.css" />
+<link rel="stylesheet" href="../pages.css" />
+<style>
+  .health {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--chatdsh-line);
+    border: 1px solid var(--chatdsh-line);
+    border-radius: var(--cdh-r2);
+    overflow: hidden;
+  }
+
+  .health > div {
+    background: var(--chatdsh-panel);
+    padding: 11px 13px;
+    display: grid;
+    gap: 4px;
+  }
+
+  .health .k {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    color: var(--chatdsh-ink-2);
+    font-weight: 540;
+  }
+
+  .health .v {
+    font-family: var(--cdh-font-mono);
+    font-size: 10.5px;
+    color: var(--chatdsh-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .plug {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) 92px 74px;
+    gap: 9px;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--chatdsh-line);
+    font-size: 11.5px;
+  }
+
+  .plug:last-child {
+    border-bottom: 0;
+  }
+
+  .plug .ord {
+    font-family: var(--cdh-font-mono);
+    font-size: 9.5px;
+    color: var(--chatdsh-faint);
+    text-align: center;
+  }
+
+  .plug .nm {
+    font-family: var(--cdh-font-mono);
+    font-size: 10.5px;
+    color: var(--chatdsh-ink-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .plug .seat {
+    font-size: 10px;
+    color: var(--chatdsh-faint);
+    font-family: var(--cdh-font-mono);
+  }
+
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .kpi {
+    border: 1px solid var(--chatdsh-line);
+    border-radius: var(--cdh-r2);
+    padding: 11px 12px;
+    background: var(--chatdsh-panel);
+    display: grid;
+    gap: 3px;
+  }
+
+  .kpi .n {
+    font-family: var(--cdh-font-mono);
+    font-size: 17px;
+    color: var(--chatdsh-ink);
+    font-weight: 620;
+  }
+
+  .kpi .k {
+    font-size: 10px;
+    color: var(--chatdsh-faint);
+  }
+</style>
+</head>
+<body class="plate-body" data-color-scheme="dark">
+<div class="plate">
+
+  <header class="plate-hd">
+    <div class="top"><a href="../catalog.html">← 页面目录</a><span>控制平面 · 诊断</span></div>
+    <h1>诊断页</h1>
+    <p class="lead">诊断页给出控制平面与运行时的当前状态：健康检查、连接、遥测、插件清单、版本与日志尾部。读数带采集时间，控制平面不可达时保留最近一次读数。</p>
+    <div class="tags">
+      <span class="cdh-badge cdh-badge--brand">WEB-10 · CP-19</span>
+      <span class="cdh-badge">健康检查</span>
+      <span class="cdh-badge">遥测开关与原因</span>
+      <span class="cdh-badge">诊断包导出</span>
+    </div>
+  </header>
+
+  <div class="plate-note">
+    <span class="bar"></span>
+    <div><b>诊断页不写配置。</b>这里的开关与读数都是只读展示；遥测开关的五个入口（环境变量、上游开关、设置文件、启动参数、命令）在页面上只汇总当前生效来源，切换入口指向各自的文档位置。</div>
+  </div>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>总览与健康检查</h2><em>CP-19 · WEB-06</em><span class="aside">四项读数</span></div>
+    <p class="sect-lead">四格健康卡固定为控制平面、运行时、事件流、实时通道。每格给出一行结论与一行细节，细节里带接口路径与耗时。</p>
+
+    <div class="kpi-row" style="margin-bottom: 14px">
+      <div class="kpi"><span class="n">3d 06h</span><span class="k">运行时连续运行</span></div>
+      <div class="kpi"><span class="n">13</span><span class="k">客户端插件</span></div>
+      <div class="kpi"><span class="n">0</span><span class="k">重连次数（今日）</span></div>
+      <div class="kpi"><span class="n">6s</span><span class="k">遥测上次上报</span></div>
+    </div>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">健康检查<span class="tag">状态 · 4 项通过</span></div>
+        <div class="demo-bd">
+          <div class="health">
+            <div>
+              <span class="k"><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>正常</span>控制平面</span>
+              <span class="v">/healthz · 200 · 8ms · 版本 0.4.2</span>
+            </div>
+            <div>
+              <span class="k"><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>正常</span>运行时</span>
+              <span class="v">进程 12884 · 已运行 3d 06h · 堆 214 MB</span>
+            </div>
+            <div>
+              <span class="k"><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>在线</span>事件流 SSE</span>
+              <span class="v">/chatdsh/gateway/events · 最近事件 6s 前</span>
+            </div>
+            <div>
+              <span class="k"><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>在线</span>实时通道</span>
+              <span class="v">ws://127.0.0.1:8788/ws · 心跳 20s</span>
+            </div>
+          </div>
+        </div>
+        <div class="demo-cap">单项失败时该格换危险色并给出错误码；其余三格保持通过状态，不做整体降级。</div>
+      </div>
+
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">版本矩阵<span class="tag">只读</span></div>
+          <div class="demo-bd">
+            <dl class="kv"><dt>dsh</dt><dd class="mono">0.4.2</dd></dl>
+            <dl class="kv"><dt>运行时</dt><dd class="mono">0.4.2</dd></dl>
+            <dl class="kv"><dt>控制平面</dt><dd class="mono">0.4.2</dd></dl>
+            <dl class="kv"><dt>桌面壳</dt><dd class="mono">0.4.2 · Windows x64</dd></dl>
+            <dl class="kv"><dt>客户端插件</dt><dd class="mono">13 个 · 全部匹配 0.4.x</dd></dl>
+          </div>
+          <div class="demo-cap">版本不一致的行标警告色并给出兼容说明，不阻塞诊断页其他区域。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">降级读数<span class="tag">状态 · 控制平面不可达</span></div>
+          <div class="demo-bd">
+            <div class="notice warn">
+              <div class="ic">!</div>
+              <div>控制平面当前不可达，以下读数为 <b class="mono">14:02</b> 的最近一次结果。诊断页不伪造新的成功读数。</div>
+            </div>
+            <div class="rowflex" style="margin-top: 10px">
+              <span class="cdh-badge cdh-badge--warn">降级 12 分钟</span>
+              <button class="cdh-btn cdh-btn--sm">重新探测</button>
+              <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">导出诊断包</button>
+            </div>
+          </div>
+          <div class="demo-cap">降级时每格读数后追加采集时间；恢复后自动清除降级标记。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>遥测</h2><em>telemetry.md</em><span class="aside">开关来源 · 导出 · 丢弃计数</span></div>
+    <p class="sect-lead">遥测状态区分开启与关闭，关闭时给出生效来源。导出端点与采样率只读呈现，丢弃计数用指标名与计数展示。</p>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">运行中<span class="tag">状态 · 已开启</span></div>
+        <div class="demo-bd">
+          <dl class="kv"><dt>状态</dt><dd><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>已开启</span></dd></dl>
+          <dl class="kv"><dt>导出端点</dt><dd class="mono">http://127.0.0.1:5080/api/default/v1/traces</dd></dl>
+          <dl class="kv"><dt>服务名</dt><dd class="mono">@chatdsh/host-telemetry</dd></dl>
+          <dl class="kv"><dt>采样率</dt><dd class="mono">0.25 · 错误路径全采</dd></dl>
+          <dl class="kv"><dt>队列</dt><dd>已入队 1 284 · 导出失败 0 · 丢弃 <b class="mono">3</b></dd></dl>
+          <div class="rowflex" style="margin-top: 10px">
+            <span class="small faint">丢弃计数写进 <b class="mono">chatdsh_telemetry_dropped_total</b>，未登记属性键在非调试模式下被丢弃。</span>
+          </div>
+        </div>
+        <div class="demo-cap">入队与导出失败分开计数；失败只影响计数，不改变业务流程。</div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-hd">关闭<span class="tag">状态 · 已关闭</span></div>
+        <div class="demo-bd">
+          <dl class="kv"><dt>状态</dt><dd><span class="cdh-badge">已关闭</span></dd></dl>
+          <dl class="kv"><dt>生效来源</dt><dd>启动参数 <b class="mono">--no-telemetry</b></dd></dl>
+          <dl class="kv"><dt>未生效来源</dt><dd class="mono">CHATDSH_TELEMETRY=off（未设置）· 设置页开关（关闭且被覆盖）</dd></dl>
+          <dl class="kv"><dt>SDK</dt><dd>未构造 · 未注册上报端点 · 不生成 traceparent</dd></dl>
+          <div class="notice" style="margin-top: 10px">
+            <div class="ic">i</div>
+            <div>关闭与开启都不需要重启进程；切换后状态在 2 秒内更新，进行中的会话与工具调用不受影响。</div>
+          </div>
+        </div>
+        <div class="demo-cap">关闭时列出全部来源的取值，便于判断是哪一层把遥测关掉。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>连接与重连</h2><em>UI-10 · WEB-06</em><span class="aside">在线 · 重连中 · 离线</span></div>
+    <p class="sect-lead">连接状态在状态条与诊断页两处出现，文案与颜色一致。重连给出次数、上次失败原因与下一次尝试时间。</p>
+
+    <div class="grid3">
+      <div class="demo">
+        <div class="demo-hd">重连中<span class="tag">状态 · 第 3 次</span></div>
+        <div class="demo-bd">
+          <div class="notice warn">
+            <div class="ic">!</div>
+            <div>与控制平面的实时通道断开，正在第 <b class="mono">3</b> 次重连，下次尝试 4 秒后。</div>
+          </div>
+          <dl class="kv" style="margin-top: 8px"><dt>上次失败</dt><dd class="mono">ECONNRESET</dd></dl>
+          <dl class="kv"><dt>退避</dt><dd class="mono">1s / 2s / 4s / 8s，上限 30s</dd></dl>
+          <dl class="kv"><dt>排队动作</dt><dd>2 条消息、1 次审批作答</dd></dl>
+        </div>
+        <div class="demo-cap">重连期间排队动作保留，恢复后按顺序发送；审批超时后按拒绝处理。</div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-hd">离线<span class="tag">状态 · 仅本地</span></div>
+        <div class="demo-bd">
+          <div class="notice danger">
+            <div class="ic">!</div>
+            <div>控制平面不可达已经 <b class="mono">12</b> 分钟。界面进入仅本地模式，读数为缓存。</div>
+          </div>
+          <div class="rowflex" style="margin-top: 10px">
+            <span class="cdh-badge">缓存于 14:02</span>
+            <button class="cdh-btn cdh-btn--sm">立即重试</button>
+          </div>
+        </div>
+        <div class="demo-cap">仅本地模式仍可发消息进队列；跨设备会话转为只读并标注设备离线。</div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-hd">上下文传播<span class="tag">状态 · 正常</span></div>
+        <div class="demo-bd">
+          <div class="termview">
+            <div class="bar"><span>traceparent</span><span class="grow"></span><span>最近 5 条</span></div>
+            <div class="body">00-4d1f8a3c9b2e7a10-9f2c4e81b3a7d5c1-01  web→gateway
+00-4d1f8a3c9b2e7a10-7c3a91f2e8b4d601-01  gateway→runtime
+00-4d1f8a3c9b2e7a10-1b8e44c7a2f39d05-01  runtime→llm</div>
+          </div>
+          <div class="small faint" style="margin-top: 8px">跨组件边界都带上下文；关闭遥测后这一栏显示「未启用」。</div>
+        </div>
+        <div class="demo-cap">只显示链路片段，不显示提示词与工具结果原文。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>插件清单</h2><em>UI-54 · 席位注册</em><span class="aside">13 个客户端插件</span></div>
+    <p class="sect-lead">清单按加载顺序排列，给出注册的席位与区段顺序。加载失败的插件保留在清单里并标注原因，不计入可用席位。</p>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">已加载<span class="tag">状态 · 12 可用 · 1 失败</span></div>
+        <div class="demo-bd">
+          <div class="plug"><span class="ord">—</span><span class="nm">@deepseek-ai/dsh-client-ui-layout</span><span class="seat">main · sidebar</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">40</span><span class="nm">@chatdsh/client-artifacts</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">45</span><span class="nm">@chatdsh/client-assistants</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">46</span><span class="nm">@chatdsh/client-model-provider</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">47</span><span class="nm">@chatdsh/client-skills</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">48</span><span class="nm">@chatdsh/client-automation</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--warn">动作未接线</span></span></div>
+          <div class="plug"><span class="ord">50</span><span class="nm">@chatdsh/client-share</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">55</span><span class="nm">@chatdsh/client-account</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">60</span><span class="nm">@chatdsh/client-memory</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">65</span><span class="nm">@chatdsh/client-approval</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">70</span><span class="nm">@chatdsh/client-connectors</span><span class="seat">settings.section</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">—</span><span class="nm">@chatdsh/client-projects</span><span class="seat">sidebar.panellist</span><span><span class="cdh-badge cdh-badge--ok">可用</span></span></div>
+          <div class="plug"><span class="ord">—</span><span class="nm">@chatdsh/client-kanban</span><span class="seat">—</span><span><span class="cdh-badge cdh-badge--danger">加载失败</span></span></div>
+        </div>
+        <div class="demo-cap">失败项给出原因与重试；席位列留空，便于一眼看出没有占到位置。</div>
+      </div>
+
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">加载失败详情<span class="tag">状态 · 版本不兼容</span></div>
+          <div class="demo-bd">
+            <div class="errbox">
+              <b>@chatdsh/client-kanban 加载失败</b>
+              <span class="mono">ERR_PLUGIN_PEER_INCOMPATIBLE · 需要 dsh ~0.3</span>
+              <span>该插件声明的对等依赖与当前运行时 0.4.2 不匹配。插件目录保留，禁用状态写入插件设置。</span>
+              <div class="rowflex" style="margin-top: 6px">
+                <button class="cdh-btn cdh-btn--sm">查看插件设置</button>
+                <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">复制诊断信息</button>
+              </div>
+            </div>
+          </div>
+          <div class="demo-cap">失败详情与插件设置页共用同一份错误码，两个入口指向同一记录。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">席位占用<span class="tag">状态 · 冲突</span></div>
+          <div class="demo-bd">
+            <dl class="kv"><dt>sidebar.panellist</dt><dd>2 个注册项 · 项目、上下文占用</dd></dl>
+            <dl class="kv"><dt>main</dt><dd class="mono">keyed · 1 个注册者</dd></dl>
+            <dl class="kv"><dt>sidebar</dt><dd class="mono">single · 1 个注册者</dd></dl>
+            <dl class="kv"><dt>settings.section</dt><dd>20 个区段 · 顺序从 40 到 70</dd></dl>
+            <div class="notice warn" style="margin-top: 10px">
+              <div class="ic">!</div>
+              <div><b class="mono">single</b> 席位收到第二个注册者时，后注册的一方被忽略并记录告警；<b class="mono">keyed</b> 席位按标识替换。</div>
+            </div>
+          </div>
+          <div class="demo-cap">席位表只读；冲突说明给出忽略规则，便于定位为什么某个入口没有出现。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>日志与诊断包</h2><em>DESK-15 · DESK-16</em><span class="aside">尾部 · 导出 · 清理</span></div>
+    <p class="sect-lead">日志区固定显示最后若干行标准错误输出，提供复制与导出。诊断包包含版本矩阵、插件清单、最近事件与日志尾部，导出前显示预估大小。</p>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">标准错误尾部<span class="tag">状态 · 有失败记录</span></div>
+        <div class="demo-bd flush">
+          <div class="termview" style="border: 0; border-radius: 0">
+            <div class="bar"><span>runtime stderr</span><span class="grow"></span><span>复制</span><span>·</span><span>清空</span></div>
+            <div class="body">14:02:11 <span class="ink">INFO</span>  approval.expired call_9f2a after 42s
+14:02:12 <span class="warn">WARN</span>  approval.resync peer mac-mini-2 lag=12
+14:02:31 <span class="bad">ERROR</span> llm.upstream status=402 code=insufficient_balance provider=deepseek-official
+14:02:31 <span class="ink">INFO</span> session.resume sess_2a91 events=8
+14:02:35 <span class="ink">INFO</span> telemetry.flush spans=128 queue=0</div>
+          </div>
+        </div>
+        <div class="demo-cap">日志行号与时间使用等宽字体；错误行整行标红，警告行标黄。</div>
+      </div>
+
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">导出诊断包<span class="tag">状态 · 确认</span></div>
+          <div class="demo-bd">
+            <div class="stage" style="min-height: 200px; padding: 0">
+              <div class="scrim"></div>
+              <div class="dlg">
+                <div class="hd">
+                  <h4>导出诊断包</h4>
+                  <p>包含版本、插件清单、席位占用、最近 500 条事件与日志尾部。</p>
+                </div>
+                <div class="bd">
+                  <div class="kv"><dt>预估大小</dt><dd class="mono">1.8 MB</dd></div>
+                  <div class="kv"><dt>排除内容</dt><dd>提示词、工具结果、文件内容、凭据</dd></div>
+                  <div class="kv"><dt>保存位置</dt><dd class="mono">下载目录</dd></div>
+                  <div class="notice"><div class="ic">i</div><div>诊断包会脱敏，仍建议只发给可信任的人。</div></div>
+                </div>
+                <div class="ft">
+                  <button class="cdh-btn cdh-btn--primary">导出</button>
+                  <button class="cdh-btn cdh-btn--ghost">取消</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="demo-cap">导出前列出包含与排除的类别；导出中按钮显示进度，完成后提示保存路径。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">权限不足<span class="tag">状态 · 只读账号</span></div>
+          <div class="demo-bd">
+            <div class="notice warn">
+              <div class="ic">!</div>
+              <div>当前账号没有诊断包的导出权限。可以查看页面读数与日志尾部，导出与清空按钮已禁用。</div>
+            </div>
+            <div class="rowflex" style="margin-top: 10px">
+              <button class="cdh-btn cdh-btn--sm" disabled>导出诊断包</button>
+              <button class="cdh-btn cdh-btn--sm" disabled>清空日志</button>
+              <span class="grow"></span>
+              <span class="small faint">权限由控制平面判定，界面不自行放行</span>
+            </div>
+          </div>
+          <div class="demo-cap">只读时控件保留并禁用，说明缺哪一项权限，不隐藏入口。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+<script src="../scheme.js"></script>
+</body>
+</html>

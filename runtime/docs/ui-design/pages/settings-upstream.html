@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatDSH · 上游设置区段</title>
+<link rel="stylesheet" href="../tokens.css" />
+<link rel="stylesheet" href="../app.css" />
+<link rel="stylesheet" href="../pages.css" />
+<style>
+  .set-shell {
+    display: grid;
+    grid-template-columns: 214px minmax(0, 1fr);
+    border: 1px solid var(--chatdsh-line);
+    border-radius: var(--cdh-r3);
+    overflow: hidden;
+    background: var(--chatdsh-panel);
+    min-height: 460px;
+  }
+
+  .set-nav {
+    border-right: 1px solid var(--chatdsh-line);
+    background: var(--chatdsh-panel-2);
+    padding: 10px 8px 14px;
+    display: grid;
+    gap: 1px;
+    align-content: start;
+  }
+
+  .set-nav .grp {
+    padding: 9px 8px 4px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--chatdsh-faint);
+    font-weight: 600;
+  }
+
+  .set-nav a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 9px;
+    border-radius: var(--cdh-r1);
+    font-size: 11.5px;
+    color: var(--chatdsh-muted);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .set-nav a:hover {
+    background: var(--cdh-hover);
+    color: var(--chatdsh-ink-2);
+  }
+
+  .set-nav a[aria-current="true"] {
+    background: var(--cdh-active);
+    color: var(--chatdsh-ink);
+    font-weight: 560;
+    box-shadow: inset 2px 0 0 var(--chatdsh-brand);
+  }
+
+  .set-nav a .ord {
+    font-family: var(--cdh-font-mono);
+    font-size: 9px;
+    color: var(--chatdsh-faint);
+    margin-left: auto;
+  }
+
+  .set-main {
+    padding: 16px 18px 18px;
+    display: grid;
+    gap: 14px;
+    align-content: start;
+    min-width: 0;
+  }
+
+  .set-main .hd {
+    display: grid;
+    gap: 3px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--chatdsh-line);
+  }
+
+  .set-main .hd h3 {
+    margin: 0;
+    font-size: 14.5px;
+    color: var(--chatdsh-ink);
+    font-weight: 620;
+  }
+
+  .set-main .hd p {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--chatdsh-muted);
+  }
+
+  .plugin-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--chatdsh-line);
+    font-size: 12px;
+  }
+
+  .plugin-row:last-child {
+    border-bottom: 0;
+  }
+
+  .plugin-row .nm {
+    width: 208px;
+    min-width: 0;
+    font-family: var(--cdh-font-mono);
+    font-size: 11px;
+    color: var(--chatdsh-ink-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .plugin-row .ver {
+    font-family: var(--cdh-font-mono);
+    font-size: 10px;
+    color: var(--chatdsh-faint);
+  }
+
+  .model-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--chatdsh-line);
+    font-size: 12px;
+  }
+
+  .model-row:last-child {
+    border-bottom: 0;
+  }
+
+  .model-row .id {
+    font-family: var(--cdh-font-mono);
+    font-size: 11px;
+    color: var(--chatdsh-ink);
+  }
+
+  .model-row .meta {
+    font-size: 10.5px;
+    color: var(--chatdsh-faint);
+  }
+</style>
+</head>
+<body class="plate-body" data-color-scheme="dark">
+<div class="plate">
+
+  <header class="plate-hd">
+    <div class="top"><a href="../catalog.html">← 页面目录</a><span>设置 · 上游区段</span></div>
+    <h1>上游十个设置区段</h1>
+    <p class="lead">设置页保留上游归属：左侧导航分「上游设置」与「ChatDSH 业务区段」两组，右侧一次只展开一个区段。本页给出十个上游区段的字段排布、状态与保存行为。</p>
+    <div class="tags">
+      <span class="cdh-badge cdh-badge--brand">十个区段</span>
+      <span class="cdh-badge">保存栏固定</span>
+      <span class="cdh-badge">页签式插件设置</span>
+      <span class="cdh-badge">凭据只显示掩码</span>
+    </div>
+  </header>
+
+  <div class="plate-note">
+    <span class="bar"></span>
+    <div><b>区段顺序即注册顺序。</b>上游区段按原有顺序排列，ChatDSH 业务区段接在其后，顺序见 <span class="mono">settings.section</span> 的注册值 40 到 70。新增区段只追加，不改上游页面结构。</div>
+  </div>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>设置外壳与通用设置</h2><em>UI-46 · UI-08</em><span class="aside">保存栏贴在内容底部</span></div>
+    <p class="sect-lead">导航宽 214 像素，条目高 28。通用设置包含语言、主题、启动行为与欢迎提示。改动后底部的保存栏出现，未保存离开时弹出确认。</p>
+
+    <div class="set-shell">
+      <nav class="set-nav">
+        <div class="grp">上游设置</div>
+        <a href="#" aria-current="true">通用</a>
+        <a href="#">模型</a>
+        <a href="#">插件</a>
+        <a href="#">外壳</a>
+        <a href="#">Agent 循环</a>
+        <a href="#">子代理</a>
+        <a href="#">网页检索</a>
+        <a href="#">会话日志</a>
+        <a href="#">账号</a>
+        <div class="grp">ChatDSH 业务区段</div>
+        <a href="#">制品<span class="ord">40</span></a>
+        <a href="#">助手<span class="ord">45</span></a>
+        <a href="#">模型提供方<span class="ord">46</span></a>
+        <a href="#">技能<span class="ord">47</span></a>
+        <a href="#">自动化<span class="ord">48</span></a>
+        <a href="#">分享<span class="ord">50</span></a>
+        <a href="#">账号与设备<span class="ord">55</span></a>
+        <a href="#">记忆<span class="ord">60</span></a>
+        <a href="#">审批<span class="ord">65</span></a>
+        <a href="#">连接器<span class="ord">70</span></a>
+      </nav>
+
+      <div class="set-main">
+        <div class="hd">
+          <h3>通用</h3>
+          <p>界面语言、配色方案、启动行为与首次进入提示。改动立即生效，容器尺寸固定。</p>
+        </div>
+
+        <div class="field-row">
+          <span class="lbl">界面语言</span>
+          <div class="ctl">
+            <div class="sel">简体中文<span class="caret">▾</span></div>
+            <span class="hint">切换后需要重新加载界面，会话与草稿不受影响。</span>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <span class="lbl">配色方案</span>
+          <div class="ctl">
+            <div class="flex rowflex" style="gap: 6px">
+              <span class="cdh-badge cdh-badge--brand">暗色</span>
+              <span class="cdh-badge">亮色</span>
+              <span class="cdh-badge">跟随系统</span>
+            </div>
+            <span class="hint">配色只切换令牌取值，不改变布局与控件尺寸。</span>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <span class="lbl">启动行为</span>
+          <div class="ctl">
+            <div class="sel">恢复上次会话<span class="caret">▾</span></div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <span class="lbl">欢迎提示</span>
+          <div class="ctl">
+            <div class="rowflex" style="gap: 9px">
+              <span class="sw" data-on="true"></span>
+              <span class="small muted">首次进入时显示欢迎语与选项卡片</span>
+            </div>
+            <span class="hint">关闭后首次进入直接落在会话列表。</span>
+          </div>
+        </div>
+
+        <div class="savebar">
+          <span class="cdh-badge cdh-badge--warn"><i class="cdh-dot"></i>有未保存的改动</span>
+          <span>2 项已修改</span>
+          <span class="grow"></span>
+          <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">放弃改动</button>
+          <button class="cdh-btn cdh-btn--sm cdh-btn--primary">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid2" style="margin-top: 14px">
+      <div class="demo">
+        <div class="demo-hd">离开确认<span class="tag">状态 · 未保存</span></div>
+        <div class="demo-bd">
+          <div class="stage" style="min-height: 210px; padding: 0">
+            <div class="scrim"></div>
+            <div class="dlg">
+              <div class="hd">
+                <h4>放弃未保存的改动</h4>
+                <p>通用设置里有 2 项修改尚未保存，离开后这些改动会丢失。</p>
+              </div>
+              <div class="ft">
+                <button class="cdh-btn cdh-btn--primary">保存并离开</button>
+                <button class="cdh-btn cdh-btn--danger">放弃改动</button>
+                <span class="grow"></span>
+                <button class="cdh-btn cdh-btn--ghost">留在本页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="demo-cap">三个动作按影响排列：保存、放弃、留下。Esc 等价于留在本页。</div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-hd">只读与降级<span class="tag">状态 · 控制平面不可达</span></div>
+        <div class="demo-bd">
+          <div class="notice warn">
+            <div class="ic">!</div>
+            <div>控制平面当前不可达，读到的是 <b class="mono">14:02</b> 的最近一次配置。保存按钮已禁用，改动保留在本地。</div>
+          </div>
+          <div class="field">
+            <span class="lbl">启动行为</span>
+            <div class="sel" style="opacity: 0.6">恢复上次会话<span class="caret">▾</span></div>
+            <span class="hint">降级期间不写回配置，恢复后自动重试一次。</span>
+          </div>
+          <div class="rowflex" style="margin-top: 10px">
+            <button class="cdh-btn cdh-btn--sm" disabled>保存</button>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">查看诊断</button>
+          </div>
+        </div>
+        <div class="demo-cap">降级时保留表单值与读数时间，控件禁用但不下移，恢复后按钮自动可用。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>模型设置</h2><em>UI-47 · CP-16</em><span class="aside">提供方 · 模型 · 凭据 · 额度</span></div>
+    <p class="sect-lead">提供方按注册顺序列出，右侧给出连通性探测结果与额度。凭据只显示掩码与所在环境变量名，不显示原文。</p>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">提供方与模型<span class="tag">状态 · 部分不可达</span></div>
+        <div class="demo-bd">
+          <div class="model-row">
+            <div style="min-width: 0; flex: 1">
+              <div class="id">deepseek-official</div>
+              <div class="meta">基础地址 https://api.deepseek.com/anthropic · 凭据 DEEPSEEK_API_KEY</div>
+            </div>
+            <span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>可用</span>
+          </div>
+          <div class="model-row">
+            <div style="min-width: 0; flex: 1">
+              <div class="id">gateway-lite</div>
+              <div class="meta">基础地址 http://127.0.0.1:8788/v1 · 凭据 CHATDSH_GATEWAY_KEY</div>
+            </div>
+            <span class="cdh-badge cdh-badge--danger"><i class="cdh-dot"></i>探测失败 · 401</span>
+          </div>
+          <div class="model-row">
+            <div style="min-width: 0; flex: 1">
+              <div class="id">deepseek-v4-pro</div>
+              <div class="meta">上下文 200k · 支持工具调用 · 推理预算可调</div>
+            </div>
+            <span class="cdh-badge">默认模型</span>
+          </div>
+          <div class="model-row">
+            <div style="min-width: 0; flex: 1">
+              <div class="id">deepseek-v4-flash</div>
+              <div class="meta">上下文 128k · 支持工具调用 · 低延迟档</div>
+            </div>
+            <span class="cdh-badge cdh-badge--warn">额度 82%</span>
+          </div>
+        </div>
+        <div class="demo-cap">探测失败的提供方保留在列表里，标注状态码与重试入口，不自动移除。</div>
+      </div>
+
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">凭据<span class="tag">掩码与来源</span></div>
+          <div class="demo-bd">
+            <div class="form">
+              <div class="field">
+                <span class="lbl">DEEPSEEK_API_KEY</span>
+                <input class="cdh-input mono" value="sk-································" readonly />
+                <span class="hint">凭据来自控制平面的环境变量，界面不接受写入。</span>
+              </div>
+              <div class="field">
+                <span class="lbl">CHATDSH_GATEWAY_KEY</span>
+                <input class="cdh-input mono" value="未配置" readonly style="color: var(--chatdsh-danger)" />
+                <span class="hint err">该变量在运行时环境中不存在，网关类提供方会探测失败。</span>
+              </div>
+            </div>
+          </div>
+          <div class="demo-cap">未配置的环境变量显示「未配置」并标红，不显示占位符以外的任何内容。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">模型入口额度<span class="tag">状态 · 接近上限</span></div>
+          <div class="demo-bd">
+            <div class="rowflex" style="justify-content: space-between; font-size: 11.5px; color: var(--chatdsh-muted)">
+              <span>本月已用</span><span class="mono ink">16.4M / 20M token</span>
+            </div>
+            <div class="cdh-bar" style="margin-top: 7px"><i style="width: 82%; background: var(--chatdsh-warn)"></i></div>
+            <div class="small faint" style="margin-top: 6px">达到上限后新会话被拒绝，错误说明里给出重置时间与申请入口。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>插件设置</h2><em>UI-48 · UI-54 · UI-55</em><span class="aside">页签式 · 清单 · 市场</span></div>
+    <p class="sect-lead">插件设置内部再分页签：已安装、市场、组合。清单行给出启用开关、版本、来源与冲突标记。安装与停用都写遥测计数。</p>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">插件清单<span class="tag">状态 · 存在冲突</span></div>
+        <div class="demo-bd">
+          <div class="rowflex" style="gap: 2px; margin-bottom: 10px">
+            <span class="cdh-tab" aria-selected="true">已安装</span>
+            <span class="cdh-tab">市场</span>
+            <span class="cdh-tab">组合</span>
+            <span class="grow"></span>
+            <input class="cdh-input" style="width: 168px; height: 28px" value="筛选" readonly />
+          </div>
+          <div class="plugin-row">
+            <span class="sw" data-on="true"></span>
+            <span class="nm">@deepseek-ai/dsh-client-ui-layout</span>
+            <span class="ver">0.4.2</span>
+            <span class="grow"></span>
+            <span class="cdh-badge">内置</span>
+          </div>
+          <div class="plugin-row">
+            <span class="sw" data-on="true"></span>
+            <span class="nm">@chatdsh/client-connectors</span>
+            <span class="ver">0.4.2</span>
+            <span class="grow"></span>
+            <span class="cdh-badge cdh-badge--brand">业务区段</span>
+          </div>
+          <div class="plugin-row">
+            <span class="sw" data-on="false"></span>
+            <span class="nm">@chatdsh/client-memory</span>
+            <span class="ver">0.4.2</span>
+            <span class="grow"></span>
+            <span class="cdh-badge">已停用</span>
+          </div>
+          <div class="plugin-row">
+            <span class="sw" data-off="true"></span>
+            <span class="nm">theme-solarized</span>
+            <span class="ver">1.2.0</span>
+            <span class="grow"></span>
+            <span class="cdh-badge cdh-badge--warn">主题冲突</span>
+          </div>
+          <div class="notice warn" style="margin-top: 10px">
+            <div class="ic">!</div>
+            <div>两个主题插件同时覆盖 <b class="mono">--chatdsh-brand-fill</b>，本次启用顺序里后注册的一方生效。停用其中一个即可消除标记。</div>
+          </div>
+        </div>
+        <div class="demo-cap">冲突不阻塞其他插件；标记写明冲突的令牌与当前的生效规则。</div>
+      </div>
+
+      <div class="stack">
+        <div class="demo">
+          <div class="demo-hd">安装确认<span class="tag">状态 · 市场安装</span></div>
+          <div class="demo-bd">
+            <div class="stage" style="min-height: 200px; padding: 0">
+              <div class="scrim"></div>
+              <div class="dlg">
+                <div class="hd">
+                  <h4>安装插件</h4>
+                  <p>插件会获得界面席位与网络权限。安装前请确认来源。</p>
+                </div>
+                <div class="bd">
+                  <div class="kv"><dt>名称</dt><dd class="mono">@acme/dsh-client-kanban</dd></div>
+                  <div class="kv"><dt>版本</dt><dd class="mono">0.3.1 · 兼容 dsh 0.4.x</dd></div>
+                  <div class="kv"><dt>席位</dt><dd>sidebar.panellist、settings.section</dd></div>
+                  <div class="kv"><dt>来源</dt><dd>插件市场 · 已验证签名</dd></div>
+                </div>
+                <div class="ft">
+                  <button class="cdh-btn cdh-btn--primary">安装</button>
+                  <button class="cdh-btn cdh-btn--ghost">取消</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="demo-cap">安装确认列出席位与版本兼容范围；市场不可达时按钮禁用并给出重试。</div>
+        </div>
+
+        <div class="demo">
+          <div class="demo-hd">版本不兼容<span class="tag">状态 · 已停用</span></div>
+          <div class="demo-bd">
+            <div class="plugin-row" style="border: 0; padding: 0">
+              <span class="sw" data-off="true"></span>
+              <span class="nm">dsh-client-kanban</span>
+              <span class="ver">0.2.4</span>
+              <span class="grow"></span>
+              <span class="cdh-badge cdh-badge--danger">版本不兼容</span>
+            </div>
+            <div class="notice danger" style="margin-top: 8px">
+              <div class="ic">!</div>
+              <div>该插件声明的对等依赖为 <b class="mono">dsh ~0.3</b>，当前运行时为 <b class="mono">0.4.2</b>。控件保留在页面上，标注停用原因。</div>
+            </div>
+          </div>
+          <div class="demo-cap">不兼容插件不自动卸载，保留条目与原因，避免用户误以为插件丢失。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>外壳、Agent 循环与子代理</h2><em>UI-49 · UI-50 · UI-51</em><span class="aside">三组参数</span></div>
+    <p class="sect-lead">外壳设置决定外部程序与打开方式；Agent 循环设置决定超时、重试与压缩；子代理设置决定并发、模型与工具范围。三组都以行式表单呈现，行高固定。</p>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">外壳</div>
+        <div class="demo-bd">
+          <div class="field-row">
+            <span class="lbl">终端程序</span>
+            <div class="ctl">
+              <div class="sel mono">Windows Terminal<span class="caret">▾</span></div>
+              <span class="hint">用于右栏终端页签与「在终端中打开」。</span>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">编辑器</span>
+            <div class="ctl">
+              <div class="sel mono">Visual Studio Code<span class="caret">▾</span></div>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">文件管理器</span>
+            <div class="ctl">
+              <div class="sel mono">资源管理器<span class="caret">▾</span></div>
+              <span class="hint">「在资源管理器中显示」使用此项，Web 形态不提供。</span>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">外部打开</span>
+            <div class="ctl">
+              <div class="rowflex" style="gap: 9px">
+                <span class="sw" data-on="true"></span>
+                <span class="small muted">允许交给系统默认应用</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-hd">Agent 循环</div>
+        <div class="demo-bd">
+          <div class="field-row">
+            <span class="lbl">单步超时</span>
+            <div class="ctl">
+              <div class="sel mono">180 秒<span class="caret">▾</span></div>
+              <span class="hint">超时后该步标记失败，回合可以继续或停止。</span>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">失败重试</span>
+            <div class="ctl">
+              <div class="sel mono">2 次 · 指数退避<span class="caret">▾</span></div>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">上下文压缩</span>
+            <div class="ctl">
+              <div class="sel mono">达到 80% 自动压缩<span class="caret">▾</span></div>
+              <span class="hint">压缩只重写摘要，原始事件保留在会话日志里。</span>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">停止策略</span>
+            <div class="ctl">
+              <div class="sel mono">等待当前工具返回<span class="caret">▾</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-hd">子代理</div>
+        <div class="demo-bd">
+          <div class="field-row">
+            <span class="lbl">最大并发</span>
+            <div class="ctl">
+              <div class="sel mono">3<span class="caret">▾</span></div>
+              <span class="hint">并发已满时新建子代理请求进入队列。</span>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">默认模型</span>
+            <div class="ctl">
+              <div class="sel mono">deepseek-v4-flash<span class="caret">▾</span></div>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">工具范围</span>
+            <div class="ctl">
+              <div class="tag-input">
+                <span class="t">read</span><span class="t">grep</span><span class="t">glob</span>
+                <span class="t">bash</span>
+                <span class="small faint">+ 添加</span>
+              </div>
+              <span class="hint">子代理不继承父会话的写权限，范围之外的工具调用被拒绝。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-hd">网页检索与会话日志</div>
+        <div class="demo-bd">
+          <div class="field-row">
+            <span class="lbl">检索提供方</span>
+            <div class="ctl">
+              <div class="sel mono">自建 SearXNG<span class="caret">▾</span></div>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">密钥</span>
+            <div class="ctl">
+              <input class="cdh-input mono" value="SEARXNG_API_KEY · 已配置" readonly />
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">日志位置</span>
+            <div class="ctl">
+              <div class="sel mono">~/.chatdsh/sessions<span class="caret">▾</span></div>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="lbl">保留期</span>
+            <div class="ctl">
+              <div class="sel mono">90 天<span class="caret">▾</span></div>
+              <span class="hint">到期只清理本地日志，控制平面副本按各自策略保留。</span>
+            </div>
+            <span class="grow"></span>
+            <button class="cdh-btn cdh-btn--sm">导出日志</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sect">
+    <div class="sect-hd"><h2>账号设置</h2><em>UI-58 · ACC-07</em><span class="aside">单机形态下只读</span></div>
+    <p class="sect-lead">单机形态下上游账号区段整段置灰，由 ChatDSH 账号与设备区段替代。应用登录启用后，本区段展示登录名、账号标识与建立时间。</p>
+
+    <div class="grid2">
+      <div class="demo">
+        <div class="demo-hd">单机形态<span class="tag">状态 · 已停用</span></div>
+        <div class="demo-bd">
+          <div class="notice">
+            <div class="ic">i</div>
+            <div>当前部署为单机形态，账号由接入层建立。账号与会话管理见「账号与设备」业务区段。</div>
+          </div>
+          <div class="field" style="margin-top: 10px">
+            <span class="lbl">登录名</span>
+            <input class="cdh-input" value="—" readonly disabled />
+          </div>
+          <div class="rowflex" style="margin-top: 10px">
+            <button class="cdh-btn cdh-btn--sm" disabled>修改密码</button>
+            <button class="cdh-btn cdh-btn--sm" disabled>退出登录</button>
+            <span class="grow"></span>
+            <a class="cdh-btn cdh-btn--sm cdh-btn--ghost" href="settings-business.html" style="text-decoration: none">前往账号与设备</a>
+          </div>
+        </div>
+        <div class="demo-cap">控件保留并禁用，说明替代入口；不隐藏整段，避免用户以为功能缺失。</div>
+      </div>
+
+      <div class="demo">
+        <div class="demo-hd">应用登录启用后<span class="tag">状态 · 只读与可改</span></div>
+        <div class="demo-bd">
+          <dl class="kv"><dt>登录名</dt><dd class="mono">chatdsh</dd></dl>
+          <dl class="kv"><dt>账号标识</dt><dd class="mono">acct_7f3c9a21</dd></dl>
+          <dl class="kv"><dt>建立时间</dt><dd class="mono">2026-09-14 21:02</dd></dl>
+          <dl class="kv"><dt>两步验证</dt><dd><span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>TOTP 已启用</span></dd></dl>
+          <dl class="kv"><dt>通行密钥</dt><dd>2 个 · 最近使用 3 天前</dd></dl>
+          <div class="rowflex" style="margin-top: 10px">
+            <button class="cdh-btn cdh-btn--sm">修改密码</button>
+            <button class="cdh-btn cdh-btn--sm">管理两步验证</button>
+            <span class="grow"></span>
+            <button class="cdh-btn cdh-btn--sm cdh-btn--danger">退出登录</button>
+          </div>
+        </div>
+        <div class="demo-cap">退出登录走二次确认；账号标识与建立时间只读，密码与验证方式可改。</div>
+      </div>
+    </div>
+  </section>
+
+</div>
+<script src="../scheme.js"></script>
+</body>
+</html>
