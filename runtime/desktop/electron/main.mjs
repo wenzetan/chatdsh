@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RuntimeLauncher } from './launch.mjs';
+import { setTelemetryOrigin, startSpan } from './telemetry.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SPLASH = join(HERE, 'splash.html');
@@ -101,9 +102,21 @@ async function capture(window, name) {
   }
 }
 
+/** 启动各阶段进行中的 span。 */
+const startupSpans = new Map();
+
 /** 把启动阶段写入启动页，并在给了截图目录时落一张阶段截图。 */
 function splashPhase(phase, status, detail) {
   console.log(`[chatdsh] phase ${phase} ${status}${detail ? ` ${detail}` : ''}`);
+  if (status === 'active') {
+    startupSpans.set(phase, startSpan(`chatdsh.desktop.startup.${phase}`));
+  } else {
+    const finish = startupSpans.get(phase);
+    if (finish !== undefined) {
+      startupSpans.delete(phase);
+      finish(status === 'failed' ? 'failed' : 'ok', { stage: phase });
+    }
+  }
   if (splashWindow === undefined || splashWindow.isDestroyed()) return;
   const script = `window.__chatdshSplash?.phase(${JSON.stringify(phase)}, ${JSON.stringify(status)}, ${JSON.stringify(detail ?? '')})`;
   void splashWindow.webContents.executeJavaScript(script)
@@ -120,6 +133,7 @@ function splashFail(message) {
 /** 依据保活设置驱动系统电源策略。 */
 function applyPowerPolicy() {
   const enabled = state.keepAlive.preventSleep === true;
+  const finish = startSpan('chatdsh.desktop.power.block');
   if (enabled && state.powerBlockerId === undefined) {
     const type = state.keepAlive.mode === 'prevent-app-suspension' ? 'prevent-app-suspension' : 'prevent-display-sleep';
     state.powerBlockerId = powerSaveBlocker.start(type);
@@ -127,6 +141,7 @@ function applyPowerPolicy() {
     if (powerSaveBlocker.isStarted(state.powerBlockerId)) powerSaveBlocker.stop(state.powerBlockerId);
     state.powerBlockerId = undefined;
   }
+  finish('ok', { 'power.mode': state.keepAlive.mode ?? 'none', action: enabled ? 'acquire' : 'release' });
   broadcastStatus();
 }
 
@@ -363,14 +378,18 @@ async function boot() {
   // 单实例锁在上层用 requestSingleInstanceLock 承担，这里记录数据根已就绪。
   splashPhase('instance', 'done', config.profile);
   splashPhase('runtime', 'active');
+  const orchestrate = startSpan('chatdsh.desktop.runtime.orchestrate');
   try {
     const started = await state.launcher.start();
     state.bootUrl = started.bootUrl;
+    setTelemetryOrigin(started.origin);
+    orchestrate('ok', { 'runtime.id': started.origin });
     state.origin = started.origin;
     // 固定前缀行：便于脚本与排障时从日志里拿到运行时代 理地址。
     console.log(`[chatdsh] runtime ready: ${started.origin}`);
     splashPhase('runtime', 'done', started.origin);
   } catch (error) {
+    orchestrate('failed');
     const message = error instanceof Error ? error.message : String(error);
     state.failure = message;
     console.log(`[chatdsh] failure: ${message}`);
