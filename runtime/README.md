@@ -41,6 +41,14 @@ DSH_HOME="$HOME/.dsh" node scripts/sync-profiles.mjs --install   # 把仓库 pro
 dsh --profile chatdsh-web --no-open   # 启动单机 Web 形态
 ```
 
+同级还有三个适配层工作区，先装依赖、投影再编译，运行时的首次构建才能一遍通过：
+
+```sh
+(cd ../dsh-adapter && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build)
+(cd ../hindsight-adapter && pnpm install && pnpm build)
+(cd ../hermes-adapter && pnpm install && pnpm build)
+```
+
 `.dsh-deps` 只放符号链接，不复制文件；`pnpm install` 之后需要重新执行一次投影脚本。`sync-profiles.mjs` 在数据根里为每个 profile 建立指向仓库的符号链接，因此 profile 的依赖声明与补丁层始终是仓库里的那一份。
 
 浏览器侧的插件产物要单独打包：
