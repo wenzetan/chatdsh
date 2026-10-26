@@ -8,7 +8,7 @@
  */
 
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, powerSaveBlocker, shell } from 'electron';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RuntimeLauncher } from './launch.mjs';
@@ -47,6 +47,34 @@ function resolveConfig() {
 }
 
 const config = resolveConfig();
+
+/**
+ * 把随包携带的 profile 接进可写的数据根。
+ *
+ * 打包后的 profile 位于 `resources/app/dsh/profiles/<profile>`，只有留在 dsh 安装目录
+ * 内部时，自建插件对 `@deepseek-ai/*` 的 peer 依赖才能沿目录向上解析到随包的 DSH 依赖。
+ * 数据根里的 `profiles/<profile>` 因此建一条目录联接，而不是复制一份 profile。
+ * 解包运行或开发态没有随包 profile 时保持原状。
+ * @param current - 启动配置。
+ */
+function prepareBundledProfile(current) {
+  const bundled = join(process.resourcesPath ?? '', 'app', 'dsh', 'profiles', current.profile);
+  if (!existsSync(bundled)) return;
+  const profiles = join(current.dshHome, 'profiles');
+  const link = join(profiles, current.profile);
+  mkdirSync(profiles, { recursive: true });
+  try {
+    // 便携版每次启动会解压到新的临时目录，旧联接可能还在但已指向不存在的路径；
+    // 只有目标一致的联接可以直接复用，其余联接删掉重建。真实目录一律保留。
+    if (readlinkSync(link) === bundled) return;
+    rmSync(link, { recursive: true, force: true });
+  } catch {
+    if (existsSync(link)) return;
+  }
+  // Windows 上目录符号链接需要管理员权限，目录联接不需要；两者都能让模块解析穿过链接。
+  symlinkSync(bundled, link, process.platform === 'win32' ? 'junction' : 'dir');
+  console.log(`[chatdsh] bundled profile ready: ${link}`);
+}
 
 /** 保活设置：托盘常驻、开机自启、强制不休眠与其子档。 */
 function loadKeepAlive() {
@@ -380,6 +408,7 @@ async function boot() {
   splashPhase('runtime', 'active');
   const orchestrate = startSpan('chatdsh.desktop.runtime.orchestrate');
   try {
+    prepareBundledProfile(config);
     const started = await state.launcher.start();
     state.bootUrl = started.bootUrl;
     setTelemetryOrigin(started.origin);

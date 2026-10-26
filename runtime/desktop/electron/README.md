@@ -62,6 +62,33 @@ npx electron .
 
 壳会依次：取单实例锁 → 建启动根与数据根 → 拉起运行时 → 等它就绪 → 把窗口指向它。关闭窗口在托盘常驻模式下只隐藏，进程与运行时继续存活；从托盘选择「退出」才结束进程并回收运行时。
 
+## 打包 Windows 便携版
+
+仓库根有一条打包命令，产物是单个免安装 `.exe`：
+
+```bash
+cd runtime
+node scripts/build-desktop-windows.mjs
+```
+
+它会把本机的 `@deepseek-ai/dsh`、`chatdsh-desktop` profile 与自建包暂存到
+`.run/desktop-windows-stage`，再调用 `electron-builder` 产出：
+
+```
+runtime/.run/desktop-windows/ChatDSH-0.1.0-x64.exe
+```
+
+目标机不需要安装 Node、pnpm 或 dsh；首次启动会把便携包解压到临时目录，用户数据落在
+Electron 的 `userData` 目录。跨平台构建默认关闭 `signAndEditExecutable`，因此该 exe
+未签名，Windows SmartScreen 可能提示；需要签名/自定义图标时，在 Windows 构建机上打开
+`desktop/electron/electron-builder.yml` 的该开关并配置证书。
+
+只重新打包、复用已暂存的 DSH 与 profile：
+
+```bash
+node scripts/build-desktop-windows.mjs --reuse-stage
+```
+
 ## 验收
 
 Web 与主题层在 Linux 上可跑：

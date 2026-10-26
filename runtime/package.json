@@ -43,7 +43,8 @@
     "profiles:sync": "node scripts/sync-profiles.mjs",
     "check:surface": "node scripts/check-upstream-surface.mjs",
     "upgrade:dsh": "node scripts/upgrade-dsh.mjs",
-    "verify:provider-chat": "node scripts/verify-provider-chat.mjs"
+    "verify:provider-chat": "node scripts/verify-provider-chat.mjs",
+    "package:desktop:win": "node scripts/build-desktop-windows.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
