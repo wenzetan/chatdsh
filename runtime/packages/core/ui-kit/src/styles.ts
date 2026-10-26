@@ -7,13 +7,13 @@
 
 /** 一段样式文本，注入到 `<style data-chatdsh-ui-kit>`。 */
 export const UI_KIT_CSS = `
-.chdsh-panel { font-family: var(--cdh-font-ui); font-size: var(--cdh-fs-13); color: var(--chatdsh-ink-2); line-height: var(--cdh-lh-base); }
+.chdsh-panel { --chdsh-row-h: calc(var(--cdh-fs-13) * 1.6 + var(--cdh-fs-12) * 1.6 + 22px); font-family: var(--cdh-font-ui); font-size: var(--cdh-fs-13); color: var(--chatdsh-ink-2); line-height: var(--cdh-lh-base); }
 .chdsh-panel__head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
 .chdsh-panel__title { margin: 0; font-size: var(--cdh-fs-14); font-weight: 600; color: var(--chatdsh-ink); letter-spacing: -0.01em; }
 .chdsh-panel__sub { margin: 0 0 12px; color: var(--chatdsh-muted); font-size: var(--cdh-fs-12); }
 .chdsh-panel__count { margin-left: auto; font-family: var(--cdh-font-mono); font-size: var(--cdh-fs-11); color: var(--chatdsh-faint); }
 .chdsh-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.chdsh-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border-radius: var(--cdh-r2); border: 1px solid transparent; }
+.chdsh-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; min-height: var(--chdsh-row-h); border-radius: var(--cdh-r2); border: 1px solid transparent; }
 .chdsh-row:hover { background: var(--cdh-hover); }
 .chdsh-row + .chdsh-row { border-top: 1px solid var(--chatdsh-line); }
 .chdsh-row__body { min-width: 0; flex: 1; }
@@ -37,10 +37,13 @@ export const UI_KIT_CSS = `
 .chdsh-btn--danger:hover { background: var(--cdh-danger-soft); }
 .chdsh-btn--primary { background: var(--chatdsh-brand-fill); color: var(--cdh-on-brand); border-color: transparent; }
 .chdsh-btn--primary:hover { background: var(--chatdsh-brand-fill-down); color: var(--cdh-on-brand); }
-.chdsh-skeleton { height: 30px; border-radius: var(--cdh-r2); background: linear-gradient(90deg, var(--chatdsh-line) 0%, var(--chatdsh-line-2) 50%, var(--chatdsh-line) 100%); background-size: 240% 100%; animation: chdsh-shimmer 1.5s linear infinite; }
-.chdsh-skeleton + .chdsh-skeleton { margin-top: 6px; }
+.chdsh-skeleton { padding: 9px 10px; min-height: var(--chdsh-row-h); border-radius: var(--cdh-r2); border: 1px solid transparent; }
+.chdsh-skeleton + .chdsh-skeleton { margin-top: 2px; border-top-color: var(--chatdsh-line); }
+.chdsh-skeleton::before, .chdsh-skeleton::after { content: ""; display: block; border-radius: var(--cdh-r1); background: linear-gradient(90deg, var(--chatdsh-line) 0%, var(--chatdsh-line-2) 50%, var(--chatdsh-line) 100%); background-size: 240% 100%; animation: chdsh-shimmer 1.5s linear infinite; }
+.chdsh-skeleton::before { height: calc(var(--cdh-fs-13) * 1.6); }
+.chdsh-skeleton::after { height: calc(var(--cdh-fs-12) * 1.6); margin-top: 2px; }
 @keyframes chdsh-shimmer { 0% { background-position: 100% 0; } 100% { background-position: -140% 0; } }
-@media (prefers-reduced-motion: reduce) { .chdsh-skeleton { animation: none; } .chdsh-btn { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .chdsh-skeleton::before, .chdsh-skeleton::after { animation-duration: 0.001ms; } .chdsh-btn { transition-duration: 0.001ms; } }
 .chdsh-empty { padding: 18px 12px; border: 1px dashed var(--chatdsh-line-2); border-radius: var(--cdh-r2); color: var(--chatdsh-muted); font-size: var(--cdh-fs-12); text-align: center; }
 .chdsh-empty__action { margin-top: 8px; color: var(--chatdsh-brand-text); }
 .chdsh-bar { height: 4px; border-radius: var(--cdh-r-pill); background: var(--chatdsh-line); overflow: hidden; }
