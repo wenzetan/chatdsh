@@ -95,11 +95,26 @@
     routes:
       - provider: gateway
 
+# 自定义模型提供方：OpenAI 兼容端点。三项环境变量齐全时接管默认模型，缺省仍走网关。
+# 密钥只以变量名进入配置，值留在进程环境里，不落 profile 或数据目录。
+#   CHATDSH_PROVIDER_URL       端点基地址，例如 https://provider.example/v1（不要带 /chat/completions）
+#   CHATDSH_PROVIDER_API_KEY   密钥值所在的变量名固定为本变量
+#   CHATDSH_PROVIDER_MODEL     模型 id
+#   CHATDSH_PROVIDER_API       可选，协议，默认 openai-completions
+#   CHATDSH_PROVIDER_NAME      可选，模型选择器里的展示名
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers: !!js >-
+      process.env.CHATDSH_PROVIDER_URL && process.env.CHATDSH_PROVIDER_MODEL
+        ? { chatdsh: { displayName: process.env.CHATDSH_PROVIDER_NAME ?? "ChatDSH Provider", ...(process.env.CHATDSH_PROVIDER_API_KEY ? { apiKeyEnv: "CHATDSH_PROVIDER_API_KEY" } : {}), api: process.env.CHATDSH_PROVIDER_API ?? "openai-completions", baseURL: process.env.CHATDSH_PROVIDER_URL, models: [{ id: process.env.CHATDSH_PROVIDER_MODEL, name: process.env.CHATDSH_PROVIDER_MODEL }] } }
+        : {}
+
 - id: agent-default-model
   name: '@deepseek-ai/dsh-agent-default-model'
   config:
-    provider: gateway
-    model: xhs/dots3-note-prev
+    provider: !!js "process.env.CHATDSH_PROVIDER_URL && process.env.CHATDSH_PROVIDER_MODEL ? 'chatdsh' : 'gateway'"
+    model: !!js "process.env.CHATDSH_PROVIDER_URL && process.env.CHATDSH_PROVIDER_MODEL ? process.env.CHATDSH_PROVIDER_MODEL : 'xhs/dots3-note-prev'"
 
 # MCP 服务端：设计保留，本部署不打开。
 #

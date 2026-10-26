@@ -109,9 +109,32 @@ node scripts/verify-desktop-shell-win.mjs
 
 桌面主进程与浏览器两侧都接入了遥测。浏览器侧由主题插件在安装时上报一次界面动作；主进程把启动三阶段、运行时编排与电源阻止编成 OTLP 交同一个中继。实测两端各产生六次中继尝试，未接线时为一次。
 
-首次进入仍受模型凭据限制：没有凭据时界面停在预设选择页，主界面的三栏与对话流不渲染。这一条与第五节的现状一致。
+首次进入不再被模型凭据卡住：没有凭据时也能走完预设选择并进入主界面，自建面板按设计渲染；真实模型回合仍需要一份可用的提供方配置。
 
 自建客户端面板按界面基础设计重做：新增共享组件包 `@chatdsh/core-ui-kit`，面板外壳、列表行、徽标、按钮、进度条、骨架与空/失败状态都只引用设计令牌；样式由主题插件随令牌一起注入。十二个面板（项目、上下文、制品、助手、模型提供方、技能、记忆、账号、分享、连接器、审批、自动化）的初始帧都由这套组件渲染。回归测试 `e2e/unit/panel-design.test.mjs` 逐个打包并服务端渲染，断言出现 `chdsh-panel`、`chdsh-skeleton`，且产物 HTML 不含十六进制或 rgba 颜色字面值。Windows 真机自检额外断言 DOM 里出现 `chdsh-*` 类名与面板外壳（实测 `kitNodes=7`、`kitPanels=2`）。
+
+### 5.2 自建模型提供方
+
+**通过（用本地 OpenAI 兼容替身实测；真实提供方用同一脚本复核）。** Web 与桌面 profile 支持用环境变量直接接入 OpenAI 兼容提供方，不依赖 `DEEPSEEK_API_KEY`：
+
+```bash
+export CHATDSH_PROVIDER_URL=https://provider.example/v1   # 基地址，含 /v1，不含 /chat/completions
+export CHATDSH_PROVIDER_API_KEY=...                        # 密钥值，只留在进程环境
+export CHATDSH_PROVIDER_MODEL=...                          # 模型 id
+node scripts/verify-provider-chat.mjs
+```
+
+脚本启动真实 Chrome，走完首次进入流程，断言主界面显示该模型，发送一句话并等待助手回复；同时确认请求以 `Authorization: Bearer <密钥>` 发往 `${CHATDSH_PROVIDER_URL}/chat/completions`。三项变量齐全时默认模型切到 `chatdsh` 路由，缺省仍走控制平面网关（Web）或 `deepseek-official`（桌面）。可选变量 `CHATDSH_PROVIDER_NAME` 指定展示名，`CHATDSH_PROVIDER_API` 指定协议（默认 `openai-completions`）。
+
+本地替身链路实测结果：
+
+```
+提供方端点：http://127.0.0.1:19999/v1
+模型：test-model
+主界面已显示自建提供方的模型
+助手回复已到达界面
+自建模型提供方端到端验收通过
+```
 
 ## 六、存储替换
 

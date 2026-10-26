@@ -27,6 +27,9 @@ cp dev/.env.example dev/.env
 
 - `CHATDSH_TEST_GATEWAY_URL`、`CHATDSH_TEST_GATEWAY_API_KEY`、`CHATDSH_TEST_GATEWAY_MODEL`：
   模型网关的地址、密钥与默认模型。容器内访问宿主上的网关用 `http://host.docker.internal:20128/v1`。
+- `CHATDSH_PROVIDER_URL`、`CHATDSH_PROVIDER_API_KEY`、`CHATDSH_PROVIDER_MODEL`：
+  自建模型提供方的 OpenAI 兼容基地址（含 `/v1`）、密钥与模型 id。三项都给出时，
+  Web/桌面客户端直接使用它；留空则仍走控制平面的模型网关。
 - `HERMES_API_KEY`：hermes 的 api_server 密钥，宿主侧用它访问 18642 端口。
 - `HINDSIGHT_LLM_*`、`HINDSIGHT_EMBEDDINGS_*`：hindsight 做记忆抽取与向量检索时用的模型与密钥。
 - `HINDSIGHT_DB_PASSWORD`：hindsight 的 Postgres 密码，容器内的连接串由它拼出。

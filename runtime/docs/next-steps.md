@@ -4,14 +4,17 @@
 
 当前分布：通过 4 项、部分 10 项、未触及 5 项，共 19 项。
 
-## 需要模型凭据
+## 需要模型凭据或自建提供方
 
-一组 `DEEPSEEK_API_KEY` 能解锁五项的大部分。
+一组可用模型凭据能解锁五项的大部分。除 `DEEPSEEK_API_KEY` 外，也可以用
+`CHATDSH_PROVIDER_URL`、`CHATDSH_PROVIDER_API_KEY`、`CHATDSH_PROVIDER_MODEL`
+指向任意 OpenAI 兼容提供方；界面与单轮问答已由 `node scripts/verify-provider-chat.mjs`
+验过，其余项仍需真实回合。
 
 | 项 | 缺什么 | 满足后怎么验 |
 |---|---|---|
 | 协议接入 | 发消息、流式事件、取消、回答审批 | `node scripts/verify-acp.mjs --profile chatdsh-acp --prompt "列出一个文件"`；脚本会打印收到的流式事件条数，为零算失败。取消与回答审批仍需真实回合 |
-| 客户端插件 | 面板的界面渲染（无凭据时预设说明已可见，八个面板的激活状态已归零） | `node scripts/verify-client-ui.mjs`；走到主界面后断言侧栏出现「项目」、设置页出现七个自建区段 |
+| 客户端插件 | 面板的真实数据交互与完整设置页断言（主界面与自建面板渲染已通过） | `node scripts/verify-client-ui.mjs` 已断言侧栏「项目」；设置页七个自建区段与面板内写操作仍需真实回合 |
 | 聊天与记忆后端 | 召回结果是否真的进了系统提示、Hermes 的两条支路 | 召回与写入已可用（`node scripts/verify-memory.mjs`）；缺一次完整回合后读会话日志的系统提示段，以及 Hermes 服务（本机未部署） |
 | 工具可见性 | 工具是否出现在模型目录、`restrict` 能否移除 | 一次真实回合里读模型请求的工具清单，核对工作档的七个自建工具行与文件命令工具在里面、浏览器操作不在；全量档另需核对只出现单个 `run_code` 与生成的 SDK |
 | 端到端 | 浏览器层从输入到结果的完整流程 | `node scripts/verify-client-ui.mjs` 已走到预设页；完整流程要在有凭据时跑一次真实回合 |
