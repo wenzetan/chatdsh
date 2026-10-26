@@ -23,11 +23,13 @@
     background: var(--bg);
     color: var(--ink);
     display: grid;
-    place-items: center;
+    place-items: start center;
+    overflow: auto;
+    padding: 18px 0;
     font-size: 13px;
   }
   .card {
-    width: 420px;
+    width: min(500px, calc(100vw - 24px));
     padding: 26px 24px;
     border: 1px solid var(--line);
     border-radius: 11px;
@@ -71,8 +73,31 @@
     background: rgba(255,123,123,0.08);
     color: var(--muted); font-size: 12px; line-height: 1.55;
     white-space: pre-wrap; word-break: break-word;
+    max-height: 190px; overflow: auto;
     display: none;
   }
+  #logPath {
+    display: none; margin-top: 8px;
+    color: var(--muted); font: 11px/1.45 ui-monospace, Consolas, monospace;
+    word-break: break-all;
+  }
+
+  #log {
+    margin-top: 12px; padding: 8px 10px;
+    max-height: 88px; overflow: auto;
+    border: 1px solid var(--line); border-radius: 7px;
+    background: #101114; color: var(--muted);
+    font: 11px/1.45 ui-monospace, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-all;
+    display: none;
+  }
+  #actions { display: none; margin-top: 10px; justify-content: flex-end; }
+  #openLog {
+    height: 28px; padding: 0 12px; border-radius: 6px;
+    border: 1px solid var(--line); background: #20232a; color: var(--ink);
+    font: inherit; cursor: pointer;
+  }
+  #openLog:hover { border-color: var(--brand); }
 </style>
 </head>
 <body>
@@ -88,6 +113,10 @@
       <li data-phase="ui"><span class="dot"></span>界面激活</li>
     </ol>
     <div id="error"></div>
+    <div id="logPath"></div>
+
+    <pre id="log"></pre>
+    <div id="actions"><button id="openLog" type="button">打开本次日志</button></div>
   </div>
   <script>
     // 主进程通过 executeJavaScript 调用这里的两支更新函数。
@@ -104,12 +133,36 @@
           if (slot === null) item.appendChild(node);
         }
       },
-      fail(message) {
+      detail(name, detail) {
+        const item = document.querySelector(`li[data-phase="${name}"]`);
+        if (item === null) return;
+        const slot = item.querySelector('.detail');
+        const node = slot ?? document.createElement('span');
+        node.className = 'detail';
+        node.textContent = detail;
+        if (slot === null) item.appendChild(node);
+      },
+      log(line) {
+        const box = document.getElementById('log');
+        box.style.display = 'block';
+        const lines = box.textContent === '' ? [] : box.textContent.split('\n');
+        lines.push(String(line));
+        box.textContent = lines.slice(-8).join('\n');
+        box.scrollTop = box.scrollHeight;
+      },
+      fail(message, logPath) {
         const box = document.getElementById('error');
         box.style.display = 'block';
         box.textContent = message;
+        const path = document.getElementById('logPath');
+        path.style.display = logPath ? 'block' : 'none';
+        path.textContent = logPath ? `日志文件：${logPath}` : '';
+        document.getElementById('actions').style.display = 'flex';
       },
     };
+    document.getElementById('openLog').addEventListener('click', () => {
+      void window.chatdshSplashBridge?.openLog();
+    });
   </script>
 </body>
 </html>

@@ -4,7 +4,8 @@
 // `extractBootUrl` 做覆盖：噪声行、多次出现、地址缺失、以及令牌形态。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractBootUrl } from '../../desktop/electron/launch.mjs';
+import { createServer } from 'node:net';
+import { extractBootUrl, findFreePort } from '../../desktop/electron/launch.mjs';
 
 test('从启动输出里取出带令牌的地址', () => {
   const output = [
@@ -32,4 +33,18 @@ test('多次出现时取第一处', () => {
 test('不含令牌的地址前缀不会被误当成就绪地址', () => {
   const output = 'listening on http://127.0.0.1:3151/\n';
   assert.equal(extractBootUrl(output), undefined);
+});
+
+test('端口占用时顺延到下一个端口', async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const busy = typeof address === 'object' && address !== null ? address.port : undefined;
+  try {
+    assert.equal(typeof busy, 'number');
+    const free = await findFreePort(busy, 3);
+    assert.ok(free > busy && free <= busy + 3, `期望 ${busy} 之后 3 个端口内取一个，实际 ${free}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

@@ -8,7 +8,7 @@
  */
 
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, powerSaveBlocker, shell } from 'electron';
-import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RuntimeLauncher } from './launch.mjs';
@@ -17,6 +17,7 @@ import { setTelemetryOrigin, startSpan } from './telemetry.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SPLASH = join(HERE, 'splash.html');
 const PRELOAD = join(HERE, 'preload.cjs');
+const SPLASH_PRELOAD = join(HERE, 'splash-preload.cjs');
 
 /**
  * 解析 dsh 的启动入口。
@@ -48,6 +49,39 @@ function resolveConfig() {
 
 const config = resolveConfig();
 
+/** 桌面壳日志目录与本次启动的日志文件。 */
+const LOG_DIR = join(config.userData, 'logs');
+mkdirSync(LOG_DIR, { recursive: true });
+const LOG_FILE = join(LOG_DIR, `desktop-${new Date().toISOString().replace(/[:.]/g, '-')}.log`);
+
+/** 只保留最近 20 份桌面壳日志。 */
+function pruneLogs() {
+  try {
+    const files = readdirSync(LOG_DIR)
+      .filter((name) => name.startsWith('desktop-') && name.endsWith('.log'))
+      .map((name) => ({ name, mtime: statSync(join(LOG_DIR, name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    for (const file of files.slice(20)) unlinkSync(join(LOG_DIR, file.name));
+  } catch {
+    // 日志清理失败不能阻断启动。
+  }
+}
+pruneLogs();
+
+/**
+ * 写一行桌面壳日志：同时输出到控制台与本次日志文件。
+ * @param {string} message - 日志正文。
+ */
+function log(message) {
+  const line = `[${new Date().toISOString()}] ${message}`;
+  console.log(line);
+  try {
+    appendFileSync(LOG_FILE, `${line}\n`);
+  } catch {
+    // 日志目录不可写时只保留控制台输出。
+  }
+}
+
 /**
  * 把随包携带的 profile 接进可写的数据根。
  *
@@ -73,7 +107,7 @@ function prepareBundledProfile(current) {
   }
   // Windows 上目录符号链接需要管理员权限，目录联接不需要；两者都能让模块解析穿过链接。
   symlinkSync(bundled, link, process.platform === 'win32' ? 'junction' : 'dir');
-  console.log(`[chatdsh] bundled profile ready: ${link}`);
+  log(`[chatdsh] bundled profile ready: ${link}`);
 }
 
 /** 保活设置：托盘常驻、开机自启、强制不休眠与其子档。 */
@@ -103,6 +137,11 @@ const state = {
     port: config.port,
     dshBin: config.dshBin,
     cwd: config.cwd,
+    onLog: (line) => {
+      lastRuntimeLine = line;
+      splashLog(line);
+      log(`[runtime] ${line}`);
+    },
   }),
   bootUrl: undefined,
   origin: undefined,
@@ -113,6 +152,12 @@ const state = {
 let splashWindow;
 let mainWindow;
 let tray;
+const splashPhases = new Map();
+const splashLogs = [];
+let splashFailure;
+let splashFailurePath = '';
+let lastRuntimeLine = '';
+let runtimeStartedAt = 0;
 
 /** 可选截图目录：给了就在每个阶段落一张 PNG，便于真机取证。 */
 const captureDir = process.env.CHATDSH_CAPTURE_DIR;
@@ -124,18 +169,25 @@ async function capture(window, name) {
     const image = await window.webContents.capturePage();
     const { writeFile } = await import('node:fs/promises');
     await writeFile(join(captureDir, `${name}.png`), image.toPNG());
-    console.log(`[chatdsh] capture ${name}.png`);
+    log(`[chatdsh] capture ${name}.png`);
   } catch (error) {
-    console.log(`[chatdsh] capture ${name} failed: ${error instanceof Error ? error.message : String(error)}`);
+    log(`[chatdsh] capture ${name} failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /** 启动各阶段进行中的 span。 */
 const startupSpans = new Map();
 
-/** 把启动阶段写入启动页，并在给了截图目录时落一张阶段截图。 */
+/** 在启动页里执行一段脚本；页面未就绪时静默跳过，就绪后会补发快照。 */
+function splashExec(script) {
+  if (splashWindow === undefined || splashWindow.isDestroyed()) return;
+  void splashWindow.webContents.executeJavaScript(script).catch(() => undefined);
+}
+
+/** 更新启动页里的阶段状态与明细。 */
 function splashPhase(phase, status, detail) {
-  console.log(`[chatdsh] phase ${phase} ${status}${detail ? ` ${detail}` : ''}`);
+  splashPhases.set(phase, { status, detail });
+  log(`[chatdsh] phase ${phase} ${status}${detail ? ` ${detail}` : ''}`);
   if (status === 'active') {
     startupSpans.set(phase, startSpan(`chatdsh.desktop.startup.${phase}`));
   } else {
@@ -145,17 +197,45 @@ function splashPhase(phase, status, detail) {
       finish(status === 'failed' ? 'failed' : 'ok', { stage: phase });
     }
   }
-  if (splashWindow === undefined || splashWindow.isDestroyed()) return;
-  const script = `window.__chatdshSplash?.phase(${JSON.stringify(phase)}, ${JSON.stringify(status)}, ${JSON.stringify(detail ?? '')})`;
-  void splashWindow.webContents.executeJavaScript(script)
-    .then(() => capture(splashWindow, `phase-${phase}-${status}`))
-    .catch(() => undefined);
+  splashExec(`window.__chatdshSplash?.phase(${JSON.stringify(phase)}, ${JSON.stringify(status)}, ${JSON.stringify(detail ?? '')})`);
+  if (status !== 'active') void capture(splashWindow, `phase-${phase}-${status}`);
 }
 
-function splashFail(message) {
-  if (splashWindow === undefined || splashWindow.isDestroyed()) return;
-  const script = `window.__chatdshSplash?.fail(${JSON.stringify(String(message))})`;
-  void splashWindow.webContents.executeJavaScript(script).catch(() => undefined);
+/** 只更新一个阶段的进度明细，不改变阶段状态。 */
+function splashDetail(phase, detail) {
+  const current = splashPhases.get(phase);
+  if (current !== undefined) current.detail = detail;
+  splashExec(`window.__chatdshSplash?.detail(${JSON.stringify(phase)}, ${JSON.stringify(String(detail))})`);
+}
+
+/** 把运行时输出追加到启动页的日志面板，保留最近 8 行。 */
+function splashLog(line) {
+  splashLogs.push(String(line));
+  if (splashLogs.length > 8) splashLogs.shift();
+  splashExec(`window.__chatdshSplash?.log(${JSON.stringify(String(line))})`);
+}
+
+/** 显示启动失败原因，并附上本次日志路径。 */
+function splashFail(message, logPath) {
+  splashFailure = String(message);
+  splashFailurePath = logPath === undefined ? '' : String(logPath);
+  splashExec(`window.__chatdshSplash?.fail(${JSON.stringify(splashFailure)}, ${JSON.stringify(splashFailurePath)})`);
+}
+
+/** 启动页完成加载后，补发之前积压的阶段、日志与失败信息。 */
+function applySplashSnapshot() {
+  for (const [phase, value] of splashPhases) {
+    splashExec(`window.__chatdshSplash?.phase(${JSON.stringify(phase)}, ${JSON.stringify(value.status)}, ${JSON.stringify(value.detail ?? '')})`);
+  }
+  for (const line of splashLogs) splashExec(`window.__chatdshSplash?.log(${JSON.stringify(line)})`);
+  if (splashFailure !== undefined) splashExec(`window.__chatdshSplash?.fail(${JSON.stringify(splashFailure)}, ${JSON.stringify(splashFailurePath)})`);
+}
+
+/** 运行时等待进度：已等待秒数加上最后一行运行时输出。 */
+function runtimeDetail() {
+  const seconds = runtimeStartedAt === 0 ? 0 : Math.max(0, Math.floor((Date.now() - runtimeStartedAt) / 1000));
+  const tail = lastRuntimeLine === '' ? '' : ` · ${lastRuntimeLine}`;
+  return `已等待 ${seconds}s${tail}`.slice(0, 140);
 }
 
 /** 依据保活设置驱动系统电源策略。 */
@@ -254,6 +334,9 @@ function updateTrayMenu(snapshot) {
     { label: `阻止睡眠：${snapshot.preventSleep ? '开' : '关'}`, click: () => setKeepAlive({ preventSleep: !snapshot.preventSleep }) },
     { label: `托盘常驻：${snapshot.keepAlive ? '开' : '关'}`, click: () => setKeepAlive({ tray: !snapshot.keepAlive }) },
     { type: 'separator' },
+    { label: '打开本次启动日志', click: () => { void shell.openPath(LOG_FILE); } },
+    { label: '打开日志目录', click: () => { void shell.openPath(LOG_DIR); } },
+    { type: 'separator' },
     { label: '退出', click: () => { state.quitting = true; app.quit(); } },
   ]);
   tray.setToolTip(`ChatDSH${snapshot.ready ? '' : '（启动中）'}`);
@@ -267,7 +350,7 @@ function createTray() {
     tray.on('click', () => { void showMainWindow(); });
     updateTrayMenu(statusSnapshot());
   } catch (error) {
-    console.log(`[chatdsh] tray unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    log(`[chatdsh] tray unavailable: ${error instanceof Error ? error.message : String(error)}`);
     tray = undefined;
   }
 }
@@ -304,7 +387,7 @@ async function runOnboarding() {
       };
     })()`).catch(() => ({ main: false, buttons: [] }));
     if (probe.main === true) {
-      console.log('[chatdsh] onboard: reached main ui');
+      log('[chatdsh] onboard: reached main ui');
       return;
     }
     const hasWork = probe.buttons.some((t) => t.includes('chatdsh-work'));
@@ -316,10 +399,10 @@ async function runOnboarding() {
     else if (probe.hasPreset === true) target = 'ChatDSH 工作';
     else target = '继续';
     const ok = await clickByText(target, 6000);
-    console.log(`[chatdsh] onboard click "${target}" ${ok ? 'ok' : 'miss'} buttons=${JSON.stringify(probe.buttons)}`);
+    log(`[chatdsh] onboard click "${target}" ${ok ? 'ok' : 'miss'} buttons=${JSON.stringify(probe.buttons)}`);
     await new Promise((settle) => setTimeout(settle, 2500));
   }
-  console.log('[chatdsh] onboard: gave up before main ui');
+  log('[chatdsh] onboard: gave up before main ui');
 }
 
 /** 点击第一个文本包含给定片段的按钮；轮询到超时。 */
@@ -351,7 +434,7 @@ async function clickByText(needle, timeoutMs) {
  */
 async function runSelfTest() {
   if (mainWindow === undefined || mainWindow.isDestroyed()) {
-    console.log('[chatdsh] selftest skipped: no window');
+    log('[chatdsh] selftest skipped: no window');
     return;
   }
   const script = `(() => {
@@ -394,9 +477,9 @@ async function runSelfTest() {
   })()`;
   try {
     const result = await mainWindow.webContents.executeJavaScript(script);
-    console.log(`[chatdsh] selftest ${JSON.stringify(result)}`);
+    log(`[chatdsh] selftest ${JSON.stringify(result)}`);
   } catch (error) {
-    console.log(`[chatdsh] selftest error: ${error instanceof Error ? error.message : String(error)}`);
+    log(`[chatdsh] selftest error: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -406,6 +489,9 @@ async function boot() {
   // 单实例锁在上层用 requestSingleInstanceLock 承担，这里记录数据根已就绪。
   splashPhase('instance', 'done', config.profile);
   splashPhase('runtime', 'active');
+  runtimeStartedAt = Date.now();
+  lastRuntimeLine = '';
+  const progressTimer = setInterval(() => splashDetail('runtime', runtimeDetail()), 1000);
   const orchestrate = startSpan('chatdsh.desktop.runtime.orchestrate');
   try {
     prepareBundledProfile(config);
@@ -415,35 +501,39 @@ async function boot() {
     orchestrate('ok', { 'runtime.id': started.origin });
     state.origin = started.origin;
     // 固定前缀行：便于脚本与排障时从日志里拿到运行时代 理地址。
-    console.log(`[chatdsh] runtime ready: ${started.origin}`);
+    log(`[chatdsh] runtime ready: ${started.origin} (port ${started.port})`);
+    splashDetail('runtime', `端口 ${started.port}`);
     splashPhase('runtime', 'done', started.origin);
   } catch (error) {
     orchestrate('failed');
     const message = error instanceof Error ? error.message : String(error);
     state.failure = message;
-    console.log(`[chatdsh] failure: ${message}`);
+    log(`[chatdsh] failure: ${message}`);
     splashPhase('runtime', 'failed');
-    splashFail(`运行时启动失败：\n${message}`);
+    const brief = message.length > 1800 ? `${message.slice(0, 1800)}\n…（完整内容见日志文件）` : message;
+    splashFail(`运行时启动失败：\n${brief}`, LOG_FILE);
     broadcastStatus();
     if (process.env.CHATDSH_EXIT_AFTER_CAPTURE === '1') {
       await new Promise((settle) => setTimeout(settle, 1500));
       await capture(splashWindow, 'splash-failed');
-      console.log('[chatdsh] exiting after failure');
+      log('[chatdsh] exiting after failure');
       state.quitting = true;
       app.quit();
     }
     return;
+  } finally {
+    clearInterval(progressTimer);
   }
   splashPhase('ui', 'active');
   await showMainWindow();
-  console.log('[chatdsh] window shown');
+  log('[chatdsh] window shown');
   splashPhase('ui', 'done');
   broadcastStatus();
   // 真机取证：等界面首屏稳定后截图；用于自动验收时随后退出。
   if (captureDir !== undefined) {
     await new Promise((settle) => setTimeout(settle, 4000));
     await capture(mainWindow, 'main-window');
-    console.log('[chatdsh] capture complete');
+    log('[chatdsh] capture complete');
   }
   if (process.env.CHATDSH_ONBOARD === '1') {
     await runOnboarding();
@@ -458,15 +548,15 @@ async function boot() {
     })()`;
     try {
       const r = await mainWindow.webContents.executeJavaScript(script);
-      console.log(`[chatdsh] dump ${JSON.stringify(r)}`);
-    } catch (e) { console.log('[chatdsh] dump error ' + e.message); }
+      log(`[chatdsh] dump ${JSON.stringify(r)}`);
+    } catch (e) { log('[chatdsh] dump error ' + e.message); }
   }
   if (process.env.CHATDSH_SELFTEST === '1') {
     await new Promise((settle) => setTimeout(settle, 3000));
     await runSelfTest();
   }
   if (process.env.CHATDSH_EXIT_AFTER_CAPTURE === '1') {
-    console.log('[chatdsh] exiting after capture');
+    log('[chatdsh] exiting after capture');
     state.quitting = true;
     app.quit();
   }
@@ -474,15 +564,16 @@ async function boot() {
 
 function createSplash() {
   splashWindow = new BrowserWindow({
-    width: 480,
-    height: 340,
+    width: 560,
+    height: 620,
     resizable: false,
     frame: false,
     show: false,
     backgroundColor: '#0e0e10',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { preload: SPLASH_PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   splashWindow.once('ready-to-show', () => splashWindow.show());
+  splashWindow.webContents.once('did-finish-load', applySplashSnapshot);
   void splashWindow.loadFile(SPLASH);
 }
 
@@ -494,11 +585,15 @@ if (!gotLock) {
   app.on('second-instance', () => { void showMainWindow(); });
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
+    log(`[chatdsh] starting ${app.getVersion()} profile=${config.profile} bin=${config.dshBin}`);
+    log(`[chatdsh] log file: ${LOG_FILE}`);
     createSplash();
     createTray();
     applyPowerPolicy();
     ipcMain.handle('chatdsh:keepalive:get', () => statusSnapshot());
     ipcMain.handle('chatdsh:keepalive:set', (_event, enabled) => setKeepAlive({ preventSleep: enabled === true }));
+    ipcMain.handle('chatdsh:logs:open', () => shell.openPath(LOG_FILE));
+    ipcMain.handle('chatdsh:logs:dir', () => shell.openPath(LOG_DIR));
     ipcMain.on('chatdsh:window:minimize', () => mainWindow?.minimize());
     ipcMain.on('chatdsh:window:toggle-maximize', () => {
       if (mainWindow === undefined || mainWindow.isDestroyed()) return;

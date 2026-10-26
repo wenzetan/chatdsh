@@ -17,6 +17,7 @@ files:
   - launch.mjs
   - preload.cjs
   - splash.html
+  - splash-preload.cjs
   - telemetry.mjs
   - package.json
 extraResources:

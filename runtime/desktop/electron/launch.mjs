@@ -11,7 +11,51 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, openSync, closeSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
+
+
+/** 判断一个回环端口当前能否绑定。 */
+async function isPortAvailable(port) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.unref();
+    server.once('error', () => resolve(false));
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
+  });
+}
+
+/**
+ * 从起始端口开始找一个可绑定的回环端口，占用时逐个 +1。
+ *
+ * 桌面壳不传 `--port` 时 DSH 会固定用 3080；上一个实例崩溃或别的进程占用该端口时，
+ * 用户只会看到 EADDRINUSE。这里按 3080、3081、3082……顺序探测，最多试 20 个；
+ * 全部占用时再让操作系统分配一个。
+ * @param {number} [start=3080] - 起始端口。
+ * @param {number} [attempts=20] - 最多尝试的连续端口数。
+ * @returns {Promise<number>} 可绑定的端口号。
+ */
+export async function findFreePort(start = 3080, attempts = 20) {
+  const first = Number.isInteger(start) && start > 0 && start <= 65535 ? start : 3080;
+  const last = Math.min(65535, first + Math.max(1, attempts) - 1);
+  for (let port = first; port <= last; port += 1) {
+    if (await isPortAvailable(port)) return port;
+  }
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address !== null ? address.port : undefined;
+      server.close(() => {
+        if (typeof port === 'number' && port > 0) resolve(port);
+        else reject(new Error('系统没有分配可用端口'));
+      });
+    });
+  });
+}
 
 /** 探测一个地址是否可达；连接失败时拒绝。 */
 function probe(url) {
@@ -145,8 +189,12 @@ export class RuntimeLauncher {
     // 启动命令：`dshBin` 指向 `@deepseek-ai/dsh` 的 JS 入口时，用当前 Electron 可执行文件
     // 以 Node 方式运行（ELECTRON_RUN_AS_NODE），拿到一个可直接终止的真实子进程；否则直接
     // 执行给定的启动器。
-    const profileArgs = ['--profile', this.options.profile, '--no-open'];
-    if (this.options.port !== undefined) profileArgs.push('--port', String(this.options.port));
+    const requestedPort = this.options.port ?? 3080;
+    const port = await findFreePort(requestedPort);
+    this.onLog(port === requestedPort
+      ? `[launcher] 运行时端口 ${port}`
+      : `[launcher] 端口 ${requestedPort} 被占用，顺延到 ${port}`);
+    const profileArgs = ['--profile', this.options.profile, '--no-open', '--port', String(port)];
     const bin = this.options.dshBin;
     const runAsNode = bin.endsWith('.js') || bin.endsWith('.mjs') || bin.endsWith('.cjs');
     const command = runAsNode ? process.execPath : bin;
@@ -201,7 +249,7 @@ export class RuntimeLauncher {
     }
     const origin = new URL(bootUrl);
     await this.#waitForPort(`${origin.origin}/`);
-    return { bootUrl, pid, origin: origin.origin };
+    return { bootUrl, pid, origin: origin.origin, port };
   }
 
   /** 停止运行时：先请求终止，超时后强制终止；最后释放锁。 */
