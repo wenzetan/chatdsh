@@ -112,14 +112,14 @@ try {
     const presetText = await waitForText(page, '预设');
     console.log(`预设页文本 ${presetText.length} 字符`);
 
-    if (!presetText.includes('ChatDSH 的默认预设')) {
-      failures.push('预设页里没有出现自建预设的说明');
+    if (!presetText.includes('ChatDSH 工作') && !presetText.includes('ChatDSH 聊天')) {
+      failures.push('预设页里没有出现自建预设');
       console.log(`预设页片段：\n${presetText.slice(0, 300)}`);
     } else {
-      console.log('预设页里出现了自建预设的说明');
+      console.log('预设页里出现了自建预设');
     }
 
-    await clickByText(page, 'ChatDSH 的默认预设');
+    await clickByText(page, 'ChatDSH 工作');
     const mainText = await waitForText(page, '项目', 25_000);
     console.log(`主界面文本 ${mainText.length} 字符`);
     if (mainText.includes('项目')) {
