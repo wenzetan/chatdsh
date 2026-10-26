@@ -9,6 +9,7 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { Badge, Button, EmptyState, ErrorNote, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条连接器记录。 */
 interface ConnectorRecord {
@@ -142,35 +143,26 @@ export function ConnectorsSection({ remote }: { remote?: NonNullable<ClientFace[
     );
   }
 
-  if (failed) return <p style={{ fontSize: 13, opacity: 0.7 }}>连接器列表暂不可用。</p>;
-  if (connectors === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取连接器…</p>;
-  if (connectors.length === 0) return <p style={{ fontSize: 13, opacity: 0.7 }}>还没有登记外部连接器。</p>;
+  if (failed) return <Panel title="连接器"><StatusLine tone="danger">连接器列表暂不可用。</StatusLine></Panel>;
+  if (connectors === undefined) return <Panel title="连接器"><Skeleton rows={3} /></Panel>;
+  if (connectors.length === 0) return <Panel title="连接器"><EmptyState>还没有登记外部连接器。</EmptyState></Panel>;
 
   return (
-    <div style={{ fontSize: 13 }}>
-      {error === undefined ? null : <p style={{ color: '#b42318', margin: '0 0 8px' }}>{error}</p>}
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+    <Panel title="连接器" count={`${connectors.length}`}>
+      {error === undefined ? null : <ErrorNote>{error}</ErrorNote>}
+      <List>
         {connectors.map((record) => (
-          <li key={record.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontWeight: 600 }}>
-                {record.name}
-                {record.enabled ? '' : '（已停用）'}
-              </span>
-              <button type="button" onClick={() => toggle(record)} style={{ fontSize: 12 }}>
-                {record.enabled ? '停用' : '启用'}
-              </button>
-            </div>
-            <div style={{ opacity: 0.7 }}>
-              {record.transport} · {targetOf(record)}
-            </div>
-            {record.credentialEnv === undefined ? null : (
-              <div style={{ opacity: 0.6 }}>凭据来自环境变量 {record.credentialEnv}</div>
-            )}
-          </li>
+          <Row
+            key={record.id}
+            dot={record.enabled ? 'ok' : 'idle'}
+            title={record.name}
+            badge={<Badge tone={record.enabled ? 'ok' : 'neutral'}>{record.enabled ? '启用' : '已停用'}</Badge>}
+            meta={`${record.transport} · ${targetOf(record)}${record.credentialEnv === undefined ? '' : ` · 凭据来自 ${record.credentialEnv}`}`}
+            actions={<Button onClick={() => toggle(record)}>{record.enabled ? '停用' : '启用'}</Button>}
+          />
         ))}
-      </ul>
-    </div>
+      </List>
+    </Panel>
   );
 }
 

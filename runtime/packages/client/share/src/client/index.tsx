@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { Badge, Button, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条分享记录。 */
 interface ShareRecord {
@@ -53,7 +54,7 @@ async function revokeShare(token: string): Promise<void> {
 }
 
 /** 设置页区段。 */
-function ShareSection() {
+export function ShareSection() {
   const [shares, setShares] = useState<ShareRecord[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | undefined>(undefined);
@@ -70,48 +71,48 @@ function ShareSection() {
 
   useEffect(refresh, [refresh]);
 
-  if (failed) return <p style={{ fontSize: 13, opacity: 0.7 }}>分享记录暂不可用：这条页面没有经过控制平面。</p>;
-  if (shares === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取分享记录…</p>;
-  if (shares.length === 0) return <p style={{ fontSize: 13, opacity: 0.7 }}>还没有分享链接。</p>;
+  if (failed) return <Panel title="分享与快照"><StatusLine tone="danger">分享记录暂不可用：这条页面没有经过控制平面。</StatusLine></Panel>;
+  if (shares === undefined) return <Panel title="分享与快照"><Skeleton rows={3} /></Panel>;
+  if (shares.length === 0) return <Panel title="分享与快照"><EmptyState>还没有分享链接。</EmptyState></Panel>;
 
   return (
-    <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 13 }}>
-      {shares.map((record) => {
-        const state = record.revokedAt !== undefined ? '已撤销' : '有效';
-        return (
-          <li key={record.token} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-            <div style={{ fontWeight: 600 }}>
-              {record.sessionId} · 截至序号 {record.upToSeq}
-            </div>
-            <div style={{ opacity: 0.7 }}>
-              {state} · 访问 {record.visits} 次 · 建立于 {new Date(record.createdAt).toISOString()}
-            </div>
-            {record.revokedAt === undefined ? (
-              <button
-                type="button"
-                disabled={busy === record.token}
-                onClick={() => {
-                  setBusy(record.token);
-                  revokeShare(record.token).then(
-                    () => {
-                      setBusy(undefined);
-                      refresh();
-                    },
-                    () => {
-                      setBusy(undefined);
-                      setFailed(true);
-                    },
-                  );
-                }}
-                style={{ marginTop: 4, fontSize: 12 }}
-              >
-                {busy === record.token ? '撤销中…' : '撤销'}
-              </button>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
+    <Panel title="分享与快照" count={`${shares.length}`}>
+      <List>
+        {shares.map((record) => {
+          const revoked = record.revokedAt !== undefined;
+          return (
+            <Row
+              key={record.token}
+              dot={revoked ? 'idle' : 'ok'}
+              title={`${record.sessionId} · 截至序号 ${record.upToSeq}`}
+              badge={<Badge tone={revoked ? 'neutral' : 'ok'}>{revoked ? '已撤销' : '有效'}</Badge>}
+              meta={`访问 ${record.visits} 次 · 建立于 ${new Date(record.createdAt).toISOString()}`}
+              actions={revoked ? undefined : (
+                <Button
+                  tone="danger"
+                  disabled={busy === record.token}
+                  onClick={() => {
+                    setBusy(record.token);
+                    revokeShare(record.token).then(
+                      () => {
+                        setBusy(undefined);
+                        refresh();
+                      },
+                      () => {
+                        setBusy(undefined);
+                        setFailed(true);
+                      },
+                    );
+                  }}
+                >
+                  {busy === record.token ? '撤销中…' : '撤销'}
+                </Button>
+              )}
+            />
+          );
+        })}
+      </List>
+    </Panel>
   );
 }
 

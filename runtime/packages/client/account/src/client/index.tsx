@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条设备记录。 */
 interface DeviceRecord {
@@ -37,8 +38,8 @@ async function loadDevices(): Promise<DeviceRecord[]> {
   return payload.devices ?? [];
 }
 
-/** 设置页区段。 */
-function AccountSection() {
+/** 设置页区段：设备列表，覆盖加载、空、失败三类状态。 */
+export function AccountSection() {
   const [devices, setDevices] = useState<DeviceRecord[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
 
@@ -57,24 +58,22 @@ function AccountSection() {
     };
   }, []);
 
-  if (failed) return <p style={{ fontSize: 13, opacity: 0.7 }}>账号信息暂不可用：这条页面没有经过控制平面。</p>;
-  if (devices === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取设备…</p>;
-  if (devices.length === 0) return <p style={{ fontSize: 13, opacity: 0.7 }}>还没有登记的设备。</p>;
-
+  if (failed) return <Panel title="账号与设备"><StatusLine tone="danger">账号信息暂不可用：这条页面没有经过控制平面。</StatusLine></Panel>;
+  if (devices === undefined) return <Panel title="账号与设备"><Skeleton rows={2} /></Panel>;
+  if (devices.length === 0) return <Panel title="账号与设备"><EmptyState>还没有登记的设备。</EmptyState></Panel>;
   return (
-    <div style={{ fontSize: 13 }}>
-      <p style={{ margin: '0 0 8px', fontWeight: 600 }}>共 {devices.length} 台设备</p>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+    <Panel title="账号与设备" count={`${devices.length}`}>
+      <List>
         {devices.map((device) => (
-          <li key={device.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-            <div style={{ fontWeight: 600 }}>{device.platform ?? '未知平台'}</div>
-            <div style={{ opacity: 0.7 }}>
-              {device.origin} · 最近在线 {new Date(device.lastSeenAt).toISOString()}
-            </div>
-          </li>
+          <Row
+            key={device.id}
+            dot="ok"
+            title={device.platform ?? '未知平台'}
+            meta={`${device.origin} · 最近在线 ${new Date(device.lastSeenAt).toISOString()}`}
+          />
         ))}
-      </ul>
-    </div>
+      </List>
+    </Panel>
   );
 }
 

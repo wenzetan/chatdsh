@@ -9,6 +9,7 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { Badge, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条技能。 */
 interface SkillRecord {
@@ -94,8 +95,8 @@ export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<v
   }, SkillsSection));
 }
 
-/** 设置页区段。 */
-function SkillsSection() {
+/** 设置页区段：技能列表，覆盖加载、空、失败三类状态。 */
+export function SkillsSection() {
   const [skills, setSkills] = useState<SkillRecord[] | undefined>(undefined);
   const [state, setState] = useState<SkillCatalogState | undefined>(undefined);
   const [error, setError] = useState(false);
@@ -123,21 +124,17 @@ function SkillsSection() {
     };
   }, []);
 
-  if (error) return <p style={{ fontSize: 13, opacity: 0.7 }}>技能目录暂不可用。</p>;
-  if (skills === undefined || state === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取技能…</p>;
-
+  if (error) return <Panel title="技能"><StatusLine tone="danger">技能目录暂不可用。</StatusLine></Panel>;
+  if (skills === undefined || state === undefined) return <Panel title="技能"><Skeleton rows={3} /></Panel>;
+  if (skills.length === 0) return <Panel title="技能"><EmptyState>{formatSkillSummary(state)}</EmptyState></Panel>;
   return (
-    <div style={{ fontSize: 13 }}>
-      <p style={{ margin: '0 0 8px', opacity: 0.7 }}>{formatSkillSummary(state)}</p>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+    <Panel title="技能" subtitle={formatSkillSummary(state)} count={`${skills.length}`}>
+      <List>
         {skills.map((record) => (
-          <li key={record.id} style={{ padding: '6px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-            <div style={{ fontWeight: 600 }}>{record.name}</div>
-            <div style={{ opacity: 0.7 }}>{SOURCE_LABEL[record.source]} · {record.description}</div>
-          </li>
+          <Row key={record.id} title={record.name} badge={<Badge tone="neutral">{SOURCE_LABEL[record.source]}</Badge>} meta={record.description} />
         ))}
-      </ul>
-    </div>
+      </List>
+    </Panel>
   );
 }
 

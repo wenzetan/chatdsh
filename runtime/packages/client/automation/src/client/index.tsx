@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatAutomationSummary } from '../index.ts';
+import { Badge, Button, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条自动化记录。 */
 interface AutomationRecord {
@@ -88,7 +89,7 @@ export function apply(ctx: ClientFace & { slots: ClientSlots }): void {
 }
 
 /** 设置页区段。 */
-function AutomationSection() {
+export function AutomationSection() {
   const [records, setRecords] = useState<AutomationRecord[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
 
@@ -124,23 +125,24 @@ function AutomationSection() {
     );
   }
 
-  if (failed) return <p style={{ fontSize: 13, opacity: 0.7 }}>自动化列表暂不可用。</p>;
-  if (records === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取自动化…</p>;
+  if (failed) return <Panel title="自动化"><StatusLine tone="danger">自动化列表暂不可用。</StatusLine></Panel>;
+  if (records === undefined) return <Panel title="自动化"><Skeleton rows={3} /></Panel>;
+  if (records.length === 0) return <Panel title="自动化"><EmptyState>{formatAutomationSummary(records)}</EmptyState></Panel>;
 
   return (
-    <div style={{ fontSize: 13 }}>
-      <p style={{ margin: '0 0 8px', opacity: 0.7 }}>{formatAutomationSummary(records)}</p>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+    <Panel title="自动化" subtitle={formatAutomationSummary(records)} count={`${records.length}`}>
+      <List>
         {records.map((record) => (
-          <li key={record.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
-            <span>{record.name}{record.enabled ? '' : '（已停用）'}</span>
-            <button type="button" onClick={() => toggle(record)} style={{ fontSize: 12 }}>
-              {record.enabled ? '停用' : '启用'}
-            </button>
-          </li>
+          <Row
+            key={record.id}
+            dot={record.enabled ? 'ok' : 'idle'}
+            title={record.name}
+            badge={<Badge tone={record.enabled ? 'ok' : 'neutral'}>{record.enabled ? '启用' : '已停用'}</Badge>}
+            actions={<Button onClick={() => toggle(record)}>{record.enabled ? '停用' : '启用'}</Button>}
+          />
         ))}
-      </ul>
-    </div>
+      </List>
+    </Panel>
   );
 }
 

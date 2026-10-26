@@ -104,6 +104,8 @@ if (result !== undefined) {
   expect('界面有内容', (result.textLength ?? 0) > 50, String(result.textLength));
   const sample = result.textSample ?? '';
   expect('自建面板出现（项目/上下文）', sample.includes('项目') || sample.includes('上下文'), '');
+  // 自建面板用设计系统组件渲染：DOM 里应出现 chdsh-* 类名与面板外壳，且不含颜色字面值。
+  expect('面板使用设计系统组件', (result.kitNodes ?? 0) > 0 && (result.kitPanels ?? 0) > 0, `kitNodes=${result.kitNodes} kitPanels=${result.kitPanels}`);
   // 首次进入流程推进到工作区/预设阶段：自建预设（ChatDSH 工作 / ChatDSH 聊天）出现在界面上。
   const onboardLog = out;
   const reachedPreset = /ChatDSH 工作|ChatDSH 聊天/.test(onboardLog)

@@ -35,5 +35,8 @@
   },
   "peerDependencies": {
     "react": ">=19"
+  },
+  "dependencies": {
+    "@chatdsh/core-ui-kit": "workspace:*"
   }
 }

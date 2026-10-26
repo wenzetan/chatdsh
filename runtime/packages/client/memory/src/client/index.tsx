@@ -9,6 +9,7 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { Badge, EmptyState, List, Panel, Row, Skeleton } from '@chatdsh/core-ui-kit';
 
 /** 后端状态。 */
 interface MemoryStatus {
@@ -38,8 +39,8 @@ export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
 
-/** 设置页区段。 */
-function MemorySection() {
+/** 设置页区段：记忆后端状态；未启用时给启用入口说明，可用时给出地址与上限。 */
+export function MemorySection() {
   const [status, setStatus] = useState<MemoryStatus | undefined>(undefined);
   const [missing, setMissing] = useState(false);
 
@@ -65,24 +66,26 @@ function MemorySection() {
 
   if (missing) {
     return (
-      <div style={{ fontSize: 13, opacity: 0.8 }}>
-        <p style={{ margin: 0 }}>记忆未启用。</p>
-        <p style={{ margin: '4px 0 0', opacity: 0.7 }}>启用方式：把记忆组合包加入 profile 的 bundles 列表，并部署记忆后端。</p>
-      </div>
+      <Panel title="记忆">
+        <EmptyState>记忆未启用。把记忆组合包加入 profile 的 bundles 列表，并部署记忆后端。</EmptyState>
+      </Panel>
     );
   }
-  if (status === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取记忆状态…</p>;
-
+  if (status === undefined) return <Panel title="记忆"><Skeleton rows={2} /></Panel>;
   return (
-    <div style={{ fontSize: 13 }}>
-      <p style={{ margin: '0 0 4px', fontWeight: 600 }}>
-        {status.available ? '记忆后端可用' : '记忆后端不可达'}
-      </p>
-      <p style={{ margin: 0, opacity: 0.7 }}>地址 {status.endpoint} · 单次召回上限 {status.maxTokens} 令牌</p>
-      <p style={{ margin: '4px 0 0', opacity: 0.7 }}>
-        {status.extraBanks.length === 0 ? '没有额外召回 bank' : `额外召回 bank：${status.extraBanks.join('、')}`}
-      </p>
-    </div>
+    <Panel
+      title="记忆"
+      count={status.available ? <Badge tone="ok">可用</Badge> : <Badge tone="danger">不可达</Badge>}
+    >
+      <List>
+        <Row title="后端地址" meta={status.endpoint} dot={status.available ? 'ok' : 'danger'} />
+        <Row title="单次召回上限" meta={`${status.maxTokens} 令牌`} />
+        <Row
+          title="额外召回 bank"
+          meta={status.extraBanks.length === 0 ? '无' : status.extraBanks.join('、')}
+        />
+      </List>
+    </Panel>
   );
 }
 

@@ -9,6 +9,7 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { Panel, ProgressBar, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条洞察结果。 */
 interface ContextInsight {
@@ -65,8 +66,8 @@ export function formatInsight(insight: ContextInsight): string {
   return `上下文占用 ${percent}%`;
 }
 
-/** 侧栏条目。 */
-function ContextInsightsEntry() {
+/** 侧栏条目：占用比例、进度条与一句话；覆盖加载与失败两类状态。 */
+export function ContextInsightsEntry() {
   const [insight, setInsight] = useState<ContextInsight | undefined>(undefined);
   const [failed, setFailed] = useState(false);
 
@@ -91,17 +92,20 @@ function ContextInsightsEntry() {
     };
   }, []);
 
-  const text = failed
-    ? '上下文占用暂不可用'
-    : insight === undefined
-      ? '正在读取上下文占用…'
-      : formatInsight(insight);
-
+  if (failed) {
+    return <Panel title="上下文"><StatusLine>上下文占用暂不可用。</StatusLine></Panel>;
+  }
+  if (insight === undefined) {
+    return <Panel title="上下文"><Skeleton rows={1} /></Panel>;
+  }
+  const tone = insight.level === 'critical' ? 'danger' : insight.level === 'warn' ? 'warn' : 'brand';
   return (
-    <div style={{ padding: '8px 12px', fontSize: 13, lineHeight: 1.5 }}>
-      <div style={{ fontWeight: 600 }}>上下文</div>
-      <div style={{ opacity: insight?.level === 'critical' ? 1 : 0.7, color: insight?.level === 'critical' ? '#b42318' : undefined }}>{text}</div>
-    </div>
+    <Panel title="上下文" count={`${Math.round(insight.usedRatio * 100)}%`}>
+      <ProgressBar ratio={insight.usedRatio} tone={tone} />
+      <p style={{ margin: '8px 0 0' }}>
+        <StatusLine tone={insight.level === 'critical' ? 'danger' : 'muted'}>{formatInsight(insight)}</StatusLine>
+      </p>
+    </Panel>
   );
 }
 

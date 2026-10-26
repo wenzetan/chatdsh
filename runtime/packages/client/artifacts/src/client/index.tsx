@@ -9,6 +9,7 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { Badge, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条制品记录。 */
 interface ArtifactRecord {
@@ -41,8 +42,8 @@ export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
 
-/** 设置页区段。 */
-function ArtifactsSection() {
+/** 设置页区段：制品列表，覆盖加载、空、失败三类状态。 */
+export function ArtifactsSection() {
   const [artifacts, setArtifacts] = useState<ArtifactRecord[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
 
@@ -66,21 +67,24 @@ function ArtifactsSection() {
     };
   }, []);
 
-  if (failed) return <p style={{ fontSize: 13, opacity: 0.7 }}>制品列表暂不可用。</p>;
-  if (artifacts === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取制品…</p>;
-  if (artifacts.length === 0) return <p style={{ fontSize: 13, opacity: 0.7 }}>还没有制品。让会话里的工具写一个。</p>;
-
+  if (failed) return <Panel title="制品"><StatusLine tone="danger">制品列表暂不可用。</StatusLine></Panel>;
+  if (artifacts === undefined) return <Panel title="制品"><Skeleton rows={3} /></Panel>;
+  if (artifacts.length === 0) {
+    return <Panel title="制品"><EmptyState>还没有制品。让会话里的工具写一个。</EmptyState></Panel>;
+  }
   return (
-    <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 13 }}>
-      {artifacts.map((record) => (
-        <li key={record.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-          <div style={{ fontWeight: 600 }}>{record.title}</div>
-          <div style={{ opacity: 0.7 }}>
-            {record.kind} · {record.mimeType} · 第 {record.version} 版 · {record.size} 字节
-          </div>
-        </li>
-      ))}
-    </ul>
+    <Panel title="制品" count={`${artifacts.length}`}>
+      <List>
+        {artifacts.map((record) => (
+          <Row
+            key={record.id}
+            title={record.title}
+            badge={<Badge tone="neutral">{record.kind}</Badge>}
+            meta={`${record.mimeType} · 第 ${record.version} 版 · ${record.size} 字节`}
+          />
+        ))}
+      </List>
+    </Panel>
   );
 }
 

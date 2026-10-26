@@ -29,7 +29,9 @@ test('连接器面板在初始帧渲染加载提示', async () => {
     });
     const { ConnectorsSection } = await import(outfile);
     const html = renderToStaticMarkup(createElement(ConnectorsSection));
-    assert.match(html, /正在读取连接器/);
+    // 初始帧处于加载态：渲染与真实行等高的骨架，标题仍是「连接器」。
+    assert.match(html, /连接器/);
+    assert.match(html, /chdsh-skeleton/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -9,6 +9,7 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条提供方注册信息。 */
 interface ProviderRecord {
@@ -84,10 +85,11 @@ export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<v
   }, ModelProviderSection));
 }
 
-/** 设置页区段。 */
-function ModelProviderSection() {
+/** 设置页区段：提供方列表，覆盖加载、空、失败三类状态。 */
+export function ModelProviderSection() {
   const [providers, setProviders] = useState<ProviderRecord[] | undefined>(undefined);
   const [summary, setSummary] = useState<string | undefined>(undefined);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +97,7 @@ function ModelProviderSection() {
     const list = remote?.chatdshModelProviders?.list;
     const status = remote?.chatdshModelProviders?.status;
     if (list === undefined || status === undefined) {
-      if (!cancelled) setSummary('模型提供方状态暂不可用');
+      setFailed(true);
       return;
     }
     Promise.all([list.call(remote?.chatdshModelProviders), status.call(remote?.chatdshModelProviders)]).then(
@@ -105,7 +107,7 @@ function ModelProviderSection() {
         setSummary(formatProviderSummary(unwrapRemoteResult(stateResult)));
       },
       () => {
-        if (!cancelled) setSummary('模型提供方状态暂不可用');
+        if (!cancelled) setFailed(true);
       },
     );
     return () => {
@@ -113,19 +115,17 @@ function ModelProviderSection() {
     };
   }, []);
 
-  if (summary === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取模型提供方…</p>;
+  if (failed) return <Panel title="模型提供方"><StatusLine tone="danger">模型提供方状态暂不可用。</StatusLine></Panel>;
+  if (summary === undefined || providers === undefined) return <Panel title="模型提供方"><Skeleton rows={2} /></Panel>;
+  if (providers.length === 0) return <Panel title="模型提供方"><EmptyState>{summary}</EmptyState></Panel>;
   return (
-    <div style={{ fontSize: 13 }}>
-      <p style={{ margin: '0 0 8px', opacity: 0.7 }}>{summary}</p>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-        {(providers ?? []).map((record) => (
-          <li key={record.provider} style={{ padding: '6px 0' }}>
-            <div style={{ fontWeight: 600 }}>{record.displayName}</div>
-            <div style={{ opacity: 0.7 }}>{record.provider}{record.baseUrl === undefined ? '' : ` · ${record.baseUrl}`}</div>
-          </li>
+    <Panel title="模型提供方" subtitle={summary} count={`${providers.length}`}>
+      <List>
+        {providers.map((record) => (
+          <Row key={record.provider} title={record.displayName} meta={record.baseUrl === undefined ? record.provider : `${record.provider} · ${record.baseUrl}`} />
         ))}
-      </ul>
-    </div>
+      </List>
+    </Panel>
   );
 }
 

@@ -5,6 +5,9 @@
       "path": "packages/core/contracts"
     },
     {
+      "path": "packages/core/ui-kit"
+    },
+    {
       "path": "packages/core/backends"
     },
     {

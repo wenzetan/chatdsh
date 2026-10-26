@@ -114,6 +114,8 @@ Web 端的界面外壳与内容界面由以下模块提供，ChatDSH 直接复�
 
 自建客户端插件引用 `dsh-client-ui-slots`、`dsh-client-ui-primitives` 的组件时，要在自身 `dependencies` 里显式声明这两个零 cordis 包的精确版本。它们不在 `$DSH` 顶层 305 个条目的导出名单内，靠 profile 的依赖图解析；参考仓库 `anywhere-labs_dsh-desktop/dsh-plugin-desktop` 的 `package.json` 实测就把这两个包固定为 `0.2.1-rc.2`。
 
+面板的界面元素来自本仓库的共享组件包 `@chatdsh/core-ui-kit`（`packages/core/ui-kit`，纯 React，依赖 `react` 作为 peer）。它提供面板外壳、列表行、徽标、按钮、进度条、骨架与空/失败状态，全部只引用界面基础设计的令牌（`var(--chatdsh-*)`、`var(--cdh-*)`）。样式文本 `UI_KIT_CSS` 由主题插件 `@chatdsh/client-theme` 与令牌一起注入文档，组件本身不注入 CSS、不写颜色字面值。各客户端插件从本包取组件，因此面板与四端主页面共用同一套规格。
+
 ### 2.4 Web 形态的行表差异
 
 Web 形态的 profile 补丁层按以下方式收敛宿主行，属于本端模块构成的组成部分：

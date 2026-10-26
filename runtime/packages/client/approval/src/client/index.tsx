@@ -10,6 +10,7 @@ import { z } from 'zod';
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { Badge, Button, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条待处理的审批。 */
 interface PendingApproval {
@@ -46,7 +47,7 @@ export const inject = ['slots', 'remote'];
 let clientFace: ClientFace | undefined;
 
 /** 设置页区段。 */
-function ApprovalSection() {
+export function ApprovalSection() {
   const [pending, setPending] = useState<PendingApproval[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | undefined>(undefined);
@@ -105,36 +106,33 @@ function ApprovalSection() {
       },
     );
   }, [refresh]);
-  if (failed) return <p style={{ fontSize: 13, opacity: 0.7 }}>审批状态暂不可用。</p>;
-  if (pending === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取审批状态…</p>;
-  if (pending.length === 0) return <p style={{ fontSize: 13, opacity: 0.7 }}>没有等待回答的审批。</p>;
+  if (failed) return <Panel title="审批"><StatusLine tone="danger">审批状态暂不可用。</StatusLine></Panel>;
+  if (pending === undefined) return <Panel title="审批"><Skeleton rows={2} /></Panel>;
+  if (pending.length === 0) return <Panel title="审批"><EmptyState>没有等待回答的审批。</EmptyState></Panel>;
 
   return (
-    <div style={{ fontSize: 13 }}>
-      <p style={{ margin: '0 0 8px', fontWeight: 600 }}>有 {pending.length} 条审批在等回答</p>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+    <Panel title="审批" count={`${pending.length} 待处理`}>
+      <List>
         {pending.map((item) => (
-          <li key={item.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-            <div style={{ fontWeight: 600 }}>{item.toolName}</div>
-            <div style={{ opacity: 0.7 }}>
-              提出于 {new Date(item.askedAt).toISOString()}
-              {item.reason === undefined ? '' : ` · ${item.reason}`}
-            </div>
-            <div style={{ marginTop: 4, display: 'flex', gap: 6 }}>
-              <button type="button" disabled={busy === item.id} onClick={() => answer(item, 'allowed-once')} style={{ fontSize: 12 }}>
-                本次允许
-              </button>
-              <button type="button" disabled={busy === item.id} onClick={() => answer(item, 'rejected')} style={{ fontSize: 12 }}>
-                拒绝
-              </button>
-            </div>
-          </li>
+          <Row
+            key={item.id}
+            dot="warn"
+            title={item.toolName}
+            badge={<Badge tone="warn">等待回答</Badge>}
+            meta={`提出于 ${new Date(item.askedAt).toISOString()}${item.reason === undefined ? '' : ` · ${item.reason}`}`}
+            actions={(
+              <>
+                <Button tone="primary" disabled={busy === item.id} onClick={() => answer(item, 'allowed-once')}>本次允许</Button>
+                <Button tone="danger" disabled={busy === item.id} onClick={() => answer(item, 'rejected')}>拒绝</Button>
+              </>
+            )}
+          />
         ))}
-      </ul>
-      <p style={{ margin: '8px 0 0', opacity: 0.6 }}>
+      </List>
+      <p style={{ margin: '8px 0 0', color: 'var(--chatdsh-muted)', fontSize: 'var(--cdh-fs-12)' }}>
         「本会话」与「始终」要改本会话的审批策略，在会话里用命令调整；这里只做单次决定。
       </p>
-    </div>
+    </Panel>
   );
 }
 

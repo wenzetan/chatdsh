@@ -9,6 +9,7 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 import { formatAssistantSubtitle, type AssistantTier } from '../index.ts';
 
 /** 一条助手记录。 */
@@ -40,8 +41,8 @@ export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
 
-/** 设置页区段。 */
-function AssistantsSection() {
+/** 设置页区段：助手列表，覆盖加载、空、失败三类状态。 */
+export function AssistantsSection() {
   const [assistants, setAssistants] = useState<AssistantRecord[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
 
@@ -65,19 +66,17 @@ function AssistantsSection() {
     };
   }, []);
 
-  if (failed) return <p style={{ fontSize: 13, opacity: 0.7 }}>助手列表暂不可用。</p>;
-  if (assistants === undefined) return <p style={{ fontSize: 13, opacity: 0.7 }}>正在读取助手…</p>;
-  if (assistants.length === 0) return <p style={{ fontSize: 13, opacity: 0.7 }}>还没有自定义助手。</p>;
-
+  if (failed) return <Panel title="助手"><StatusLine tone="danger">助手列表暂不可用。</StatusLine></Panel>;
+  if (assistants === undefined) return <Panel title="助手"><Skeleton rows={3} /></Panel>;
+  if (assistants.length === 0) return <Panel title="助手"><EmptyState>还没有自定义助手。</EmptyState></Panel>;
   return (
-    <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: 13 }}>
-      {assistants.map((record) => (
-        <li key={record.id} style={{ padding: '8px 0', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-          <div style={{ fontWeight: 600 }}>{record.name}</div>
-          <div style={{ opacity: 0.7 }}>{formatAssistantSubtitle(record)}</div>
-        </li>
-      ))}
-    </ul>
+    <Panel title="助手" count={`${assistants.length}`}>
+      <List>
+        {assistants.map((record) => (
+          <Row key={record.id} title={record.name} meta={formatAssistantSubtitle(record)} />
+        ))}
+      </List>
+    </Panel>
   );
 }
 

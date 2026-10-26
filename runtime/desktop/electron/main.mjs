@@ -345,6 +345,8 @@ async function runSelfTest() {
       },
       buttons: document.querySelectorAll('button').length,
       inputs: document.querySelectorAll('textarea, input').length,
+      kitNodes: document.querySelectorAll('[class*="chdsh-"]').length,
+      kitPanels: document.querySelectorAll('.chdsh-panel').length,
     };
   })()`;
   try {

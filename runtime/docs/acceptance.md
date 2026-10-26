@@ -109,6 +109,8 @@ node scripts/verify-desktop-shell-win.mjs
 
 首次进入仍受模型凭据限制：没有凭据时界面停在预设选择页，主界面的三栏与对话流不渲染。这一条与第五节的现状一致。
 
+自建客户端面板按界面基础设计重做：新增共享组件包 `@chatdsh/core-ui-kit`，面板外壳、列表行、徽标、按钮、进度条、骨架与空/失败状态都只引用设计令牌；样式由主题插件随令牌一起注入。十二个面板（项目、上下文、制品、助手、模型提供方、技能、记忆、账号、分享、连接器、审批、自动化）的初始帧都由这套组件渲染。回归测试 `e2e/unit/panel-design.test.mjs` 逐个打包并服务端渲染，断言出现 `chdsh-panel`、`chdsh-skeleton`，且产物 HTML 不含十六进制或 rgba 颜色字面值。Windows 真机自检额外断言 DOM 里出现 `chdsh-*` 类名与面板外壳（实测 `kitNodes=8`、`kitPanels=2`）。
+
 ## 六、存储替换
 
 **未触及。** 当前只有 JSONL 一种会话日志后端，`bundle-storage-jsonl` 显式钉住 `session-persistence-jsonl`。

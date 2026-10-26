@@ -9,6 +9,7 @@ import { z } from 'zod';
  */
 
 import { useEffect, useState } from 'react';
+import { EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
 
 /** 一条项目记录。 */
 interface ProjectRecord {
@@ -37,8 +38,8 @@ export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
 
-/** 侧栏条目。 */
-function ProjectsEntry() {
+/** 侧栏条目：标题、计数与项目列表；覆盖加载、空、失败三类状态。 */
+export function ProjectsEntry() {
   const [projects, setProjects] = useState<ProjectRecord[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
 
@@ -62,19 +63,23 @@ function ProjectsEntry() {
     };
   }, []);
 
-  const state = failed
-    ? '项目列表暂不可用'
-    : projects === undefined
-      ? '正在读取项目…'
-      : projects.length === 0
-        ? '还没有项目'
-        : `${projects.length} 个项目`;
-
+  if (failed) {
+    return <Panel title="项目"><StatusLine tone="danger">项目列表暂不可用。</StatusLine></Panel>;
+  }
+  if (projects === undefined) {
+    return <Panel title="项目"><Skeleton rows={2} /></Panel>;
+  }
+  if (projects.length === 0) {
+    return <Panel title="项目"><EmptyState>还没有项目。让会话里的 project 工具记录一个工作目录。</EmptyState></Panel>;
+  }
   return (
-    <div style={{ padding: '8px 12px', fontSize: 13, lineHeight: 1.5 }}>
-      <div style={{ fontWeight: 600 }}>项目</div>
-      <div style={{ opacity: 0.7 }}>{state}</div>
-    </div>
+    <Panel title="项目" count={`${projects.length}`}>
+      <List>
+        {projects.map((record) => (
+          <Row key={record.path} title={record.title} meta={record.path} />
+        ))}
+      </List>
+    </Panel>
   );
 }
 

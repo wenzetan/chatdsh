@@ -8,6 +8,7 @@
  * @module @chatdsh/client-theme/apply-styles
  */
 
+import { UI_KIT_CSS } from '@chatdsh/core-ui-kit';
 import tokens from './styles/tokens.css';
 import shell from './styles/shell.css';
 
@@ -22,7 +23,8 @@ const SCHEME_ATTRIBUTE = 'data-color-scheme';
 
 /** 把本设计令牌与上游令牌映射合并成一段样式。 */
 function composeStyles(): string {
-  return `${tokens}\n${shell}`;
+  // 令牌 → 上游别名映射 → 面板组件样式，顺序保证组件读到已解析的令牌。
+  return `${tokens}\n${shell}\n${UI_KIT_CSS}`;
 }
 
 /**

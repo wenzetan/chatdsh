@@ -44,5 +44,8 @@
       "spans": [],
       "metrics": []
     }
+  },
+  "dependencies": {
+    "@chatdsh/core-ui-kit": "workspace:*"
   }
 }
