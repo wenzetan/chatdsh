@@ -95,3 +95,20 @@ node scripts\verify-desktop-shell-win.mjs
 ## 结构尺寸的归属
 
 设计稿 4.3 节的左侧栏 268、停靠栏 428、会话头部 54、底部状态条 30 描述参考页的排布。产品界面沿用上游自身的布局骨架，主题只接管令牌与视觉，本次没有覆写上游的宽度与高度，因此这些数值不作为产品界面的断言项。
+
+## 从干净克隆复现
+
+版本库之外不依赖任何未提交的产物。按下面的顺序执行，可得到与本文记录一致的构建与测试结果：
+
+```sh
+git clone <仓库> && cd runtime
+pnpm install --frozen-lockfile
+node scripts/link-dsh-deps.mjs
+(cd ../dsh-adapter && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build)
+(cd ../hindsight-adapter && pnpm install && pnpm build)
+(cd ../hermes-adapter && pnpm install && pnpm build)
+pnpm build
+node --test e2e/unit/*.test.mjs
+```
+
+实测：构建零错误；单元测试二百三十三条、通过二百三十一条、无失败，与工作树一致。界面与桌面壳的验收脚本另外需要本机装有 Chrome、electron 与 xvfb。
