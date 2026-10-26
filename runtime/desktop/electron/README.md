@@ -62,31 +62,47 @@ npx electron .
 
 壳会依次：取单实例锁 → 建启动根与数据根 → 拉起运行时 → 等它就绪 → 把窗口指向它。关闭窗口在托盘常驻模式下只隐藏，进程与运行时继续存活；从托盘选择「退出」才结束进程并回收运行时。
 
-## 打包 Windows 便携版
+## 打包 Windows 客户端
 
-仓库根有一条打包命令，产物是单个免安装 `.exe`：
+推荐产物是单文件安装器：
 
 ```bash
 cd runtime
-node scripts/build-desktop-windows.mjs
+node scripts/build-desktop-windows.mjs          # 生成 win-unpacked 与便携版
+node scripts/build-windows-installer.mjs        # 生成 ChatDSH-Setup-*.exe
 ```
 
-它会把本机的 `@deepseek-ai/dsh`、`chatdsh-desktop` profile 与自建包暂存到
-`.run/desktop-windows-stage`，再调用 `electron-builder` 产出：
-
-```
-runtime/.run/desktop-windows/ChatDSH-0.1.0-x64.exe
-```
-
-目标机不需要安装 Node、pnpm 或 dsh；首次启动会把便携包解压到临时目录，用户数据落在
-Electron 的 `userData` 目录。跨平台构建默认关闭 `signAndEditExecutable`，因此该 exe
-未签名，Windows SmartScreen 可能提示；需要签名/自定义图标时，在 Windows 构建机上打开
-`desktop/electron/electron-builder.yml` 的该开关并配置证书。
-
-只重新打包、复用已暂存的 DSH 与 profile：
+也可以一次跑完：
 
 ```bash
 node scripts/build-desktop-windows.mjs --reuse-stage
+node scripts/build-windows-installer.mjs
+```
+
+产物：
+
+```
+runtime/.run/desktop-windows/ChatDSH-0.1.0-x64.exe               # 便携版，每次启动都会解压
+runtime/.run/desktop-windows/ChatDSH-Setup-0.1.0-x64.exe         # 安装器，推荐
+```
+
+安装器把应用解压到 `%LOCALAPPDATA%\Programs\ChatDSH`，创建桌面与开始菜单快捷方式，
+之后启动不再重复解压。目标机不需要安装 Node、pnpm 或 dsh。跨平台构建默认关闭
+`signAndEditExecutable`，因此 exe 未签名，Windows SmartScreen 可能提示；需要签名或
+自定义图标时，在 Windows 构建机上打开 `desktop/electron/electron-builder.yml` 的该开关
+并配置证书。
+
+安装器源码在 `desktop/installer/main.go`，构建脚本是 `scripts/build-windows-installer.mjs`；
+它把 `win-unpacked` 打成 zip 载荷追加到 Go 编译出的安装器 exe 末尾。
+
+Linux 上交叉构建时，需要一份按 Windows 平台安装的 DSH 依赖，避免把 Linux 原生模块带进包：
+
+```bash
+mkdir -p /tmp/dsh-win-install && cd /tmp/dsh-win-install
+npm install --os=win32 --cpu=x64 --ignore-scripts @deepseek-ai/dsh@0.2.1-rc.2
+cd /workspace/chatdsh/runtime
+node scripts/build-desktop-windows.mjs --dsh-install /tmp/dsh-win-install --target portable --compression-level 1
+node scripts/build-windows-installer.mjs
 ```
 
 ## 验收

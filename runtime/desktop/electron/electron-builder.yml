@@ -33,4 +33,5 @@ win:
         - x64
   # 跨平台构建时不执行 rcedit/signtool，避免依赖 wine；产物未签名，仅用于本地分发。
   signAndEditExecutable: false
+portable:
   artifactName: ChatDSH-${version}-x64.${ext}

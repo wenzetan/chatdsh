@@ -136,6 +136,15 @@ node scripts/verify-provider-chat.mjs
 自建模型提供方端到端验收通过
 ```
 
+### 5.3 Windows 安装器
+
+**通过（Windows 11 真机）。** 单文件安装器 `ChatDSH-Setup-0.1.0-x64.exe` 在
+`homedesktop` 上完成了解压安装、快捷方式创建与启动。安装后的客户端进入主界面，显示
+自建面板与自建模型 `command-code/xiaomi/mimo-v2.6-flash`，发送「计算 123456+1」后
+收到助手回复 `123457`。安装器把 `win-unpacked` 放进 `%LOCALAPPDATA%\Programs\ChatDSH`，
+后续启动不再重复解压；`profile` 由主进程在数据根里建目录联接后交给随包 DSH 加载。
+
+
 ## 六、存储替换
 
 **未触及。** 当前只有 JSONL 一种会话日志后端，`bundle-storage-jsonl` 显式钉住 `session-persistence-jsonl`。

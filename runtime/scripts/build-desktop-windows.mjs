@@ -35,6 +35,8 @@ const REGISTRY = option('registry', process.env.NPM_REGISTRY ?? 'https://registr
 const BUILD_HOME = join(STAGE, '.home');
 const BUILD_CACHE = join(STAGE, '.cache');
 const REUSE_STAGE = argv.includes('--reuse-stage');
+const TARGETS = option('target', process.env.CHATDSH_WIN_TARGET ?? 'portable').split(',').map((value) => value.trim()).filter(Boolean);
+const COMPRESSION_LEVEL = option('compression-level', process.env.ELECTRON_BUILDER_COMPRESSION_LEVEL);
 
 /** 读取命令行选项。 */
 function option(name, fallback) {
@@ -45,17 +47,41 @@ function option(name, fallback) {
   return value;
 }
 
-/** 定位 DSH 安装根：命令行/环境变量优先，其次按运行时依赖解析。 */
-function resolveDshInstall() {
+/**
+ * 定位 DSH 安装布局。
+ *
+ * 支持两种常见形态：
+ *   - 包目录自身带 `node_modules`（全局安装或旧版布局）；
+ *   - 包目录与依赖一起平铺在同一个 `node_modules` 下（npm 平铺安装）。
+ * @returns 包目录与依赖目录。
+ */
+function resolveDshLayout() {
   const explicit = option('dsh-install', process.env.CHATDSH_DSH_INSTALL);
-  if (explicit !== undefined) return resolve(explicit);
+  if (explicit !== undefined) {
+    const path = resolve(explicit);
+    if (existsSync(join(path, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))) {
+      return { packageDir: join(path, 'node_modules', '@deepseek-ai', 'dsh'), modules: join(path, 'node_modules') };
+    }
+    if (path.endsWith('node_modules') && existsSync(join(path, '@deepseek-ai', 'dsh', 'lib', 'bin.js'))) {
+      return { packageDir: join(path, '@deepseek-ai', 'dsh'), modules: path };
+    }
+    if (existsSync(join(path, 'lib', 'bin.js'))) {
+      return { packageDir: path, modules: join(path, 'node_modules') };
+    }
+    throw new Error(`--dsh-install 指向的目录不是可识别的 DSH 安装：${path}`);
+  }
   let manifest;
   try {
     manifest = require.resolve('@deepseek-ai/dsh/package.json', { paths: [ROOT] });
   } catch {
     throw new Error('找不到 @deepseek-ai/dsh；设置 CHATDSH_DSH_INSTALL 指向它的安装根目录');
   }
-  return dirname(realpathSync(manifest));
+  const packageDir = dirname(realpathSync(manifest));
+  if (existsSync(join(packageDir, 'node_modules'))) return { packageDir, modules: join(packageDir, 'node_modules') };
+  // 平铺安装：依赖目录是包的上一级 @deepseek-ai 的上一级 node_modules。
+  const modules = dirname(dirname(packageDir));
+  if (existsSync(join(modules, '@deepseek-ai', 'dsh', 'lib', 'bin.js'))) return { packageDir, modules };
+  throw new Error(`无法确定 DSH 依赖目录：${packageDir}`);
 }
 
 /** 确认自建包的产物已经构建。 */
@@ -73,6 +99,16 @@ function assertBuilt() {
 /** 递归复制，默认解引用符号链接，便于 Windows 上分发。 */
 function copy(source, dest, options = {}) {
   cpSync(source, dest, { recursive: true, dereference: true, force: true, ...options });
+}
+
+/** 复制 DSH 依赖目录，跳过 Unix 的 .bin 转发链接。 */
+function copyModules(source, dest) {
+  cpSync(source, dest, {
+    recursive: true,
+    dereference: true,
+    force: true,
+    filter: (path) => !path.split(/[\\/]/).includes('.bin'),
+  });
 }
 
 /** 复制一个自建包，只保留运行时需要的文件。 */
@@ -131,11 +167,17 @@ function installExternalDependencies(profileModules, dependencies) {
 }
 
 /** 暂存 DSH 安装与 profile。 */
-function stage(dshInstall) {
+function stage(layout) {
   rmSync(STAGE, { recursive: true, force: true });
   mkdirSync(join(STAGE, 'app'), { recursive: true });
-  console.log(`暂存 DSH 安装：${dshInstall}`);
-  copy(dshInstall, join(STAGE, 'app', 'dsh'));
+  console.log(`暂存 DSH 安装：${layout.packageDir}`);
+  const dshDest = join(STAGE, 'app', 'dsh');
+  mkdirSync(dshDest, { recursive: true });
+  for (const entry of readdirSync(layout.packageDir)) {
+    if (entry === 'node_modules') continue;
+    copy(join(layout.packageDir, entry), join(dshDest, entry));
+  }
+  copyModules(layout.modules, join(dshDest, 'node_modules'));
 
   const profileSource = join(ROOT, 'profiles', 'chatdsh-desktop');
   const profileDest = join(STAGE, 'app', 'dsh', 'profiles', 'chatdsh-desktop');
@@ -190,7 +232,7 @@ function packageWindows() {
   const cli = join(ELECTRON, 'node_modules', 'electron-builder', 'cli.js');
   if (!existsSync(cli)) throw new Error(`找不到 electron-builder：${cli}；先在 desktop/electron 执行 npm install`);
   const result = spawnSync(process.execPath, [
-    cli, '--win', 'portable', '--x64',
+    cli, '--win', ...TARGETS, '--x64',
     '--config', join(ELECTRON, 'electron-builder.yml'),
     `--config.directories.output=${OUT}`,
   ], {
@@ -203,15 +245,18 @@ function packageWindows() {
       ELECTRON_CACHE: join(BUILD_CACHE, 'electron'),
       ELECTRON_BUILDER_CACHE: join(BUILD_CACHE, 'builder'),
       ELECTRON_MIRROR: process.env.ELECTRON_MIRROR ?? 'https://npmmirror.com/mirrors/electron/',
+      ...(COMPRESSION_LEVEL === undefined ? {} : { ELECTRON_BUILDER_COMPRESSION_LEVEL: COMPRESSION_LEVEL }),
       // electron-builder 的 extraResources.from 按项目目录解析，这里传相对路径。
       CHATDSH_DESKTOP_STAGE: relative(ELECTRON, STAGE),
     },
   });
   if (result.status !== 0) throw new Error(`electron-builder 失败（退出码 ${result.status}）`);
-  const artifact = readdirSync(OUT).find((name) => name.endsWith('.exe'));
-  if (artifact === undefined) throw new Error(`没有找到 exe 产物：${OUT}`);
-  console.log(`Windows 便携版已生成：${join(OUT, artifact)}`);
-  console.log(`大小：${(statSync(join(OUT, artifact)).size / 1024 / 1024).toFixed(0)} MB`);
+  const artifacts = readdirSync(OUT).filter((name) => name.endsWith('.exe'));
+  if (artifacts.length === 0) throw new Error(`没有找到 exe 产物：${OUT}`);
+  for (const artifact of artifacts) {
+    console.log(`Windows 安装包已生成：${join(OUT, artifact)}`);
+    console.log(`大小：${(statSync(join(OUT, artifact)).size / 1024 / 1024).toFixed(0)} MB`);
+  }
 }
 
 assertBuilt();
@@ -219,6 +264,6 @@ if (REUSE_STAGE) {
   if (!existsSync(join(STAGE, 'app', 'dsh', 'lib', 'bin.js'))) throw new Error(`--reuse-stage 指定的暂存目录不存在：${STAGE}`);
   console.log(`复用暂存目录：${STAGE}`);
 } else {
-  stage(resolveDshInstall());
+  stage(resolveDshLayout());
 }
 packageWindows();

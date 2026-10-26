@@ -58,18 +58,26 @@ cd %USERPROFILE%\chatdsh-src\runtime\desktop\electron
 node_modules\electron\dist\electron.exe . --no-sandbox
 ```
 
-## 打包便携版 exe
+## 打包 exe
 
-在 `runtime` 目录执行：
+在 `runtime` 目录先产出 `win-unpacked`，再生成推荐的单文件安装器：
 
 ```bat
 node scripts\build-desktop-windows.mjs
+node scripts\build-windows-installer.mjs
 ```
 
-产物在 `runtime\.run\desktop-windows\ChatDSH-0.1.0-x64.exe`。脚本会暂存本机的 DSH
-安装、`chatdsh-desktop` profile 和自建包，然后调用 `electron-builder` 的 portable 目标；
-目标机不需要 Node、pnpm 或 dsh。首次启动时桌面壳会在数据根里为 profile 建目录联接，
-并直接运行随包的 `resources/app/dsh/lib/bin.js`。
+产物：
+
+```text
+runtime\.run\desktop-windows\ChatDSH-Setup-0.1.0-x64.exe   # 安装器，推荐
+runtime\.run\desktop-windows\ChatDSH-0.1.0-x64.exe         # 便携版
+```
+
+安装器解压到 `%LOCALAPPDATA%\Programs\ChatDSH` 并创建桌面/开始菜单快捷方式；之后启动
+不再重新解压。便携版每次启动都会重新解压，包体大时首次启动会慢。目标机都不需要
+Node、pnpm 或 dsh。首次启动时桌面壳会在数据根里为 profile 建目录联接，并直接运行随包的
+`resources/app/dsh/lib/bin.js`。
 
 默认构建未签名（`win.signAndEditExecutable=false`），SmartScreen 可能提示。需要代码签名
 或自定义图标时，在 Windows 构建机上打开 `electron-builder.yml` 的该开关并配置证书。

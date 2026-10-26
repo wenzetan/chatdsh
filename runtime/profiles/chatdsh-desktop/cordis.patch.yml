@@ -95,3 +95,10 @@
 - insert:
     - id: chatdsh-client-theme
       name: '@chatdsh/client-theme'
+
+# 预览版欢迎说明已经通过本部署的配置确认，避免首次启动时因设置写入失败卡在提示框。
+- id: ui-settings-general
+  name: '@deepseek-ai/dsh-client-ui-settings-general'
+  config:
+    welcomeNoticeVersion: 2026-09-28.1
+
