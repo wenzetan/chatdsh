@@ -19,6 +19,11 @@ const CLIENTS = join(ROOT, 'packages', 'client');
 /** 宿主在浏览器侧提供的包，必须保持外部依赖。 */
 const HOST_PROVIDED = ['react', 'react/*', 'react-dom', 'react-dom/*', 'zod', '@deepseek-ai/*'];
 
+/** 本仓库共享包按源码路径直接打包，避免依赖每个客户端包各自 node_modules 里的工作区链接。 */
+const WORKSPACE_ALIAS = {
+  '@chatdsh/core-ui-kit': join(ROOT, 'packages', 'core', 'ui-kit', 'src', 'index.ts'),
+};
+
 async function exists(path) {
   try {
     await stat(path);
@@ -73,6 +78,7 @@ for (const dir of await collectTargets()) {
     // 客户端插件把令牌与组件样式写成 `.css` 文本引入，构建期按文本内联，
     // 运行时由插件把这份文本挂到文档上，产物仍是单个 client.js。
     loader: { '.css': 'text' },
+    alias: WORKSPACE_ALIAS,
     banner: {
       js: `window.__ModuleLoader__.load({ id: ${JSON.stringify(manifest.name)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
     },
