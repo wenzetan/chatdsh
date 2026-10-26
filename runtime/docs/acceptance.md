@@ -87,6 +87,28 @@ node scripts/verify-client-ui.mjs
 
 客户端插件的 `inject` 有两处，语义不同：`package.json` 的 `dsh.client.inject` 写模块包名、管模块图排序；浏览器产物导出的 `inject` 写服务名、是运行时真正等待的依赖。两处都写错会让面板永久停在 pending。
 
+### 5.1 主题插件与桌面壳
+
+**通过（Web 层与 Windows 桌面壳均实测）。** 界面基础设计以客户端主题插件 `@chatdsh/client-theme` 进入运行时：它把 `ui-design/tokens.css` 的令牌与一段把 `--dsw-alias-*` 映射到 `--chatdsh-*` 的样式挂到文档上，并注册一个 `chatdsh` 主题方案。两套配色随上游 `data-ds-dark-theme` 同步到 `data-color-scheme`。
+
+```bash
+node scripts/verify-theme-ui.mjs
+```
+
+在真实 Chrome 的首屏断言样式节点已挂载、令牌解析为设计取值、上游别名已映射、两套配色可来回切换，全部通过。
+
+Windows 桌面端为 `runtime/desktop/electron` 的 Electron 壳，编排逻辑在 `launch.mjs`，主进程在 `main.mjs`。真机验收在 Windows 主机上运行：
+
+```bash
+node scripts/verify-desktop-shell-win.mjs
+```
+
+它启动壳、拉起 `chatdsh-desktop` 运行时、在渲染进程里读取计算样式，核对画布 `#0e0e10`、面板 `#17181c`、品牌 `#4d6bfe`、成功/警告/危险三色、正文 13px、上游别名映射与设计字体族，并确认首次进入流程推进到自建预设（`ChatDSH 工作` / `ChatDSH 聊天`）与自建面板（`项目`、`上下文`）。该验收已在 `homedesktop`（Windows 11 x64、全局 `dsh` 0.2.1-rc.2）上通过。
+
+壳的 Linux 侧编排与窗口也单独验过（`scripts/verify-desktop-shell.mjs`，用 xvfb 提供显示）。
+
+首次进入仍受模型凭据限制：没有凭据时界面停在预设选择页，主界面的三栏与对话流不渲染。这一条与第五节的现状一致。
+
 ## 六、存储替换
 
 **未触及。** 当前只有 JSONL 一种会话日志后端，`bundle-storage-jsonl` 显式钉住 `session-persistence-jsonl`。

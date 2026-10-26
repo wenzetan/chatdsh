@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatDSH</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e0e10;
+    --panel: #17181c;
+    --line: #24262c;
+    --ink: #f3f5f9;
+    --muted: #9aa1ad;
+    --brand: #4d6bfe;
+    --ok: #3fb37f;
+    --danger: #ff7b7b;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+  }
+  .card {
+    width: 420px;
+    padding: 26px 24px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--panel);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .mark {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: var(--brand);
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 13px; color: #fff;
+  }
+  .brand b { font-size: 15px; letter-spacing: -0.01em; }
+  .brand span { margin-left: auto; color: var(--muted); font-size: 11px; }
+  ol { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 0;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    font-size: 12.5px;
+  }
+  li:last-child { border-bottom: 0; }
+  li .dot {
+    width: 8px; height: 8px; border-radius: 999px;
+    background: var(--line);
+    flex: 0 0 auto;
+  }
+  li[data-state="active"] { color: var(--ink); }
+  li[data-state="active"] .dot { background: var(--brand); animation: pulse 1.5s ease-in-out infinite; }
+  li[data-state="done"] { color: var(--ink); }
+  li[data-state="done"] .dot { background: var(--ok); }
+  li[data-state="failed"] { color: var(--danger); }
+  li[data-state="failed"] .dot { background: var(--danger); }
+  li .detail { margin-left: auto; color: var(--muted); font-size: 11px; font-family: ui-monospace, Consolas, monospace; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { li .dot { animation: none !important; } }
+  #error {
+    margin-top: 14px; padding: 10px 12px;
+    border-left: 2px solid var(--danger);
+    background: rgba(255,123,123,0.08);
+    color: var(--muted); font-size: 12px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+    display: none;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="mark">C</div>
+      <b>ChatDSH</b>
+      <span>正在启动</span>
+    </div>
+    <ol id="phases">
+      <li data-phase="instance"><span class="dot"></span>应用身份与单实例</li>
+      <li data-phase="runtime"><span class="dot"></span>运行时加载</li>
+      <li data-phase="ui"><span class="dot"></span>界面激活</li>
+    </ol>
+    <div id="error"></div>
+  </div>
+  <script>
+    // 主进程通过 executeJavaScript 调用这里的两支更新函数。
+    window.__chatdshSplash = {
+      phase(name, state, detail) {
+        const item = document.querySelector(`li[data-phase="${name}"]`);
+        if (item === null) return;
+        item.dataset.state = state;
+        const slot = item.querySelector('.detail');
+        if (detail !== undefined) {
+          const node = slot ?? document.createElement('span');
+          node.className = 'detail';
+          node.textContent = detail;
+          if (slot === null) item.appendChild(node);
+        }
+      },
+      fail(message) {
+        const box = document.getElementById('error');
+        box.style.display = 'block';
+        box.textContent = message;
+      },
+    };
+  </script>
+</body>
+</html>

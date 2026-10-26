@@ -70,6 +70,9 @@ for (const dir of await collectTargets()) {
     sourcemap: true,
     logLevel: 'warning',
     external: HOST_PROVIDED,
+    // 客户端插件把令牌与组件样式写成 `.css` 文本引入，构建期按文本内联，
+    // 运行时由插件把这份文本挂到文档上，产物仍是单个 client.js。
+    loader: { '.css': 'text' },
     banner: {
       js: `window.__ModuleLoader__.load({ id: ${JSON.stringify(manifest.name)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
     },

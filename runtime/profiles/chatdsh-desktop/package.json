@@ -17,6 +17,7 @@
     "@chatdsh/client-projects": "link:../../packages/client/projects",
     "@chatdsh/client-share": "link:../../packages/client/share",
     "@chatdsh/client-telemetry": "link:../../packages/client/telemetry",
+    "@chatdsh/client-theme": "link:../../packages/client/theme",
     "@chatdsh/host-approval": "link:../../packages/host/approval",
     "@chatdsh/host-artifacts": "link:../../packages/host/artifacts",
     "@chatdsh/host-assistants": "link:../../packages/host/assistants",

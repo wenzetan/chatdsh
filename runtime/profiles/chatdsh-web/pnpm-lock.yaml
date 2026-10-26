@@ -53,6 +53,9 @@ importers:
       '@chatdsh/client-telemetry':
         specifier: link:../../packages/client/telemetry
         version: link:../../packages/client/telemetry
+      '@chatdsh/client-theme':
+        specifier: link:../../packages/client/theme
+        version: link:../../packages/client/theme
       '@chatdsh/core-identity':
         specifier: link:../../packages/core/identity
         version: link:../../packages/core/identity
@@ -107,6 +110,9 @@ importers:
       '@chatdsh/tool-artifact':
         specifier: link:../../packages/tool/artifact
         version: link:../../packages/tool/artifact
+      '@chatdsh/tool-browser':
+        specifier: link:../../packages/tool/browser
+        version: link:../../packages/tool/browser
       '@chatdsh/tool-connector':
         specifier: link:../../packages/tool/connector
         version: link:../../packages/tool/connector

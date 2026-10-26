@@ -13,9 +13,9 @@
 // 用法：node scripts/link-dsh-deps.mjs [--check]
 //   --check 只报告将建立的链接，不写入。
 
-import { mkdir, readdir, readlink, realpath, rm, stat, symlink } from 'node:fs/promises';
+import { mkdir, readdir, readFile, readlink, realpath, rm, stat, symlink } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,17 +32,44 @@ async function exists(path) {
   }
 }
 
-/** 定位 DSH 安装根：环境变量优先，其次从 PATH 里的 dsh 可执行文件反查，最后用依赖解析。 */
+/**
+ * 解析一个 dsh 启动脚本真实指向的包目录。
+ *
+ * 全局安装的启动脚本可能是符号链接（Unix），也可能是转发脚本（Windows 的 `.cmd` 或
+ * `.ps1`）。这里按平台逐种读法取出 `<安装根>/lib/bin.js` 的实际路径。
+ * @param {string} bin - PATH 上找到的 dsh 入口文件。
+ * @returns {string | undefined} 包根目录，无法解析时返回 undefined。
+ */
+async function resolveLaunchTarget(bin) {
+  let current = bin;
+  try {
+    current = await realpath(bin);
+  } catch {
+    return undefined;
+  }
+  if (current.endsWith(`${sep}lib${sep}bin.js`)) return dirname(dirname(current));
+
+  // Windows 的 npm 全局 shim：与启动脚本同目录的 node_modules 下就是包根。
+  const sibling = join(dirname(current), 'node_modules', SCOPED, 'dsh');
+  if (await exists(join(sibling, 'lib', 'bin.js'))) return sibling;
+  return undefined;
+}
+
+/** 定位 DSH 安装根：环境变量优先，其次从 PATH 里的 dsh 启动脚本反查，最后用依赖解析。 */
 async function resolveDshInstall() {
   const fromEnv = process.env.CHATDSH_DSH_INSTALL;
   if (fromEnv) return resolve(fromEnv);
 
   // dsh 的 bin 指向 <安装根>/lib/bin.js，因此安装根是它的上两级目录。
-  for (const dir of (process.env.PATH ?? '').split(':').filter(Boolean)) {
-    const bin = join(dir, 'dsh');
-    if (!await exists(bin)) continue;
-    const real = await realpath(bin);
-    if (real.endsWith('/lib/bin.js')) return dirname(dirname(real));
+  const dirs = (process.env.PATH ?? '').split(sep === '\\' ? ';' : ':').filter(Boolean);
+  const names = process.platform === 'win32' ? ['dsh.cmd', 'dsh.ps1', 'dsh'] : ['dsh'];
+  for (const dir of dirs) {
+    for (const name of names) {
+      const bin = join(dir, name);
+      if (!await exists(bin)) continue;
+      const install = await resolveLaunchTarget(bin);
+      if (install !== undefined) return install;
+    }
   }
 
   const require = createRequire(import.meta.url);
@@ -66,7 +93,10 @@ async function link(linkPath, target) {
   const replaced = current !== undefined || await exists(linkPath);
   if (replaced) await rm(linkPath, { recursive: true, force: true });
   await mkdir(dirname(linkPath), { recursive: true });
-  await symlink(target, linkPath, 'dir');
+  // Windows 上创建目录符号链接需要管理员权限，目录联接（junction）不需要；两者都能让
+  // 模块解析穿过链接。Unix 上仍用普通目录符号链接。
+  const type = process.platform === 'win32' ? 'junction' : 'dir';
+  await symlink(target, linkPath, type);
   return replaced ? 'replaced' : 'created';
 }
 

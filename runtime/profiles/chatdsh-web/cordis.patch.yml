@@ -117,3 +117,9 @@
   name: '@chatdsh/host-mcp-server'
   config:
     enabled: false
+
+# 主题插件：把界面基础设计的令牌与样式带给上游外壳。
+# `immediately` 让它在启动早期挂样式，首次绘制就落到本设计的画布与色调上。
+- insert:
+    - id: chatdsh-client-theme
+      name: '@chatdsh/client-theme'

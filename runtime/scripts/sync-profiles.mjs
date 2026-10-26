@@ -76,7 +76,8 @@ for (const name of names) {
   else if (await exists(link)) {
     throw new Error(`${link} 已存在且不是符号链接，请先自行处理，本脚本不覆盖真实目录`);
   }
-  await symlink(source, link, 'dir');
+  // Windows 上目录符号链接需要管理员权限，目录联接不需要；两者都能被 DSH 按路径解析。
+  await symlink(source, link, process.platform === 'win32' ? 'junction' : 'dir');
   linked.push(`${name} -> ${source}`);
 }
 

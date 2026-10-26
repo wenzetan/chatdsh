@@ -23,6 +23,8 @@
     "verify:client-asset": "node scripts/verify-client-asset.mjs --profile chatdsh-web --package @chatdsh/client-projects",
     "verify:acp": "node scripts/verify-acp.mjs --profile chatdsh-acp --cwd .",
     "verify:client-ui": "node scripts/verify-client-ui.mjs",
+    "verify:theme-ui": "node scripts/verify-theme-ui.mjs",
+    "verify:desktop-shell": "node scripts/verify-desktop-shell.mjs",
     "verify:isolation": "node scripts/verify-isolation.mjs",
     "verify:multi-client": "node scripts/verify-multi-client.mjs",
     "verify:receipt-sync": "node scripts/verify-receipt-sync.mjs",
