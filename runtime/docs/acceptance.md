@@ -161,6 +161,33 @@ Windows 真机复核：在 `homedesktop` 上占住 `127.0.0.1:3080` 后启动安
 「计算 123456+1」收到 `123457`。
 
 
+### 5.5 客户端经控制平面接入
+
+**通过（Web 与桌面壳实测）。** 桌面壳启动控制平面，控制平面以配置的 DSH 入口拉起运行时并等待启动地址；桌面壳用启动口令调用 `/chatdsh/gateway/bootstrap` 换取运行时的带令牌路径，再把窗口指向控制平面。页面、API 与 `/api/remote.mux` 的 WebSocket 升级都经同一个反代，反代改写 `Host`、`Origin` 与 `Referer` 后注入身份头部，并把控制平面的设备 cookie 与运行时的会话 cookie 一起返回浏览器。
+
+```bash
+node --test e2e/unit/gateway-client-integration.test.mjs
+node scripts/verify-desktop-shell.mjs --port 3124
+```
+
+第一条断言启动口令的鉴权顺序、设备 cookie、身份头部注入、Origin 改写、自动化启停落库与 WebSocket 升级转发；第二条用真实 Electron 壳、真实控制平面与真实运行时验证窗口地址落在控制平面上，页面可访问且桌面桥正常。控制平面自身的托管运行时就绪与退出回收见 `gateway/src/runtime.ts`，信号登记在 [telemetry.md](telemetry.md) 第六节。
+
+### 5.6 Android 客户端
+
+**通过（release APK 已构建并核对）。** Android 载体以上游 [Clarklevis1995/dsh-mobile](https://github.com/Clarklevis1995/dsh-mobile) 为基础，源码分三层：`mobile/base` 是上游子树快照，`mobile/overlay` 是本仓库的适配，`mobile/android` 是合成出的构建目录（不进版本管理）。上游的协议解码、事件折叠、会话状态机与界面结构因此可以持续跟随，本仓库只维护真正不同的部分，分层与升级流程见 [Android 客户端](mobile.md)。
+
+手机只与控制平面通信：配对码在控制平面换成设备令牌，每次启动用令牌换运行时的带令牌路径，业务通道是运行时的 `/ws/mobile`。控制平面在 WebSocket 升级阶段校验设备令牌后转发，插件只接受本机回环直连；配对载荷由控制平面按上游客户端的格式下发，客户端不需要改协议代码。令牌只存 SHA-256 摘要，设备吊销后 HTTP 与 WebSocket 同时拒绝。
+
+```bash
+node scripts/build-android.mjs
+/opt/android-sdk/build-tools/35.0.0/aapt dump badging .run/apk/chatdsh0.4.0.apk
+/opt/android-sdk/build-tools/35.0.0/apksigner verify --print-certs .run/apk/chatdsh0.4.0.apk
+cd runtime && node scripts/verify-mobile-channel.mjs
+cd runtime && node scripts/verify-mobile-telemetry.mjs
+```
+
+实测 `applicationId` 为 `com.clarklevis.dsh.android`，`versionName` 为 `0.4.0`（`versionCode` 13），release 包使用项目自有签名证书 `CN=ChatDSH`，签名校验通过。手机业务通道的验收由 `verify-mobile-channel.mjs` 用真实控制平面、托管运行时与真实插件完成：配对签发令牌、令牌换启动路径、未带令牌的升级被拒绝、配对子协议返回 `paired` 帧、带令牌的升级收到 `hello`（协议 3、21 项能力）、吊销后 HTTP 与 WebSocket 同时拒绝。遥测上报的验收由 `verify-mobile-telemetry.mjs` 完成：合法批次按信号分组计数、未登记属性计入丢弃、邮箱与内网地址与未登记名称被拒绝并给出原因、无效令牌返回 401。APK 下载服务监听 `CHATDSH_APK_BIND` 指定的地址与 8099 端口（缺省只监听回环），产物命名为 `chatdsh<版本号>.apk`。
+
 ## 六、存储替换
 
 **未触及。** 当前只有 JSONL 一种会话日志后端，`bundle-storage-jsonl` 显式钉住 `session-persistence-jsonl`。
@@ -495,7 +522,7 @@ node scripts/check-upstream-names.mjs
 
 **自建 Remote 面板已接通客户端贡献。** 新增 `@chatdsh/core-remote-client` 构造器，九个产品客户端插件在 `apply` 里手写 descriptor、`$mount` 后用 `ctx.inject` 等命名空间就绪再注册面板。`scripts/verify-remote-namespaces.mjs` 在真实页面里断言十个自建命名空间全部挂载，并对每个命名空间做一次只读调用，全部返回成功。审批、制品、助手、连接器等服务的 `remove` 与 Remote 命名空间服务自带方法冲突，宿主导出名改为 `delete`。
 
-**面板组件与网关 HTTP 分支没有自动化测试。** 客户端面板已补上真实点击交互：`scripts/verify-connector-toggle-ui.mjs` 在设置页连接器区段点击「停用」，断言界面变成「（已停用）」且存储记录同步；设置页各面板的远程结果按 `{ ok, value }` 解包，模型提供方、技能、连接器区段均能渲染。网关的 webhook 路由已由 `gateway-webhook-http.test.mjs` 覆盖真实 HTTP 请求、鉴权顺序与落库。服务层的依赖注入由 `e2e/unit/service-contracts.test.mjs` 守住，这一轮它抓出 `host/context-insights` 与 `host/model-provider` 都漏了 `static inject`。
+**客户端面板与网关 HTTP 分支有自动化覆盖。** 客户端面板已补上真实点击交互：`scripts/verify-connector-toggle-ui.mjs` 在设置页连接器区段点击「停用」，断言界面变成「（已停用）」且存储记录同步；设置页各面板的远程结果按 `{ ok, value }` 解包，模型提供方、技能、连接器区段均能渲染。网关的 webhook 路由由 `gateway-webhook-http.test.mjs` 覆盖鉴权顺序与落库，自动化启停、设备 cookie、身份头部注入、Origin 改写与 WebSocket 升级由 `gateway-client-integration.test.mjs` 覆盖。服务层的依赖注入由 `e2e/unit/service-contracts.test.mjs` 守住，它抓出过 `host/context-insights` 与 `host/model-provider` 漏写 `static inject`。
 
 **主题插件契约不在本次验收范围。** [theme-plugin-contract.md](theme-plugin-contract.md) 定义了一套 `ctx.theme` 服务与主题插件的接入方式（`ctx.theme.register`、`ctx.theme.overrideTokens`、`theme/change` 事件、呈现适配器注入 CSS 变量）。架构文档第十二节没有对应条目，代码里也没有实现这套运行时。它描述的是可选能力的扩展点：启用时要先实现 `ctx.theme` 运行时与呈现适配器，再按该契约写主题插件。
 

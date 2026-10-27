@@ -56,5 +56,5 @@
 |---|---|
 | 扩展包 | 装卸、连接器行同步、MCP 握手都已可用（`extensions.mjs`、`verify-mcp-connection.mjs`、`verify-telemetry-sync.mjs`）；界面出现面板与工具以 `mcp__` 前缀进目录这两条要等能进主界面的会话 |
 | 插件契约 | 自建包以工作区链接安装；`dsh plugin --profile … add` 从登记处拉取这条没有实跑，需要一份发布到登记处的包 |
-| 通知分级 | `two-stage-with-phone` 这一档未实现，需要手机端接入才有意义 |
+| 通知分级 | `two-stage-with-phone` 这一档未实现；Android 客户端已接入控制平面，还需系统通知通道才能验证手机兜底 |
 | 连接器的 MCP 行 | 生成与同步计划已可用，真正插入加载器后的效果要一次运行时交互才能观察 |

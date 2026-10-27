@@ -138,3 +138,29 @@
 - insert:
     - id: chatdsh-client-theme
       name: '@chatdsh/client-theme'
+
+# 移动端网关插件：手机经控制平面接入，运行时不直接对外监听。
+#
+# 边界划分：控制平面是手机的唯一入口，负责配对、设备令牌与吊销；插件只在本机回环上
+# 提供 /ws/mobile，供控制平面转发。插件自身的设备鉴权关闭（requireAuth: false），
+# 因为控制平面的转发请求没有插件侧凭证；鉴权落在控制平面上，每个 HTTP 请求与每次
+# WebSocket 升级都校验设备令牌，令牌只存 SHA-256 摘要，吊销后立即失效。
+#
+# lanEnabled 关闭，插件不开独立局域网监听；公网与局域网访问都只经控制平面。
+#
+# deviceFile 与 gatewayStateFile 必须落在数据根下：插件缺省会写到 os.homedir()/.dsh，
+# 在只读主目录下会让整条插件行不激活（日志表现为 "1 entry did not activate"）。
+- insert:
+    - id: mobile-gateway
+      name: 'dsh-plugin-mobile-gateway'
+      config:
+        gatewayEnabled: true
+        gatewayMode: persistent
+        requireAuth: false
+        adminLoopbackOnly: true
+        lanEnabled: false
+        path: '/ws/mobile'
+        deviceFile: !!js dshHomePath('mobile-gateway/devices.json')
+        gatewayStateFile: !!js dshHomePath('mobile-gateway/state.json')
+        gatewayWaitTimeoutMs: 300000
+        pairingTtlMs: 300000

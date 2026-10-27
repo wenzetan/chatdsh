@@ -1,0 +1,27 @@
+# gitleaks 误报登记。每行一个指纹，格式为 文件路径:规则id:行号。
+#
+# 这里登记的全部是「第三方上游源码快照」里的命中：mobile/base 是上游
+# Clarklevis1995/dsh-mobile 的原样副本，按本仓库的分层规则永不修改，因此不能在
+# 源码里加行内放行。逐条核对过命中内容，都是语法片段或上游自带测试夹具，
+# 不含本机网络位置、身份信息或真实凭据。
+#
+# 新增登记必须写清命中内容为什么不是秘密，否则下次评审无法判断。
+#
+# 一、Kotlin 语法片段被误判：接收者标签与注解被邮箱规则命中；配置字段名里的
+#     路径后缀被私有域名规则命中。
+runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/ui/DshTheme.kt:chatdsh-email:133
+runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/ui/DshTableBlockParserFactory.kt:chatdsh-private-hostname:3
+runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/ui/DshTableBlockParserFactory.kt:chatdsh-private-hostname:4
+runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/ui/DshMarkdownText.kt:chatdsh-email:643
+runtime/mobile/base/shared/src/commonTest/kotlin/com/clarklevis/dsh/shared/ConversationFileReferencesTest.kt:chatdsh-email:54
+runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/AndroidSharedStateHolder.kt:chatdsh-private-hostname:2290
+runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/AndroidSharedStateHolder.kt:chatdsh-email:2485
+#
+# 二、上游自带测试夹具：模拟器回环地址与文档网段用例，用于验证端点解析。
+runtime/mobile/base/androidApp/src/androidTest/kotlin/com/clarklevis/dsh/android/MultiGatewaySmokeDeviceTest.kt:chatdsh-internal-ipv4:78
+runtime/mobile/base/shared/src/commonTest/kotlin/com/clarklevis/dsh/shared/GatewayProfileTest.kt:chatdsh-internal-ipv4:25
+runtime/mobile/base/shared/src/commonTest/kotlin/com/clarklevis/dsh/shared/GatewayProfileTest.kt:chatdsh-internal-ipv4:31
+#
+# 三、上游界面文案的人名占位与凭据存储类的字段名。
+runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/platform/AndroidGatewayCredentialStore.kt:chatdsh-provider-credential:128
+runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/ui/TeamUi.kt:chatdsh-cn-name:485

@@ -142,6 +142,7 @@ async function startGateway() {
     runSpan: (_n, _a, fn) => fn({ setAttribute() {}, setAttributes() {}, recordException() {}, end() {} }),
     runSpanSync: (_n, _a, fn) => fn({ setAttribute() {}, setAttributes() {}, recordException() {}, end() {} }),
     currentTraceId: () => undefined,
+    withContext: (_carrier, fn) => fn(),
   };
   const server = createGatewayServer({
     config: { ...readConfig(), port: 0, accessProvider: 'manual', llmGateway: { quota: {} } },

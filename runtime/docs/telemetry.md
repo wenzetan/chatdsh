@@ -156,6 +156,8 @@ flowchart TB
 | span | `chatdsh.gateway.power.policy` | 电源策略下发与生效 | `power.mode`、`outcome` |
 | span | `chatdsh.gateway.webhook` | 外部 webhook 投递处理 | `automation.id`、`outcome` |
 | event | `chatdsh.gateway.auth.failed` | 认证失败 | `auth.mode`、`error.code` |
+| event | `chatdsh.gateway.runtime.ready` | 运行时打印启动地址并探活通过 | `runtime.id` |
+| event | `chatdsh.gateway.runtime.exited` | 托管运行时意外退出 | `runtime.id`、`exit.code`、`signal` |
 | event | `chatdsh.gateway.power.failed` | 阻止睡眠失败或被执行环境拒绝 | `power.mode`、`error.code` |
 | event | `chatdsh.gateway.webhook.rejected` | webhook 投递被拒绝 | `reason`、`error.code` |
 | metric | `chatdsh_http_requests_total` | 全部入站请求 | `route`、`method`、`status_class` |
@@ -166,6 +168,18 @@ flowchart TB
 | metric | `chatdsh_power_policy_active` | 当前生效的保活与阻止睡眠档位 | `power.mode` |
 | metric | `chatdsh_webhook_receipts_total` | webhook 投递结果 | `outcome` |
 | metric | `chatdsh_mcp_registry_writes_total` | MCP 端点上报次数 | `outcome` |
+| metric | `chatdsh_mobile_pairings_total` | 手机配对结果 | `outcome` |
+| metric | `chatdsh_mobile_sessions_total` | 手机取运行时启动路径 | `outcome` |
+| span | `chatdsh.gateway.mobile.telemetry` | 移动端遥测批次的中转接收与投递 | `action`、`outcome`、`count`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.mobile.rejected` | 配对、取启动路径与设备管理的拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_mobile_telemetry_batches_total` | 移动端遥测批次接收结果 | `outcome`、`error.code` |
+| metric | `chatdsh_mobile_devices_total` | 手机设备管理操作 | `action`、`outcome` |
+| span | `chatdsh.gateway.mobile.devices` | 已配对手机设备的列举与吊销 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.mobile.telemetry.rejected` | 移动端遥测批次被拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_mobile_telemetry_records_total` | 移动端遥测记录接收结果 | `signal`、`outcome` |
+| event | `chatdsh.gateway.mobile.upgrade.rejected` | 手机 WebSocket 升级被拒绝 | `error.type`、`error.code` |
+| metric | `chatdsh_mobile_upgrades_total` | 手机 WebSocket 升级结果 | `outcome` |
+| span | `chatdsh.gateway.mobile.pairing` | 下发配对载荷 | `outcome`、`error.type`、`error.code` |
 
 ### 6.2 运行时宿主平面
 
@@ -226,6 +240,8 @@ flowchart TB
 | 信号 | 名称 | 触发点 | 必需属性 |
 |---|---|---|---|
 | span | `chatdsh.llm.stream` | 一次模型请求 | `provider`、`model`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.mobile.pair` | 手机配对并签发设备令牌 | `platform`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.mobile.session` | 手机用设备令牌取运行时启动路径 | `outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.llm` | 控制平面模型入口的一次请求 | `provider`、`outcome` |
 | span | `chatdsh.gateway.mcp.registry` | MCP 全局注册与端点记录的读写 | `outcome`、`error.code` |
 | span | `chatdsh.llm.retry` | 重试 | `attempt`、`error.code` |
@@ -282,6 +298,9 @@ flowchart TB
 | metric | `chatdsh_mobile_offline_queue_depth` | 离线队列深度 | 无 |
 
 移动端不持有 OpenObserve 凭据，上报经控制平面端点 `POST /chatdsh/telemetry/mobile`，鉴权用设备令牌，属性里带 `device.kind=mobile`。
+手机的业务通道是运行时的 `/ws/mobile`，控制平面在 WebSocket 升级阶段校验设备令牌：未配对或已吊销的令牌回 401，请求不进入运行时。拒绝写 `chatdsh.gateway.mobile.upgrade.rejected` 事件与 `chatdsh_mobile_upgrades_total` 计数，记录在 6.1 节。
+
+中转端点接受 `{records:[...]}` 批量载荷，单批最多 64 条、256 KB，单条最多 16 KB，设备维度每分钟最多 60 批。控制平面为每条记录补写 `chatdsh.surface=mobile` 与 `device.kind=mobile`，再用自己的 exporter 出网；记录名必须是 6.7 节登记的七个名称之一，属性键必须落在第五节与 6.7 节登记过的白名单里。未登记键丢弃并计入 `chatdsh_telemetry_dropped_total`，命中提示词、消息正文、工具参数与结果、文件内容、凭据、Cookie、`Authorization`、请求体原文、邮箱、手机号、真实姓名、主机名与内网地址的批次按具体原因拒绝。中转自身的信号登记在 6.1 节。
 
 ### 6.8 命令行
 

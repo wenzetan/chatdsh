@@ -112,6 +112,22 @@ export class AutomationStore {
     return rows.map(toRecord);
   }
 
+
+  /**
+   * 切换一条自动化的启用状态。
+   * @param id - 自动化标识。
+   * @param accountId - 记录所属账号。
+   * @param enabled - 目标状态。
+   * @returns 更新后的记录；记录不存在或不属于该账号时返回 undefined。
+   */
+  setEnabled(id: string, accountId: string, enabled: boolean): AutomationRecord | undefined {
+    const result = this.database
+      .prepare('update automations set enabled = ? where id = ? and account_id = ?')
+      .run(enabled ? 1 : 0, id, accountId);
+    if (Number(result.changes) === 0) return undefined;
+    return this.get(id);
+  }
+
   /** 记录一次投递；同一事件重复投递返回 false。 */
   recordEvent(event: AutomationEvent): boolean {
     const result = this.database

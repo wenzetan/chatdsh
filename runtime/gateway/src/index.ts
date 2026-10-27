@@ -10,6 +10,7 @@ export { GatewayStore, PushQueue, ReplicaStore, ScheduleStore, ShareStore, readC
 export type {
   AccountRecord,
   DeviceRecord,
+  MobileDeviceRecord,
   GatewayConfig,
   PushItem,
   ReplicaAppendResult,
@@ -22,6 +23,8 @@ export type {
   TaskRecord,
 } from './store.ts';
 export { createScheduler } from './scheduler.ts';
+export { createRuntimeSupervisor, parseRuntimeLaunchConfig, RuntimeSupervisor, findFreePort } from './runtime.ts';
+export type { RuntimeLaunchConfig, RuntimeTarget, RuntimeSupervisorOptions } from './runtime.ts';
 export type { Scheduler, SchedulerOptions } from './scheduler.ts';
 export { createPushHub } from './push.ts';
 export type { DeliveryResult, PushHub } from './push.ts';

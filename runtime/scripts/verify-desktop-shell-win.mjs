@@ -1,13 +1,13 @@
 // 桌面壳在 Windows 真机上的验收（在 Windows 主机上用 node 运行）。
 //
-// 启动 Electron 主进程，让它拉起 `chatdsh-desktop` 运行时并加载界面，然后在渲染进程里读取
-// DOM 与计算样式，核对界面基础设计确实生效。断言：
-//   1. 运行时打印带令牌的地址并可用；
+// 启动 Electron 主进程，让它拉起控制平面与真实 `chatdsh-desktop` 运行时，再由控制平面
+// 下发带令牌路径加载界面，然后在渲染进程里读取 DOM 与计算样式，核对界面基础设计确实生效。
+// 断言：
+//   1. 控制平面与运行时都就绪，控制平面地址可用；
 //   2. 主题样式节点已挂载，`data-color-scheme` 有取值；
 //   3. 画布、面板、品牌、成功、警告、危险六个令牌解析为本设计取值，正文 13px；
 //   4. 上游 `--dsw-alias-bg-base` 已映射到本设计画布；
 //   5. 自建面板（项目、上下文）出现在界面上。
-// 全程不依赖截图，结论来自界面里的计算值与文本。
 //
 // 用法（在 Windows 上）：
 //   node runtime/scripts/verify-desktop-shell-win.mjs
@@ -74,7 +74,7 @@ await Promise.race([exited, timeout]);
 
 // 运行时就绪
 const ready = out.match(/\[chatdsh\] runtime ready: (http:\/\/\S+)/);
-expect('运行时就绪', ready !== null, ready?.[1] ?? '');
+expect('实例就绪', ready !== null, ready?.[1] ?? '');
 
 // 解析自检 JSON
 const selftestLine = out.split(/\r?\n/).find((line) => line.includes('[chatdsh] selftest '));

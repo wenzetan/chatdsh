@@ -2,8 +2,9 @@
 /**
  * 控制平面进程入口。
  *
- * 启动顺序：读配置、建遥测客户端、开存储、监听。退出时先停监听，再有界刷新遥测并关库。
- * 遥测关闭时不构造任何管道，本进程不产生到 OpenObserve 的连接。
+ * 启动顺序：读配置、建遥测客户端、开存储、拉起运行时、监听。退出时先停监听，
+ * 再停运行时、有界刷新遥测并关库。遥测关闭时不构造任何管道，本进程不产生到
+ * OpenObserve 的连接。
  * @module @chatdsh/gateway/main
  */
 
@@ -12,8 +13,9 @@ import { createTelemetryClient } from '@chatdsh/core-diagnostics/client';
 import { defaultTelemetryConfig } from '@chatdsh/core-diagnostics/config';
 import { createGatewayServer } from './server.ts';
 import { createPushHub } from './push.ts';
+import { createRuntimeSupervisor, parseRuntimeLaunchConfig } from './runtime.ts';
 import { createScheduler } from './scheduler.ts';
-import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ScheduleStore, ShareStore, readConfig } from './store.ts';
+import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ScheduleStore, ShareStore, dataRoot, readConfig } from './store.ts';
 
 const config = readConfig();
 
@@ -25,6 +27,14 @@ const telemetry = createTelemetryClient({
   }),
   component: '@chatdsh/gateway',
 });
+
+const runtime = createRuntimeSupervisor({
+  config: parseRuntimeLaunchConfig(process.env, dataRoot()),
+  externalUrl: config.runtimeUrl,
+  telemetry,
+  onLog: (line) => console.log(`[runtime] ${line}`),
+});
+const bootstrapSecret = process.env.CHATDSH_BOOTSTRAP_SECRET;
 
 const store = new GatewayStore(config.databasePath);
 const replica = new ReplicaStore(store.handle());
@@ -38,20 +48,32 @@ const push = createPushHub({
   escalationMs: config.pushEscalationMs,
   telemetry: { counter: (name, options) => telemetry.counter(name, options) },
 });
-const server = createGatewayServer({ config, store, replica, share, schedule, receipts, push, telemetry });
+const server = createGatewayServer({
+  config,
+  store,
+  replica,
+  share,
+  schedule,
+  receipts,
+  push,
+  telemetry,
+  runtime,
+  bootstrapSecret,
+});
 
+await runtime.start();
 const scheduler = createScheduler({
   store: schedule,
   telemetry,
   push,
-  runtimeUrl: config.runtimeUrl,
+  runtimeUrl: runtime.url(),
   intervalMs: 2000,
 });
 scheduler.start();
 
 await server.start();
 telemetry.log('info', 'gateway listening', { 'http.route': 'healthz' });
-console.log(`chatdsh-gateway ${server.url()} → ${config.runtimeUrl}`);
+console.log(`chatdsh-gateway ${server.url()} → ${runtime.url()}`);
 
 let stopping = false;
 async function shutdown(signal: string): Promise<void> {
@@ -60,6 +82,7 @@ async function shutdown(signal: string): Promise<void> {
   telemetry.log('info', 'gateway stopping', { reason: signal });
   scheduler.stop();
   await server.stop();
+  await runtime.stop();
   await telemetry.flush(3000);
   await telemetry.shutdown();
   store.close();

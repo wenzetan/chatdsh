@@ -88,6 +88,7 @@ function resolveDshLayout() {
 function assertBuilt() {
   const required = [
     join(ROOT, 'packages', 'core', 'identity', 'lib', 'index.js'),
+    join(ROOT, 'gateway', 'lib', 'main.js'),
     join(ROOT, 'packages', 'client', 'projects', 'lib', 'client.js'),
     join(REPO, 'dsh-adapter', 'lib', 'index.js'),
   ];
@@ -197,6 +198,8 @@ function stage(layout) {
       if (existsSync(join(dir, 'package.json'))) packageDirs.push(dir);
     }
   }
+  packageDirs.push(join(ROOT, 'gateway'));
+  packageDirs.push(join(REPO, 'forge-bridge'));
   packageDirs.push(join(REPO, 'dsh-adapter'));
 
   const profileModules = join(profileDest, 'node_modules');

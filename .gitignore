@@ -29,3 +29,7 @@ refer_repos/
 
 # 并行实现的独立工作树
 .worktrees/
+
+# Android 合成构建目录：由 runtime/scripts/sync-mobile-base.mjs 从 mobile/base 与
+# mobile/overlay 生成，不进版本管理。签名密钥与 APK 放在 .run 下，同样不纳入。
+runtime/mobile/android/

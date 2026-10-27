@@ -60,6 +60,7 @@ async function startGateway(upstreamUrl, quota) {
       runSpan(_name, _attributes, fn) { return fn({ setAttribute() {}, setAttributes() {}, recordException() {}, end() {} }); },
       runSpanSync(_name, _attributes, fn) { return fn({ setAttribute() {}, setAttributes() {}, recordException() {}, end() {} }); },
       currentTraceId() { return undefined; },
+      withContext(_carrier, fn) { return fn(); },
       log() {},
       counter: () => ({ add() {} }),
       histogram: () => ({ record() {} }),

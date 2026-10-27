@@ -10,6 +10,8 @@
 | [architecture-diagram.md](docs/architecture-diagram.md) | 设计架构图：平面构成、配置叠加、装配点、加载次序、会话回合、数据布局、遥测管道与验收对应 |
 | [deployment.md](docs/deployment.md) | 部署形态与兼容接缝：单机组件、数据布局、多租户扩展 |
 | [desktop-mobile.md](docs/desktop-mobile.md) | 桌面与移动端载体 |
+| [mobile.md](docs/mobile.md) | Android 客户端的配对、构建、release 产物命名与安装包下载服务 |
+| [mobile-protocol.md](docs/mobile-protocol.md) | Android 与未来 iOS 共用的配对、RPC 与会话事件流协议 |
 | [client-modules.md](docs/client-modules.md) | 四种客户端的模块构成与分层 |
 | [reachability.md](docs/reachability.md) | 网络可达性与 Tailscale 接入 |
 | [hermes-integration.md](docs/hermes-integration.md) | 聊天后端与记忆接入：Hermes 与 Hindsight 的可选组合、四种形态、插件划分 |
@@ -55,6 +57,12 @@ dsh --profile chatdsh-web --no-open   # 启动单机 Web 形态
 
 ```sh
 node scripts/build-client.mjs        # 把 packages/client 下每个包打成 window.__ModuleLoader__ 形态
+```
+
+Android release 包由独立脚本构建，产物固定命名并自动提供下载地址：
+
+```sh
+node scripts/build-android.mjs       # 产出 .run/apk/chatdsh<版本号>.apk 并打印下载地址
 ```
 
 调试用的容器环境在 [`dev/`](dev/)，编排与说明见 [dev/README.md](dev/README.md)。dsh 运行时、Hermes、Hindsight 各自跑在独立容器里，端口与宿主上已经在跑的实例错开。

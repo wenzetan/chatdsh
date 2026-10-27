@@ -1,0 +1,40 @@
+{
+  "description": "ChatDSH 对上游 dsh-mobile 的适配层。每个条目声明一个由本仓库接管的文件，并记录它对应的上游文件摘要，用于检测上游漂移。新增文件（added: true）没有上游原文，不参与漂移比对。",
+  "entries": [
+    {
+      "path": "androidApp/build.gradle.kts",
+      "reason": "上游用 debug 密钥签 release 包并在构建脚本里硬写版本号；改为读取 mobile/version.properties 的版本与仓库自有 release 密钥，缺密钥时直接失败。",
+      "upstreamSha256": "133161ce20aa2ec54c360eb9aceceebe6cadc6216cc3f9b4ebb57a6a4507e5a5"
+    },
+    {
+      "path": "androidApp/src/main/kotlin/com/clarklevis/dsh/android/ui/DshTheme.kt",
+      "reason": "上游的 DshColors 是项目自有的一小套颜色，与本仓库的界面基础设计令牌不一致；按 docs/ui-baseline-design.md 的颜色令牌重写，并保留上游全部接口名（DshColors.Ocean/Ink/Success 等）供页面继续引用。",
+      "upstreamSha256": "e04b0efd614227773550c8f9a7e19fc0393ec9999334f9ca8da1a3da0d548f61"
+    },
+    {
+      "path": "androidApp/src/main/kotlin/com/clarklevis/dsh/android/platform/ControlPlanePairing.kt",
+      "reason": "上游没有控制平面的概念：它的配对直接面向运行时插件。这个新增文件负责与控制平面配对、保存设备令牌、换取运行时启动路径，业务通道仍走上游的插件协议。",
+      "added": true
+    },
+    {
+      "path": "androidApp/src/main/kotlin/com/clarklevis/dsh/android/telemetry/MobileTelemetry.kt",
+      "reason": "上游没有遥测上报：它的所有状态都只留在本机。这个新增文件按 docs/mobile-protocol.md 第三节把移动端信号上报给控制平面，记录名与属性键限定在 docs/telemetry.md 6.7 节登记过的范围。",
+      "added": true
+    },
+    {
+      "path": "androidApp/src/main/kotlin/com/clarklevis/dsh/android/MobileTelemetryReporter.kt",
+      "reason": "上游没有遥测：它的运行状态不离开本机。这个新增文件把设备令牌加密保存、构造上报器，并在应用启动与退到后台时上报与刷出队列。",
+      "added": true
+    },
+    {
+      "path": "androidApp/src/main/kotlin/com/clarklevis/dsh/android/DshAndroidApplication.kt",
+      "reason": "上游应用类没有遥测接点。接管后在启动处建立上报器并记启动信号，在退到后台处刷出队列；其余生命周期逻辑保持上游原样。",
+      "upstreamSha256": "38be4707ff3f52acb2f4a08669c3c2645dc92d00088266bb72fdc8b4f1317225"
+    },
+    {
+      "path": "androidApp/src/main/kotlin/com/clarklevis/dsh/android/AndroidMultiGatewayStore.kt",
+      "reason": "上游配对成功后没有把地址与令牌交给遥测。接管后在配对提交前补一处上报器初始化；配对流程本身与上游一致。",
+      "upstreamSha256": "8d928c519e4f49ec83ddb1bd947ec05b79aa2bc2db6afd784e3dd407821c73e9"
+    }
+  ]
+}

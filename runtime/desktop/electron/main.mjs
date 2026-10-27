@@ -1,47 +1,65 @@
 /**
  * ChatDSH 桌面壳主进程。
  *
- * 负责四件事：取单实例锁；用启动页按启动五阶段逐步报进度；拉起运行时并把窗口指向它；
- * 提供托盘、关闭到托盘、保活与强制不休眠。运行时子进程的编排在 `launch.mjs`，
- * 页面的最小桥在 `preload.mjs`。
+ * 负责四件事：取单实例锁；用启动页按启动五阶段逐步报进度；拉起控制平面并由它拉起运行时，
+ * 把窗口指向控制平面；提供托盘、关闭到托盘、保活与强制不休眠。控制平面进程的编排在
+ * `gateway-launch.mjs`，页面的最小桥在 `preload.cjs`。
  * @module chatdsh-desktop-shell/main
  */
 
 import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, powerSaveBlocker, shell } from 'electron';
+import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RuntimeLauncher } from './launch.mjs';
+import { GatewayLauncher } from './gateway-launch.mjs';
 import { setTelemetryOrigin, startSpan } from './telemetry.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SPLASH = join(HERE, 'splash.html');
 const PRELOAD = join(HERE, 'preload.cjs');
 const SPLASH_PRELOAD = join(HERE, 'splash-preload.cjs');
-
 /**
  * 解析 dsh 的启动入口。
  *
  * 打包后优先用随包携带的 `@deepseek-ai/dsh` 入口（`resources/app/dsh/lib/bin.js`）；
  * 开发态用环境变量 `CHATDSH_DSH_BIN`，都没有时回退到 PATH 上的 `dsh`。
  */
-function resolveDshBin(userData) {
+function resolveDshBin() {
   const bundled = join(process.resourcesPath ?? '', 'app', 'dsh', 'lib', 'bin.js');
   if (process.env.CHATDSH_DSH_BIN !== undefined) return process.env.CHATDSH_DSH_BIN;
   if (existsSync(bundled)) return bundled;
   return 'dsh';
 }
 
+/**
+ * 解析控制平面的启动入口。
+ *
+ * 打包后它在 profile 的依赖目录里，这样控制平面对 `@chatdsh/*` 的依赖与运行时共用同一份；
+ * 开发态取仓库里的 `gateway/lib/main.js`。
+ */
+function resolveGatewayBin(profile) {
+  if (process.env.CHATDSH_GATEWAY_BIN !== undefined) return process.env.CHATDSH_GATEWAY_BIN;
+  const bundled = join(process.resourcesPath ?? '', 'app', 'dsh', 'profiles', profile, 'node_modules', '@chatdsh', 'gateway', 'lib', 'main.js');
+  if (existsSync(bundled)) return bundled;
+  const development = join(HERE, '..', '..', 'gateway', 'lib', 'main.js');
+  if (existsSync(development)) return development;
+  throw new Error('找不到控制平面入口；设置 CHATDSH_GATEWAY_BIN 指向 gateway/lib/main.js');
+}
+
 /** 运行时与数据根来自环境变量，未给时落到 userData 下的固定位置。 */
 function resolveConfig() {
   const userData = app.getPath('userData');
+  const profile = process.env.CHATDSH_PROFILE ?? 'chatdsh-desktop';
   return {
     userData,
     launchRoot: process.env.CHATDSH_LAUNCH_ROOT ?? join(userData, 'launch-root'),
     dshHome: process.env.CHATDSH_DSH_HOME ?? join(userData, 'harness'),
-    profile: process.env.CHATDSH_PROFILE ?? 'chatdsh-desktop',
+    profile,
     port: process.env.CHATDSH_PORT === undefined ? undefined : Number.parseInt(process.env.CHATDSH_PORT, 10),
-    dshBin: resolveDshBin(userData),
+    dshBin: resolveDshBin(),
+    gatewayBin: resolveGatewayBin(profile),
+    bootstrapSecret: randomBytes(24).toString('hex'),
     cwd: process.env.CHATDSH_CWD ?? userData,
     keepAliveFile: join(userData, 'keepalive.json'),
   };
@@ -126,17 +144,19 @@ function saveKeepAlive(state) {
   writeFileSync(config.keepAliveFile, JSON.stringify(state, null, 2));
 }
 
-/** 运行时状态与窗口句柄。 */
+/** 控制平面状态与窗口句柄。 */
 const state = {
   keepAlive: loadKeepAlive(),
   powerBlockerId: undefined,
-  launcher: new RuntimeLauncher({
+  gateway: new GatewayLauncher({
+    bin: config.gatewayBin,
     launchRoot: config.launchRoot,
     dshHome: config.dshHome,
-    profile: config.profile,
-    port: config.port,
     dshBin: config.dshBin,
+    profile: config.profile,
     cwd: config.cwd,
+    port: config.port,
+    bootstrapSecret: config.bootstrapSecret,
     onLog: (line) => {
       lastRuntimeLine = line;
       splashLog(line);
@@ -495,15 +515,15 @@ async function boot() {
   const orchestrate = startSpan('chatdsh.desktop.runtime.orchestrate');
   try {
     prepareBundledProfile(config);
-    const started = await state.launcher.start();
-    state.bootUrl = started.bootUrl;
-    setTelemetryOrigin(started.origin);
-    orchestrate('ok', { 'runtime.id': started.origin });
-    state.origin = started.origin;
-    // 固定前缀行：便于脚本与排障时从日志里拿到运行时代 理地址。
-    log(`[chatdsh] runtime ready: ${started.origin} (port ${started.port})`);
-    splashDetail('runtime', `端口 ${started.port}`);
-    splashPhase('runtime', 'done', started.origin);
+    const started = await state.gateway.start();
+    state.origin = started.gatewayUrl;
+    state.bootUrl = `${started.gatewayUrl}${started.bootPath}`;
+    setTelemetryOrigin(started.gatewayUrl);
+    orchestrate('ok', { 'runtime.id': started.gatewayUrl });
+    // 固定前缀行：窗口地址是控制平面地址，运行时由控制平面反代。
+    log(`[chatdsh] runtime ready: ${started.gatewayUrl} (port ${started.gatewayPort}, runtime ${started.runtimePort})`);
+    splashDetail('runtime', `控制平面 ${started.gatewayPort} · 运行时 ${started.runtimePort}`);
+    splashPhase('runtime', 'done', started.gatewayUrl);
   } catch (error) {
     orchestrate('failed');
     const message = error instanceof Error ? error.message : String(error);
@@ -511,7 +531,7 @@ async function boot() {
     log(`[chatdsh] failure: ${message}`);
     splashPhase('runtime', 'failed');
     const brief = message.length > 1800 ? `${message.slice(0, 1800)}\n…（完整内容见日志文件）` : message;
-    splashFail(`运行时启动失败：\n${brief}`, LOG_FILE);
+    splashFail(`实例启动失败：\n${brief}`, LOG_FILE);
     broadcastStatus();
     if (process.env.CHATDSH_EXIT_AFTER_CAPTURE === '1') {
       await new Promise((settle) => setTimeout(settle, 1500));
@@ -613,6 +633,6 @@ if (!gotLock) {
       powerSaveBlocker.stop(state.powerBlockerId);
       state.powerBlockerId = undefined;
     }
-    await state.launcher.stop();
+    await state.gateway.stop();
   });
 }

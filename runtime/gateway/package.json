@@ -28,18 +28,29 @@
       "events": [
         "chatdsh.gateway.auth.failed",
         "chatdsh.gateway.webhook.rejected",
-        "chatdsh.llm.quota.rejected"
+        "chatdsh.gateway.runtime.ready",
+        "chatdsh.gateway.runtime.exited",
+        "chatdsh.llm.quota.rejected",
+        "chatdsh.gateway.mobile.rejected",
+        "chatdsh.gateway.mobile.telemetry.rejected",
+        "chatdsh.gateway.mobile.upgrade.rejected"
       ],
       "spans": [
         "chatdsh.gateway.http",
         "chatdsh.gateway.identity",
         "chatdsh.gateway.proxy",
+        "chatdsh.gateway.runtime.lifecycle",
         "chatdsh.gateway.replica.append",
         "chatdsh.gateway.schedule.run",
         "chatdsh.gateway.share.render",
         "chatdsh.gateway.webhook",
         "chatdsh.gateway.llm",
-        "chatdsh.gateway.mcp.registry"
+        "chatdsh.gateway.mcp.registry",
+        "chatdsh.gateway.mobile.telemetry",
+        "chatdsh.gateway.mobile.devices",
+        "chatdsh.gateway.mobile.pair",
+        "chatdsh.gateway.mobile.session",
+        "chatdsh.gateway.mobile.pairing"
       ],
       "metrics": [
         "chatdsh_http_request_duration_seconds",
@@ -47,8 +58,15 @@
         "chatdsh_push_deliveries_total",
         "chatdsh_schedule_runs_total",
         "chatdsh_webhook_receipts_total",
+        "chatdsh_telemetry_dropped_total",
+        "chatdsh_mobile_telemetry_batches_total",
+        "chatdsh_mobile_telemetry_records_total",
+        "chatdsh_mobile_devices_total",
         "chatdsh_llm_requests_total",
-        "chatdsh_mcp_registry_writes_total"
+        "chatdsh_mcp_registry_writes_total",
+        "chatdsh_mobile_pairings_total",
+        "chatdsh_mobile_sessions_total",
+        "chatdsh_mobile_upgrades_total"
       ]
     }
   },

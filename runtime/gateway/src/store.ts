@@ -4,8 +4,8 @@
  * 单机形态用内置的 SQLite（`node:sqlite`）：账号、会话归属、设备三张表。团队版把
  * 同一组接口换成 Postgres，调用方不变。
  * @module @chatdsh/gateway/store
- */
 
+  /** 列出账号下已配对的手机设备；已吊销的记录同样返回，供设置面显示吊销状态。 */
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
@@ -37,6 +37,8 @@ export interface GatewayConfig {
   readonly pushEscalationMs: number;
   /** 模型入口：上游地址、额度与凭据环境变量名。 */
   readonly llmGateway: LlmGatewayConfig;
+  /** 手机配对码；未配置时配对端点返回 404。 */
+  readonly pairingCode?: string;
 }
 
 /** 一条账号记录。 */
@@ -65,6 +67,18 @@ export interface DeviceRecord {
   readonly origin: string;
   readonly platform: string;
   readonly lastSeenAt: number;
+}
+
+
+/** 一条手机设备记录。令牌本身不落库，只保存 SHA-256 摘要。 */
+export interface MobileDeviceRecord {
+  readonly id: string;
+  readonly accountId: string;
+  readonly name: string;
+  readonly platform: string;
+  readonly createdAt: number;
+  readonly lastSeenAt: number;
+  readonly revokedAt?: number;
 }
 
 /** 数据根：控制平面的数据与运行时共用 `DSH_HOME` 的约定。 */
@@ -135,6 +149,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     pushMode: env.CHATDSH_PUSH_MODE === 'all-at-once' ? 'all-at-once' : 'two-stage',
     pushEscalationMs: Number.parseInt(env.CHATDSH_PUSH_ESCALATION_MS ?? '120000', 10),
     llmGateway: parseLlmGateway(env),
+    ...(env.CHATDSH_PAIRING_CODE === undefined || env.CHATDSH_PAIRING_CODE === '' ? {} : { pairingCode: env.CHATDSH_PAIRING_CODE }),
   };
 }
 
@@ -237,6 +252,17 @@ export class GatewayStore {
         updated_at integer not null,
         primary key (session_id, device_id)
       );
+      create table if not exists mobile_devices (
+        id text primary key,
+        account_id text not null,
+        name text not null,
+        platform text not null,
+        token_hash text not null unique,
+        created_at integer not null,
+        last_seen_at integer not null,
+        revoked_at integer
+      );
+      create index if not exists mobile_devices_by_account on mobile_devices(account_id);
     `);
 
     // 旧库补列：会话要记录它是由哪条会话导入而来的。
@@ -366,6 +392,62 @@ export class GatewayStore {
       lastSeenAt: row.last_seen_at,
     }));
   }
+
+
+  /** 登记一台已配对的手机设备。 */
+  registerMobileDevice(input: { readonly id: string; readonly accountId: string; readonly name: string; readonly platform: string; readonly tokenHash: string }): MobileDeviceRecord {
+    const createdAt = Date.now();
+    this.database
+      .prepare('insert into mobile_devices (id, account_id, name, platform, token_hash, created_at, last_seen_at, revoked_at) values (?, ?, ?, ?, ?, ?, ?, null)')
+      .run(input.id, input.accountId, input.name, input.platform, input.tokenHash, createdAt, createdAt);
+    return { id: input.id, accountId: input.accountId, name: input.name, platform: input.platform, createdAt, lastSeenAt: createdAt };
+  }
+
+  /** 按令牌摘要取手机设备；已撤销的记录按不存在处理。 */
+  mobileDeviceByTokenHash(tokenHash: string): MobileDeviceRecord | undefined {
+    const row = this.database
+      .prepare('select id, account_id, name, platform, created_at, last_seen_at, revoked_at from mobile_devices where token_hash = ?')
+      .get(tokenHash) as { id: string; account_id: string; name: string; platform: string; created_at: number; last_seen_at: number; revoked_at: number | null } | undefined;
+    if (row === undefined || row.revoked_at !== null) return undefined;
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      name: row.name,
+      platform: row.platform,
+      createdAt: row.created_at,
+      lastSeenAt: row.last_seen_at,
+    };
+  }
+
+  /** 记一次手机设备活动。 */
+  touchMobileDevice(id: string): void {
+    this.database.prepare('update mobile_devices set last_seen_at = ? where id = ?').run(Date.now(), id);
+  }
+
+  /** 列出账号下已配对的手机设备；已吊销的记录同样返回，供设置面显示吊销状态。 */
+  listMobileDevices(accountId: string): MobileDeviceRecord[] {
+    const rows = this.database
+      .prepare('select id, account_id, name, platform, created_at, last_seen_at, revoked_at from mobile_devices where account_id = ? order by created_at desc')
+      .all(accountId) as { id: string; account_id: string; name: string; platform: string; created_at: number; last_seen_at: number; revoked_at: number | null }[];
+    return rows.map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      name: row.name,
+      platform: row.platform,
+      createdAt: row.created_at,
+      lastSeenAt: row.last_seen_at,
+      ...(row.revoked_at === null ? {} : { revokedAt: row.revoked_at }),
+    }));
+  }
+
+  /** 吊销一台手机设备；返回是否确实吊销了未吊销的记录。 */
+  revokeMobileDevice(id: string, accountId: string): boolean {
+    const result = this.database
+      .prepare('update mobile_devices set revoked_at = ? where id = ? and account_id = ? and revoked_at is null')
+      .run(Date.now(), id, accountId);
+    return Number(result.changes) > 0;
+  }
+
 
   /** 底层数据库句柄，供同一进程内的其他存储共用同一个连接。 */
   handle(): DatabaseSync {

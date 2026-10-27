@@ -1,13 +1,12 @@
 // 桌面壳的界面验收（可在有显示的 Linux 上跑）。
 //
-// 用 xvfb 起一个虚拟显示，运行 Electron 主进程，让它拉起真实运行时并加载界面。断言：
+// 用 xvfb 起一个虚拟显示，运行 Electron 主进程，让它拉起真实控制平面与运行时并加载界面。
+// 断言：
 //   1. 启动页依次经过身份、运行时、界面三个阶段并落到完成；
-//   2. 主窗口出现并加载到带令牌的运行时地址；
+//   2. 主窗口出现并加载到控制平面下发的带令牌路径；
 //   3. 截图里有内容（非纯黑）且没有桌面桥注入失败；
 //   4. 关闭窗口后进程仍在（托盘常驻），退出后进程消失。
 // 会在 Windows 真机上另跑同一份验收，因此这里覆盖的是壳层的编排与窗口行为。
-//
-// 用法：node scripts/verify-desktop-shell.mjs [--port 3124]
 // 前置：本机装有 xvfb-run、google-chrome、electron（desktop/electron/node_modules）。
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -90,11 +89,11 @@ async function until(test, timeoutMs, label) {
 try {
   await until(() => /\[chatdsh\] runtime ready: http:\/\/127\.0\.0\.1:\d+/.test(log), 120_000, '运行时就绪');
   const m = log.match(/\[chatdsh\] runtime ready: (http:\/\/127\.0\.0\.1:\d+)/);
-  expect('运行时就绪', m !== null, m?.[1] ?? '');
+  expect('实例就绪', m !== null, m?.[1] ?? '');
   const origin = m?.[1];
   if (origin !== undefined) {
     const res = await fetch(`${origin}/`).catch(() => undefined);
-    expect('运行时地址可访问（401 视为鉴权生效）', res !== undefined && (res.status === 401 || res.status === 200), res ? `HTTP ${res.status}` : '连接失败');
+    expect('控制平面地址可访问（401 视为鉴权生效）', res !== undefined && (res.status === 401 || res.status === 200), res ? `HTTP ${res.status}` : '连接失败');
   }
   await until(() => /\[chatdsh\] window shown/.test(log), 30_000, '主窗口显示');
   expect('主窗口已显示', /\[chatdsh\] window shown/.test(log));

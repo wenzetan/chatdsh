@@ -2,7 +2,7 @@
   "name": "chatdsh-desktop-shell",
   "version": "0.1.0",
   "private": true,
-  "description": "ChatDSH 的 Windows 桌面壳：单实例、拉起运行时、原生窗口与托盘、保活与电源策略",
+  "description": "ChatDSH 的 Windows 桌面壳：单实例、拉起控制平面与运行时、原生窗口与托盘、保活与电源策略",
   "type": "module",
   "main": "main.mjs",
   "engines": {

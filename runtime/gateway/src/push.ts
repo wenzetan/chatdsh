@@ -47,7 +47,7 @@ function recordDelivery(options: PushHubOptions, delivered: number, queued: bool
 /** 推送中枢。 */
 export interface PushHub {
   /** 登记一个订阅连接，返回注销函数。 */
-  subscribe(accountId: string, deviceId: string, platform: string, response: ServerResponse): () => void;
+  subscribe(accountId: string, deviceId: string, platform: string, response: ServerResponse, origin?: string): () => void;
   /** 向账号投递一条通知，按分级规则选择目标设备。 */
   deliver(accountId: string, payload: string, sessionId?: string): DeliveryResult;
   /** 账号当前的在线设备数。 */
@@ -100,13 +100,13 @@ export function createPushHub(options: PushHubOptions): PushHub {
   }
 
   return {
-    subscribe(accountId: string, deviceId: string, platform: string, response: ServerResponse): () => void {
+    subscribe(accountId: string, deviceId: string, platform: string, response: ServerResponse, origin = 'sse'): () => void {
       connectionSeq += 1;
       const connection: Connection = { id: `c${connectionSeq}`, deviceId, platform, response, since: Date.now() };
       const set = online(accountId) ?? new Set<Connection>();
       set.add(connection);
       connections.set(accountId, set);
-      devices.touchDevice({ id: deviceId, accountId, origin: 'sse', platform, lastSeenAt: connection.since });
+      devices.touchDevice({ id: deviceId, accountId, origin, platform, lastSeenAt: connection.since });
       return () => {
         set.delete(connection);
         if (set.size === 0) connections.delete(accountId);

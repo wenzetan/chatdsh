@@ -45,6 +45,8 @@ paths = [
     '''(^|/)pnpm-lock\.yaml$''',
     '''(^|/)yarn\.lock$''',
     '''(^|/)refer_repos/''',
+    # 误报登记清单记录了被放行的命中位置，本身不是被扫描的业务内容
+    '''^\\.gitleaksignore$''',
     '''\.(png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|eot|mp4|mov|webm|mp3|wav|pdf|zip|tar|gz|tgz|bz2|xz|7z|so|dylib|dll|exe|node|wasm|bin|pyc|class|jar)$''',
 ]
 

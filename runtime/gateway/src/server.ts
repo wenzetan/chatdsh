@@ -9,17 +9,34 @@
  * @module @chatdsh/gateway/server
  */
 
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import type { Duplex } from 'node:stream';
 import type { AccessProvider, ChatdshTelemetry } from '@chatdsh/core-contracts';
 import { IDENTITY_HEADERS, CHATDSH_ERROR_CODES, manualProvider, tailscaleProvider } from '@chatdsh/core-contracts';
 import type { GatewayConfig, GatewayStore, ReceiptStore, ReplicaStore, ScheduleStore, ShareStore } from './store.ts';
 import type { PushHub } from './push.ts';
+import type { RuntimeTarget } from './runtime.ts';
 import { renderSharePage } from './render.ts';
 import { AutomationStore, handleWebhook } from './automation.ts';
 import { handleLlmRequest, LlmQuotaLedger } from './llm.ts';
 import { McpRegistry } from './mcp-registry.ts';
+import {
+  authenticateMobileDevice,
+  deviceTokenHash,
+  handleMobileTelemetryRequest,
+  MOBILE_TELEMETRY_PATH,
+  readLimitedBody,
+} from './mobile-http.ts';
+import { MobileTelemetryRelay } from './mobile-telemetry.ts';
+import {
+  bridgeSockets,
+  handleMobileChannel,
+  isMobileChannelPath,
+  openUpstreamUpgrade,
+  pairingPayload,
+} from './mobile-channel.ts';
 
 /** 服务实例。 */
 export interface GatewayServer {
@@ -42,11 +59,21 @@ interface HandlerContext {
   readonly receipts: ReceiptStore;
   readonly push: PushHub;
   readonly telemetry: ChatdshTelemetry;
+  /** 托管的运行时目标；缺省时按配置的固定地址反代。 */
+  readonly runtime?: RuntimeTarget;
+  /** 启动路径下发端点要求的口令；缺省时端点关闭。 */
+  readonly bootstrapSecret?: string;
 }
 
 /** 路由分类，用于指标的 `route` 属性与 span 命名。方法目前不参与分类，保留参数以便后续区分读写。 */
 function routeOf(_method: string, path: string): string {
   if (path === '/healthz') return 'healthz';
+  if (path === '/chatdsh/gateway/bootstrap') return 'bootstrap';
+  if (path === '/chatdsh/gateway/mobile/pair') return 'mobile-pair';
+  if (path === '/chatdsh/gateway/mobile/session') return 'mobile-session';
+  if (path === MOBILE_TELEMETRY_PATH) return 'mobile-telemetry';
+  if (path === '/chatdsh/gateway/mobile/devices') return 'mobile-devices';
+  if (path === '/chatdsh/gateway/mobile/pairing') return 'mobile-pairing';
   if (path === '/chatdsh/gateway/ownership') return 'ownership';
   if (path === '/chatdsh/gateway/devices') return 'devices';
   if (path === '/chatdsh/gateway/replica') return 'replica';
@@ -83,34 +110,95 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
  * 单机形态下账号名来自接入层注入的 `tailscale-user-login`；没有该头部时按本机直连处理，
  * 账号名取 `local`。解析结果同时写入上游请求头部。
  */
-function resolveIdentity(request: IncomingMessage, provider: AccessProvider): { accountId: string; login: string; mode: string; deviceId: string } {
+function resolveIdentity(request: IncomingMessage, provider: AccessProvider, fallbackDeviceId: string): { accountId: string; login: string; mode: string; deviceId: string } {
   // 来源身份由提供方决定：Tailscale 取 Serve 注入的头部，手动反代没有身份。
   const access = provider.identityOf(request.headers);
   const login = access.login ?? 'local';
-  const deviceId = String(request.headers[IDENTITY_HEADERS.deviceId] ?? 'local');
+  const deviceId = String(request.headers[IDENTITY_HEADERS.deviceId] ?? fallbackDeviceId);
   return { accountId: '', login, mode: access.source ?? 'local', deviceId };
+}
+
+/** 浏览器设备标识的 cookie 名。 */
+const DEVICE_COOKIE = 'chatdsh-device';
+
+/** 从 Cookie 头取一个值。 */
+function cookieOf(header: string | undefined, name: string): string | undefined {
+  if (header === undefined) return undefined;
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator <= 0) continue;
+    if (part.slice(0, separator).trim() !== name) continue;
+    const value = part.slice(separator + 1).trim();
+    if (value !== '') return decodeURIComponent(value);
+  }
+  return undefined;
+}
+
+/** 取请求的设备标识；没有头部与 cookie 时发一个新标识。 */
+function deviceIdOf(request: IncomingMessage): { id: string; issued: boolean } {
+  const header = request.headers[IDENTITY_HEADERS.deviceId];
+  if (typeof header === 'string' && header !== '') return { id: header, issued: false };
+  const cookie = cookieOf(request.headers.cookie, DEVICE_COOKIE);
+  if (cookie !== undefined) return { id: cookie, issued: false };
+  return { id: `web-${randomUUID()}`, issued: true };
+}
+
+/** 请求来源：优先取反代写入的转发头，保持协议、主机与端口逐字一致。 */
+function originOf(request: IncomingMessage): string {
+  const forwardedProto = request.headers['x-forwarded-proto'];
+  const proto = (typeof forwardedProto === 'string' ? forwardedProto.split(',')[0]?.trim() : undefined) ?? 'http';
+  const forwardedHost = request.headers['x-forwarded-host'];
+  const host = (typeof forwardedHost === 'string' ? forwardedHost.split(',')[0]?.trim() : undefined)
+    ?? request.headers.host
+    ?? '127.0.0.1';
+  return `${proto}://${host}`;
+}
+
+/** 平台分类；只记录有界枚举，不保存原始 User-Agent。 */
+function platformOf(request: IncomingMessage): string {
+  const explicit = request.headers['x-chatdsh-platform'];
+  if (typeof explicit === 'string' && explicit !== '') return explicit.slice(0, 32);
+  const agent = String(request.headers['user-agent'] ?? '');
+  if (/Electron/i.test(agent)) return 'desktop';
+  if (/Android|iPhone|iPad|Mobile/i.test(agent)) return 'mobile';
+  if (agent !== '') return 'web';
+  return 'unknown';
+}
+
+function sameSecret(provided: string, expected: string): boolean {
+  if (provided.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
 }
 
 /**
  * 建立控制平面服务。
  * @param context - 配置、存储与遥测。
- * @returns 服务实例。
  */
 export function createGatewayServer(context: HandlerContext): GatewayServer {
   const { config, store, replica, share, schedule, receipts, push, telemetry } = context;
+  const mobileRelay = new MobileTelemetryRelay(telemetry);
   // 可达性提供方按配置选择：Tailscale 取 Serve 注入的头部，手动反代没有来源身份。
   const accessProvider: AccessProvider = config.accessProvider === 'manual' ? manualProvider() : tailscaleProvider();
   const automations = new AutomationStore(store.handle());
   const llmLedger = new LlmQuotaLedger(store, config.llmGateway.quota);
   const mcpRegistry = new McpRegistry(store.handle());
+  const upgradedSockets = new Set<Duplex>();
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const path = (request.url ?? '/').split('?')[0] ?? '/';
     const route = routeOf(request.method ?? 'GET', path);
     const started = Date.now();
-    const identity = resolveIdentity(request, accessProvider);
+    const device = deviceIdOf(request);
+    if (device.issued) {
+      response.setHeader('Set-Cookie', `${DEVICE_COOKIE}=${encodeURIComponent(device.id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+    }
+    const identity = resolveIdentity(request, accessProvider, device.id);
 
-    return telemetry.runSpan('chatdsh.gateway.http', {
+    const traceCarrier: Record<string, string> = {};
+    if (typeof request.headers.traceparent === 'string') traceCarrier.traceparent = request.headers.traceparent;
+    if (typeof request.headers.tracestate === 'string') traceCarrier.tracestate = request.headers.tracestate;
+
+    return telemetry.withContext(traceCarrier, () => telemetry.runSpan('chatdsh.gateway.http', {
       'http.route': route,
       'http.method': request.method ?? 'GET',
     }, async (span) => {
@@ -123,7 +211,29 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
       });
 
       if (route === 'healthz') {
-        sendJson(response, 200, { ok: true, service: 'chatdsh-gateway', version: config.version });
+        sendJson(response, 200, {
+          ok: true,
+          service: 'chatdsh-gateway',
+          version: config.version,
+          runtime: { ready: context.runtime?.ready() ?? true },
+        });
+        return;
+      }
+
+      // 启动路径下发：桌面壳持有口令，用它换取运行时的带令牌路径，再把窗口指过来。
+      if (route === 'bootstrap') {
+        const expected = context.bootstrapSecret;
+        const provided = request.headers['x-chatdsh-bootstrap'];
+        if (expected === undefined || typeof provided !== 'string' || !sameSecret(provided, expected)) {
+          sendJson(response, 404, { error: 'not-found' });
+          return;
+        }
+        const bootPath = context.runtime?.bootPath();
+        if (context.runtime === undefined || !context.runtime.ready() || bootPath === undefined) {
+          sendJson(response, 503, { error: 'runtime-not-ready' });
+          return;
+        }
+        sendJson(response, 200, { ready: true, path: bootPath });
         return;
       }
 
@@ -183,6 +293,12 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
         return;
       }
 
+      // 移动端遥测中转：凭设备令牌鉴权，先于网页身份解析，避免匿名请求建立账号。
+      if (route === 'mobile-telemetry') {
+        await handleMobileTelemetryRequest({ request, response, store, telemetry, relay: mobileRelay });
+        return;
+      }
+
       const account = telemetry.runSpanSync('chatdsh.gateway.identity', {
         'auth.mode': identity.mode,
       }, (span) => {
@@ -191,6 +307,242 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
         return record;
       });
 
+      // 每次 API 请求顺手登记设备：账号面板与推送分级都要有设备记录，不能只靠 SSE 连接。
+      if (route !== 'static' && route !== 'plugins') {
+        store.touchDevice({
+          id: identity.deviceId,
+          accountId: account.id,
+          origin: originOf(request),
+          platform: platformOf(request),
+          lastSeenAt: Date.now(),
+        });
+      }
+      // 手机配对：一次性口令换长期设备令牌。口令只从环境变量读取，未配置时端点关闭。
+      if (route === 'mobile-pair') {
+        await telemetry.runSpan('chatdsh.gateway.mobile.pair', {}, async (span) => {
+          const reject = (status: number, errorType: string, errorCode: string): void => {
+            span.setAttribute('outcome', 'rejected');
+            span.setAttribute('error.type', errorType);
+            span.setAttribute('error.code', errorCode);
+            telemetry.event('chatdsh.gateway.mobile.rejected', {
+              action: 'pair',
+              outcome: 'rejected',
+              'error.type': errorType,
+              'error.code': errorCode,
+            });
+            telemetry.counter('chatdsh_mobile_pairings_total', { description: '手机配对次数' })
+              .add(1, { outcome: 'rejected' });
+            sendJson(response, status, { error: errorCode });
+          };
+          if (request.method !== 'POST') {
+            reject(405, 'request', 'method-not-allowed');
+            return;
+          }
+          const expected = config.pairingCode;
+          if (expected === undefined) {
+            reject(404, 'config', 'pairing-disabled');
+            return;
+          }
+          const body = await readLimitedBody(request, 64 * 1024);
+          if (body === undefined) {
+            reject(413, 'request', 'payload-too-large');
+            return;
+          }
+          let payload: { code?: unknown; deviceName?: unknown; platform?: unknown };
+          try {
+            payload = JSON.parse(body) as { code?: unknown; deviceName?: unknown; platform?: unknown };
+          } catch {
+            reject(400, 'payload', 'invalid-json');
+            return;
+          }
+          if (typeof payload.code !== 'string' || !sameSecret(payload.code, expected)) {
+            reject(401, 'auth', 'pairing-code-invalid');
+            return;
+          }
+          const deviceName = typeof payload.deviceName === 'string' && payload.deviceName.trim() !== ''
+            ? payload.deviceName.trim().slice(0, 80)
+            : 'Android';
+          const platform = typeof payload.platform === 'string' && payload.platform.trim() !== ''
+            ? payload.platform.trim().slice(0, 32)
+            : 'android';
+          span.setAttribute('platform', platform);
+          const bootPath = context.runtime?.bootPath();
+          if (context.runtime === undefined || !context.runtime.ready() || bootPath === undefined) {
+            reject(503, 'runtime', 'runtime-not-ready');
+            return;
+          }
+          const token = randomBytes(32).toString('base64url');
+          const record = store.registerMobileDevice({
+            id: randomUUID(),
+            accountId: account.id,
+            name: deviceName,
+            platform,
+            tokenHash: deviceTokenHash(token),
+          });
+          store.touchDevice({
+            id: record.id,
+            accountId: account.id,
+            origin: originOf(request),
+            platform: record.platform,
+            lastSeenAt: record.lastSeenAt,
+          });
+          span.setAttribute('outcome', 'paired');
+          telemetry.counter('chatdsh_mobile_pairings_total', { description: '手机配对次数' })
+            .add(1, { outcome: 'ok' });
+          response.setHeader('Cache-Control', 'no-store');
+          sendJson(response, 200, {
+            token,
+            deviceId: record.id,
+            name: record.name,
+            platform: record.platform,
+            bootPath,
+          });
+        });
+        return;
+      }
+
+      // 手机每次启动取一次运行时的带令牌路径；设备令牌只用于这一步。
+      if (route === 'mobile-session') {
+        await telemetry.runSpan('chatdsh.gateway.mobile.session', {}, async (span) => {
+          const reject = (status: number, errorType: string, errorCode: string): void => {
+            span.setAttribute('outcome', 'rejected');
+            span.setAttribute('error.type', errorType);
+            span.setAttribute('error.code', errorCode);
+            telemetry.event('chatdsh.gateway.mobile.rejected', {
+              action: 'session',
+              outcome: 'rejected',
+              'error.type': errorType,
+              'error.code': errorCode,
+            });
+            telemetry.counter('chatdsh_mobile_sessions_total', { description: '手机取启动路径次数' })
+              .add(1, { outcome: 'rejected' });
+            sendJson(response, status, { error: errorCode });
+          };
+          if (request.method !== 'GET') {
+            reject(405, 'request', 'method-not-allowed');
+            return;
+          }
+          const auth = authenticateMobileDevice(request, store);
+          if (auth.record === undefined) {
+            reject(401, 'auth', auth.error ?? 'device-token-invalid');
+            return;
+          }
+          const record = auth.record;
+          store.touchMobileDevice(record.id);
+          store.touchDevice({
+            id: record.id,
+            accountId: record.accountId,
+            origin: originOf(request),
+            platform: record.platform,
+            lastSeenAt: Date.now(),
+          });
+          const bootPath = context.runtime?.bootPath();
+          if (context.runtime === undefined || !context.runtime.ready() || bootPath === undefined) {
+            reject(503, 'runtime', 'runtime-not-ready');
+            return;
+          }
+          span.setAttribute('outcome', 'ok');
+          telemetry.counter('chatdsh_mobile_sessions_total', { description: '手机取启动路径次数' })
+            .add(1, { outcome: 'ok' });
+          response.setHeader('Cache-Control', 'no-store');
+          sendJson(response, 200, {
+            deviceId: record.id,
+            name: record.name,
+            platform: record.platform,
+            bootPath,
+          });
+        });
+        return;
+      }
+
+      // 已配对手机设备的列举与吊销；吊销立即生效，下一次取启动路径即被拒绝。
+      // 配对载荷：把控制平面地址与配对码打包成客户端能直接解析的 Base64URL，
+      // 与运行时的配对载荷同形，客户端因此不需要区分「连控制平面」与「连运行时」。
+      if (route === 'mobile-pairing') {
+        await telemetry.runSpan('chatdsh.gateway.mobile.pairing', {}, async (span) => {
+          if (request.method !== 'GET') {
+            span.setAttribute('outcome', 'rejected');
+            span.setAttribute('error.type', 'request');
+            span.setAttribute('error.code', 'method-not-allowed');
+            sendJson(response, 405, { error: 'method-not-allowed' });
+            return;
+          }
+          const code = config.pairingCode;
+          if (code === undefined) {
+            span.setAttribute('outcome', 'rejected');
+            span.setAttribute('error.type', 'config');
+            span.setAttribute('error.code', 'pairing-disabled');
+            sendJson(response, 404, { error: 'pairing-disabled' });
+            return;
+          }
+          const ttlMs = 5 * 60 * 1000;
+          const expiresAt = Date.now() + ttlMs;
+          const payload = pairingPayload({
+            publicUrl: `${originOf(request).replace(/^http/, 'ws')}/ws/mobile`,
+            pairingCode: code,
+            expiresAt,
+          });
+          span.setAttribute('outcome', 'issued');
+          response.setHeader('Cache-Control', 'no-store');
+          sendJson(response, 200, {
+            encoded: payload.encoded,
+            payload: payload.payload,
+            expiresAt,
+          });
+        });
+        return;
+      }
+
+      if (route === 'mobile-devices') {
+        await telemetry.runSpan('chatdsh.gateway.mobile.devices', {}, async (span) => {
+          if (request.method === 'GET') {
+            span.setAttribute('action', 'list');
+            span.setAttribute('outcome', 'ok');
+            telemetry.counter('chatdsh_mobile_devices_total', { description: '手机设备管理操作' })
+              .add(1, { action: 'list', outcome: 'ok' });
+            sendJson(response, 200, { accountId: account.id, devices: store.listMobileDevices(account.id) });
+            return;
+          }
+          if (request.method === 'DELETE') {
+            span.setAttribute('action', 'revoke');
+            const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'gateway'}`);
+            const id = url.searchParams.get('id');
+            if (id === null || !store.revokeMobileDevice(id, account.id)) {
+              span.setAttribute('outcome', 'rejected');
+              span.setAttribute('error.type', 'request');
+              span.setAttribute('error.code', 'device-not-found');
+              telemetry.event('chatdsh.gateway.mobile.rejected', {
+                action: 'revoke',
+                outcome: 'rejected',
+                'error.type': 'request',
+                'error.code': 'device-not-found',
+              });
+              telemetry.counter('chatdsh_mobile_devices_total', { description: '手机设备管理操作' })
+                .add(1, { action: 'revoke', outcome: 'rejected' });
+              sendJson(response, 404, { error: 'device-not-found' });
+              return;
+            }
+            span.setAttribute('outcome', 'revoked');
+            telemetry.counter('chatdsh_mobile_devices_total', { description: '手机设备管理操作' })
+              .add(1, { action: 'revoke', outcome: 'revoked' });
+            sendJson(response, 200, { revoked: true, id });
+            return;
+          }
+          span.setAttribute('outcome', 'rejected');
+          span.setAttribute('error.type', 'request');
+          span.setAttribute('error.code', 'method-not-allowed');
+          telemetry.event('chatdsh.gateway.mobile.rejected', {
+            action: 'devices',
+            outcome: 'rejected',
+            'error.type': 'request',
+            'error.code': 'method-not-allowed',
+          });
+          telemetry.counter('chatdsh_mobile_devices_total', { description: '手机设备管理操作' })
+            .add(1, { action: 'devices', outcome: 'rejected' });
+          sendJson(response, 405, { error: 'method-not-allowed' });
+        });
+        return;
+      }
       if (route === 'ownership' || route === 'devices') {
         const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'gateway'}`);
         const requested = url.searchParams.get('accountId');
@@ -282,11 +634,36 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
       }
 
       if (route === 'automations') {
-        if (request.method !== 'GET') {
-          sendJson(response, 405, { error: 'method-not-allowed' });
+        if (request.method === 'GET') {
+          sendJson(response, 200, { accountId: account.id, automations: automations.list(account.id) });
           return;
         }
-        sendJson(response, 200, { accountId: account.id, automations: automations.list(account.id) });
+        if (request.method === 'PATCH') {
+          if (request.headers['x-chatdsh-csrf'] !== '1') {
+            sendJson(response, 403, { error: 'csrf-required' });
+            return;
+          }
+          const body = await readBody(request, 64 * 1024);
+          let payload: { id?: unknown; enabled?: unknown };
+          try {
+            payload = JSON.parse(body) as { id?: unknown; enabled?: unknown };
+          } catch {
+            sendJson(response, 400, { error: 'invalid-json' });
+            return;
+          }
+          if (typeof payload.id !== 'string' || typeof payload.enabled !== 'boolean') {
+            sendJson(response, 400, { error: 'invalid-payload' });
+            return;
+          }
+          const record = automations.setEnabled(payload.id, account.id, payload.enabled);
+          if (record === undefined) {
+            sendJson(response, 404, { error: 'automation-not-found' });
+            return;
+          }
+          sendJson(response, 200, record);
+          return;
+        }
+        sendJson(response, 405, { error: 'method-not-allowed' });
         return;
       }
 
@@ -443,7 +820,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
         const platform = typeof request.headers['x-chatdsh-platform'] === 'string'
           ? request.headers['x-chatdsh-platform']
           : identity.mode;
-        const unsubscribe = push.subscribe(account.id, identity.deviceId, platform, response);
+        const unsubscribe = push.subscribe(account.id, identity.deviceId, platform, response, originOf(request));
         const heartbeat = setInterval(() => {
           try {
             response.write(': ping\n\n');
@@ -614,6 +991,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
       // 按账号分派：配置了分派表就按账号标识与登录名依次匹配，都没命中时回落到默认运行时。
       const routedUrl = config.runtimeRoutes[account.id]
         ?? config.runtimeRoutes[identity.login]
+        ?? context.runtime?.url()
         ?? config.runtimeUrl;
       const routedTarget = new URL(routedUrl);
       await proxy(request, response, {
@@ -625,7 +1003,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
         requestId: telemetry.currentTraceId() ?? '',
         telemetry,
       });
-    });
+    }));
   }
 
   const server: Server = createServer((request, response) => {
@@ -636,6 +1014,166 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
     });
   });
 
+  // WebSocket 升级：运行时的 Remote 流走 `/api/remote.mux`，HTTP 反代接不住这条连接。
+  // 这里按同一套身份与路由规则建立上游升级，再把两侧套接字对接。
+  server.on('upgrade', (request, socket, head) => {
+    upgradedSockets.add(socket);
+    socket.once('close', () => upgradedSockets.delete(socket));
+    const path = (request.url ?? '/').split('?')[0] ?? '/';
+    const route = routeOf(request.method ?? 'GET', path);
+    const device = deviceIdOf(request);
+    const identity = resolveIdentity(request, accessProvider, device.id);
+    const span = telemetry.startSpan('chatdsh.gateway.proxy', {
+      'http.route': route,
+      'http.method': 'UPGRADE',
+    });
+    const fail = (error: Error): void => {
+      span.recordException(error);
+      span.setAttribute('outcome', 'failed');
+      socket.destroy();
+      span.end();
+    };
+    /** 在升级握手阶段拒绝一条连接，回一个最小的 HTTP 响应后关闭套接字。 */
+    const rejectUpgrade = (status: number, errorType: string, errorCode: string): void => {
+      span.setAttribute('error.type', errorType);
+      span.setAttribute('error.code', errorCode);
+      const body = JSON.stringify({ error: errorCode });
+      socket.write(
+        `HTTP/1.1 ${status} ${status === 401 ? 'Unauthorized' : 'Forbidden'}\r\n` +
+        'Content-Type: application/json; charset=utf-8\r\n' +
+        `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+        'Connection: close\r\n\r\n' +
+        body
+      );
+      socket.destroy();
+      span.setAttribute('outcome', 'rejected');
+      span.end();
+    };
+
+    // 手机业务通道由专门的处理函数负责：配对码换令牌、设备令牌校验、拒绝分支都写在
+    // mobile-channel.ts 里。配对与校验都在这里完成，之后把连接桥接到运行时插件。
+    if (isMobileChannelPath(path)) {
+      const routedUrl = context.runtime?.url() ?? config.runtimeUrl;
+      const decision = handleMobileChannel(request, socket, {
+        pairingCode: config.pairingCode,
+        runtimeUrl: routedUrl,
+        store,
+        telemetry,
+        accountLogin: identity.login,
+      });
+      if (decision.bridgePath === undefined) {
+        span.setAttribute('outcome', 'rejected');
+        span.end();
+        return;
+      }
+      const target = new URL(routedUrl);
+      const headers: Record<string, string | string[] | undefined> = { ...request.headers };
+      headers.host = target.host;
+      if (typeof headers.origin === 'string') headers.origin = target.origin;
+      openUpstreamUpgrade(
+        routedUrl,
+        decision.bridgePath,
+        headers,
+        (response, upstreamSocket, upstreamHead) => {
+          const lines = [`HTTP/1.1 ${response.statusCode ?? 101} ${response.statusMessage ?? 'Switching Protocols'}`];
+          for (let index = 0; index < response.rawHeaders.length; index += 2) {
+            lines.push(`${response.rawHeaders[index]}: ${response.rawHeaders[index + 1]}`);
+          }
+          socket.write(`${lines.join('\r\n')}\r\n\r\n`);
+          bridgeSockets(socket, upstreamSocket, head, upstreamHead);
+          span.setAttribute('http.status_code', response.statusCode ?? 101);
+          span.setAttribute('outcome', 'upgraded');
+          span.end();
+        },
+        (response) => {
+          span.setAttribute('http.status_code', response.statusCode ?? 502);
+          span.setAttribute('outcome', 'rejected');
+          response.resume();
+          span.end();
+          rejectUpgrade(502, 'runtime', 'runtime-upgrade-rejected');
+        },
+        (error) => fail(error)
+      );
+      return;
+    }
+
+    try {
+      const account = store.ensureAccount(identity.login);
+      const routedUrl = config.runtimeRoutes[account.id]
+        ?? config.runtimeRoutes[identity.login]
+        ?? context.runtime?.url()
+        ?? config.runtimeUrl;
+      const target = new URL(routedUrl);
+      span.setAttribute('runtime.id', target.host);
+      const headers: Record<string, string | string[] | undefined> = { ...request.headers };
+      headers.host = target.host;
+      if (typeof headers.origin === 'string') headers.origin = target.origin;
+      if (typeof headers.referer === 'string') {
+        try {
+          const referer = new URL(headers.referer);
+          headers.referer = `${target.origin}${referer.pathname}${referer.search}`;
+        } catch {
+          delete headers.referer;
+        }
+      }
+      if (headers['x-forwarded-host'] === undefined && typeof request.headers.host === 'string') {
+        headers['x-forwarded-host'] = request.headers.host;
+      }
+      if (headers['x-forwarded-proto'] === undefined) headers['x-forwarded-proto'] = 'http';
+      headers[IDENTITY_HEADERS.accountId] = account.id;
+      headers[IDENTITY_HEADERS.identitySource] = 'gateway';
+      if (identity.deviceId !== '') headers[IDENTITY_HEADERS.deviceId] = identity.deviceId;
+      const carrier: Record<string, string> = {};
+      telemetry.inject(carrier);
+      if (headers.traceparent === undefined && carrier.traceparent !== undefined) headers.traceparent = carrier.traceparent;
+      if (headers.tracestate === undefined && carrier.tracestate !== undefined) headers.tracestate = carrier.tracestate;
+
+      const forward = target.protocol === 'https:' ? httpsRequest : httpRequest;
+      const upstream = forward({
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port === '' ? undefined : target.port,
+        path: request.url ?? '/',
+        method: request.method ?? 'GET',
+        headers,
+      });
+      upstream.on('upgrade', (response, upstreamSocket, upstreamHead) => {
+        span.setAttribute('http.status_code', response.statusCode ?? 101);
+        const lines = [`HTTP/1.1 ${response.statusCode ?? 101} ${response.statusMessage ?? 'Switching Protocols'}`];
+        for (let index = 0; index < response.rawHeaders.length; index += 2) {
+          lines.push(`${response.rawHeaders[index]}: ${response.rawHeaders[index + 1]}`);
+        }
+        socket.write(`${lines.join('\r\n')}\r\n\r\n`);
+        if (upstreamHead.length > 0) socket.write(upstreamHead);
+        if (head.length > 0) upstreamSocket.write(head);
+        upstreamSocket.pipe(socket);
+        upstreamSocket.on('close', () => socket.destroy());
+        socket.on('close', () => upstreamSocket.destroy());
+        socket.pipe(upstreamSocket);
+        upstreamSocket.on('error', () => socket.destroy());
+        socket.on('error', () => upstreamSocket.destroy());
+        span.setAttribute('outcome', 'upgraded');
+        span.end();
+      });
+      upstream.on('response', (response) => {
+        span.setAttribute('http.status_code', response.statusCode ?? 502);
+        const lines = [`HTTP/1.1 ${response.statusCode ?? 502} ${response.statusMessage ?? ''}`];
+        for (let index = 0; index < response.rawHeaders.length; index += 2) {
+          lines.push(`${response.rawHeaders[index]}: ${response.rawHeaders[index + 1]}`);
+        }
+        socket.write(`${lines.join('\r\n')}\r\n\r\n`);
+        response.pipe(socket);
+        response.on('end', () => socket.end());
+        span.setAttribute('outcome', 'rejected');
+        span.end();
+      });
+      upstream.on('error', fail);
+      upstream.end();
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+
   return {
     start(): Promise<void> {
       return new Promise((resolve, reject) => {
@@ -644,8 +1182,14 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
       });
     },
     stop(): Promise<void> {
+      for (const socket of upgradedSockets) socket.destroy();
       return new Promise((resolve) => {
-        server.close(() => resolve());
+        const timer = setTimeout(resolve, 2000);
+        timer.unref();
+        server.close(() => {
+          clearTimeout(timer);
+          resolve();
+        });
         server.closeAllConnections();
       });
     },
@@ -711,17 +1255,35 @@ async function proxy(
   const { target, forward, telemetry } = options;
   const headers: Record<string, string | string[] | undefined> = { ...request.headers };
   headers.host = target.host;
+  // 运行时按 Host 判定 authority；Origin 与 Referer 必须同步改写，否则跨站校验会拒绝请求。
+  if (typeof headers.origin === 'string') headers.origin = target.origin;
+  if (typeof headers.referer === 'string') {
+    try {
+      const referer = new URL(headers.referer);
+      headers.referer = `${target.origin}${referer.pathname}${referer.search}`;
+    } catch {
+      delete headers.referer;
+    }
+  }
+  if (headers['x-forwarded-for'] === undefined && request.socket.remoteAddress !== undefined) {
+    headers['x-forwarded-for'] = request.socket.remoteAddress;
+  }
+  if (headers['x-forwarded-host'] === undefined && typeof request.headers.host === 'string') {
+    headers['x-forwarded-host'] = request.headers.host;
+  }
+  if (headers['x-forwarded-proto'] === undefined) headers['x-forwarded-proto'] = 'http';
   headers[IDENTITY_HEADERS.accountId] = options.accountId;
   headers[IDENTITY_HEADERS.identitySource] = 'gateway';
   if (options.deviceId !== '') headers[IDENTITY_HEADERS.deviceId] = options.deviceId;
   if (options.requestId !== '') headers[IDENTITY_HEADERS.requestId] = options.requestId;
-  const carrier: Record<string, string> = {};
-  if (typeof headers.traceparent === 'string') carrier.traceparent = headers.traceparent;
-  if (typeof headers.tracestate === 'string') carrier.tracestate = headers.tracestate;
 
   await telemetry.runSpan('chatdsh.gateway.proxy', {
     'runtime.id': target.host,
   }, async (span) => {
+    const carrier: Record<string, string> = {};
+    telemetry.inject(carrier);
+    if (headers.traceparent === undefined && carrier.traceparent !== undefined) headers.traceparent = carrier.traceparent;
+    if (headers.tracestate === undefined && carrier.tracestate !== undefined) headers.tracestate = carrier.tracestate;
     await new Promise<void>((resolve) => {
       const upstream = forward({
         protocol: target.protocol,
@@ -732,6 +1294,14 @@ async function proxy(
         headers,
       }, (upstreamResponse) => {
         span.setAttribute('http.status_code', upstreamResponse.statusCode ?? 0);
+        // 控制平面自己下发的设备 cookie 与运行时的会话 cookie 必须一起回到浏览器。
+        const issued = response.getHeader('set-cookie');
+        if (issued !== undefined) {
+          const upstreamCookies = upstreamResponse.headers['set-cookie'];
+          const list = Array.isArray(upstreamCookies) ? [...upstreamCookies] : upstreamCookies === undefined ? [] : [upstreamCookies];
+          const own = Array.isArray(issued) ? issued.map(String) : [String(issued)];
+          upstreamResponse.headers['set-cookie'] = [...list, ...own];
+        }
         response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
         upstreamResponse.pipe(response);
         upstreamResponse.on('end', () => resolve());

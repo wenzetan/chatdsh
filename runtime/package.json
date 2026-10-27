@@ -10,6 +10,8 @@
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
     "build:client": "node scripts/build-client.mjs",
+    "build:android": "node scripts/build-android.mjs",
+    "serve:apk": "node scripts/serve-apk.mjs",
     "clean": "tsc -b tsconfig.build.json --clean",
     "typecheck": "tsc -b tsconfig.build.json",
     "test": "node --test e2e/unit/*.test.mjs",

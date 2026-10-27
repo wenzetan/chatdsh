@@ -6,7 +6,7 @@
 
 | 目录 | 内容 |
 |---|---|
-| [`runtime/`](runtime/) | 运行时侧全部内容：六个角色的包（core、host、tool、client、bundle、preset）、控制平面服务、桌面壳、部署 profile、文档、脚本与校验、调试容器、验收测试 |
+| [`runtime/`](runtime/) | 运行时侧全部内容：六个角色的包（core、host、tool、client、bundle、preset）、控制平面服务、桌面壳、Android 客户端、部署 profile、文档、脚本与校验、调试容器、验收测试 |
 | [`dsh-adapter/`](dsh-adapter/) | 适配层 `@chatdsh/adapter`：DSH 内部 API 的唯一接触面 |
 | [`refer_repos/`](refer_repos/) | 参考项目快照，本地检索用，不纳入版本管理 |
 
