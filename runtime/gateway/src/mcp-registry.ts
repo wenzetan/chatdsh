@@ -2,7 +2,7 @@
  * MCP 服务器的全局注册与按设备端点记录。
  *
  * 两张表各管一件事：
- * - `mcp_servers` 是全局注册，记录「这个账号下有哪些 MCP」。任一设备上报的服务器都进
+ * - `mcp_servers` 是全局注册，记录「本机部署有哪些 MCP」。任一设备上报的服务器都进
  *   这里，所有设备都能读到，因此 A 端配置的 MCP 在 B 端也看得见。
  * - `mcp_endpoints` 是每端一段连接参数。同一台服务器在内网机器上可以是 `npx` 启动，
  *   在外网设备上只能是 HTTPS 地址；两段共享同一个服务器名，模型看到的是同一项能力。
@@ -22,6 +22,7 @@ import type {
   McpSnapshot,
   McpTransport,
 } from '@chatdsh/core-contracts';
+import { migrateAccountColumns } from './store.ts';
 
 export type { McpEndpointRecord, McpEndpointRow, McpServerInput, McpServerRecord, McpSnapshot, McpTransport };
 
@@ -78,25 +79,23 @@ function normalizeInput(name: string, input: McpServerInput): { transport: McpTr
 /** 注册表。 */
 export class McpRegistry {
   constructor(private readonly database: DatabaseSync) {
+    migrateAccountColumns(this.database);
     this.database.exec(`
       create table if not exists mcp_servers (
-        account_id text not null,
-        name text not null,
+        name text primary key,
         created_by text not null,
-        created_at integer not null,
-        primary key (account_id, name)
+        created_at integer not null
       );
       create table if not exists mcp_endpoints (
-        account_id text not null,
         server text not null,
         device_id text not null,
         transport text not null,
         row text not null,
         credential_env text,
         updated_at integer not null,
-        primary key (account_id, server, device_id)
+        primary key (server, device_id)
       );
-      create index if not exists mcp_endpoints_by_device on mcp_endpoints(account_id, device_id);
+      create index if not exists mcp_endpoints_by_device on mcp_endpoints(device_id);
     `);
   }
 
@@ -105,12 +104,11 @@ export class McpRegistry {
    *
    * 同一设备本次没有出现的服务器，其端点会被移除；全局注册在该服务器已无任何端点时
    * 一并移除，避免留下没有连接方式的空条目。
-   * @param accountId - 账号标识。
    * @param deviceId - 设备标识。
    * @param servers - VSCode 形状的 `servers` 字典。
    * @returns 写入的服务器数量。
    */
-  upsertServers(accountId: string, deviceId: string, servers: Readonly<Record<string, McpServerInput>>): number {
+  upsertServers(deviceId: string, servers: Readonly<Record<string, McpServerInput>>): number {
     const now = Date.now();
     const prepared = Object.entries(servers).map(([name, input]) => {
       const serverName = toServerName(name);
@@ -119,31 +117,31 @@ export class McpRegistry {
     });
     const names = new Set(prepared.map((entry) => entry.serverName));
     const previous = this.database
-      .prepare('select server from mcp_endpoints where account_id = ? and device_id = ?')
-      .all(accountId, deviceId) as unknown as { server: string }[];
+      .prepare('select server from mcp_endpoints where device_id = ?')
+      .all(deviceId) as unknown as { server: string }[];
 
     this.database.exec('begin');
     try {
       for (const entry of prepared) {
         this.database.prepare(
-          `insert into mcp_servers (account_id, name, created_by, created_at) values (?, ?, ?, ?)
-           on conflict(account_id, name) do nothing`,
-        ).run(accountId, entry.serverName, deviceId, now);
+          `insert into mcp_servers (name, created_by, created_at) values (?, ?, ?)
+           on conflict(name) do nothing`,
+        ).run(entry.serverName, deviceId, now);
         this.database.prepare(
-          `insert into mcp_endpoints (account_id, server, device_id, transport, row, credential_env, updated_at)
-           values (?, ?, ?, ?, ?, ?, ?)
-           on conflict(account_id, server, device_id) do update set
+          `insert into mcp_endpoints (server, device_id, transport, row, credential_env, updated_at)
+           values (?, ?, ?, ?, ?, ?)
+           on conflict(server, device_id) do update set
              transport = excluded.transport,
              row = excluded.row,
              credential_env = excluded.credential_env,
              updated_at = excluded.updated_at`,
-        ).run(accountId, entry.serverName, deviceId, entry.transport, JSON.stringify(entry.row), entry.credentialEnv ?? null, now);
+        ).run(entry.serverName, deviceId, entry.transport, JSON.stringify(entry.row), entry.credentialEnv ?? null, now);
       }
       for (const item of previous) {
         if (names.has(item.server)) continue;
-        this.database.prepare('delete from mcp_endpoints where account_id = ? and device_id = ? and server = ?')
-          .run(accountId, deviceId, item.server);
-        this.pruneServer(accountId, item.server);
+        this.database.prepare('delete from mcp_endpoints where device_id = ? and server = ?')
+          .run(deviceId, item.server);
+        this.pruneServer(item.server);
       }
       this.database.exec('commit');
     } catch (error) {
@@ -155,24 +153,24 @@ export class McpRegistry {
 
   /**
    * 移除一台设备的一段端点。
-   * @param accountId - 账号标识。
    * @param deviceId - 设备标识。
    * @param server - 服务器名。
    */
-  removeServer(accountId: string, deviceId: string, server: string): void {
-    this.database.prepare('delete from mcp_endpoints where account_id = ? and device_id = ? and server = ?')
-      .run(accountId, deviceId, toServerName(server));
-    this.pruneServer(accountId, toServerName(server));
+  removeServer(deviceId: string, server: string): void {
+    const serverName = toServerName(server);
+    this.database.prepare('delete from mcp_endpoints where device_id = ? and server = ?')
+      .run(deviceId, serverName);
+    this.pruneServer(serverName);
   }
 
-  /** 某账号的注册快照。 */
-  snapshot(accountId: string): McpSnapshot {
+  /** 注册快照。 */
+  snapshot(): McpSnapshot {
     const servers = this.database
-      .prepare('select name, created_by, created_at from mcp_servers where account_id = ? order by name')
-      .all(accountId) as unknown as { name: string; created_by: string; created_at: number }[];
+      .prepare('select name, created_by, created_at from mcp_servers order by name')
+      .all() as unknown as { name: string; created_by: string; created_at: number }[];
     const endpoints = this.database
-      .prepare('select server, device_id, transport, row, credential_env, updated_at from mcp_endpoints where account_id = ? order by server, device_id')
-      .all(accountId) as unknown as {
+      .prepare('select server, device_id, transport, row, credential_env, updated_at from mcp_endpoints order by server, device_id')
+      .all() as unknown as {
         server: string;
         device_id: string;
         transport: string;
@@ -194,12 +192,12 @@ export class McpRegistry {
   }
 
   /** 没有任何端点时移除全局注册。 */
-  private pruneServer(accountId: string, server: string): void {
+  private pruneServer(server: string): void {
     const row = this.database
-      .prepare('select count(*) as count from mcp_endpoints where account_id = ? and server = ?')
-      .get(accountId, server) as { count: number } | undefined;
+      .prepare('select count(*) as count from mcp_endpoints where server = ?')
+      .get(server) as { count: number } | undefined;
     if ((row?.count ?? 0) === 0) {
-      this.database.prepare('delete from mcp_servers where account_id = ? and name = ?').run(accountId, server);
+      this.database.prepare('delete from mcp_servers where name = ?').run(server);
     }
   }
 }

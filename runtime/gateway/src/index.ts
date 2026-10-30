@@ -1,16 +1,17 @@
 /**
  * 控制平面。
  *
- * 常驻的独立服务：持有账号与会话归属，反向代理客户端的 `/api` 请求到对应运行时并注入身份。
+ * 常驻的独立服务：持有设备与会话归属，反向代理客户端的 `/api` 请求到对应运行时。
  * 运行时不对外监听，进程内的授权层恒为 owner，隔离落在进程边界上。
  * @module @chatdsh/gateway
  */
 
-export { GatewayStore, PushQueue, ReplicaStore, ScheduleStore, ShareStore, readConfig, dataRoot, parseLlmGateway } from './store.ts';
+export { GatewayStore, PushQueue, ReplicaStore, SettingsStore, ShareStore, SETTINGS_NAMESPACES, readConfig, dataRoot, parseLlmGateway, migrateAccountColumns } from './store.ts';
 export type {
-  AccountRecord,
   DeviceRecord,
   MobileDeviceRecord,
+  NodeDeviceRecord,
+  NodeRole,
   GatewayConfig,
   PushItem,
   ReplicaAppendResult,
@@ -18,18 +19,27 @@ export type {
   SessionOwnershipRecord,
   ShareInput,
   ShareRecord,
-  TaskAction,
-  TaskInput,
-  TaskRecord,
 } from './store.ts';
-export { createScheduler } from './scheduler.ts';
 export { createRuntimeSupervisor, parseRuntimeLaunchConfig, RuntimeSupervisor, findFreePort } from './runtime.ts';
 export type { RuntimeLaunchConfig, RuntimeTarget, RuntimeSupervisorOptions } from './runtime.ts';
-export type { Scheduler, SchedulerOptions } from './scheduler.ts';
 export { createPushHub } from './push.ts';
 export type { DeliveryResult, PushHub } from './push.ts';
+export { DeviceLinkError, DeviceLinkHub, DEVICE_LINK_PATH } from './device-link.ts';
+export type {
+  ControlFrame,
+  DeviceFrame,
+  DeviceLinkErrorCode,
+  DeviceLinkOptions,
+  DeviceRequest,
+  DeviceResponse,
+} from './device-link.ts';
 export { renderSharePage } from './render.ts';
 export type { ShareEvent } from './render.ts';
+export { aggregateSessions } from './sessions.ts';
+export type { DeviceSessions, SessionSummary, SessionsSnapshot } from './sessions.ts';
+export { BUNDLES_ENDPOINT, DEVICE_PLUGINS_TIMEOUT_MS, DevicePluginsError, PLUGINS_ENDPOINT, fetchDevicePlugins } from './device-plugins.ts';
+export type { DevicePluginsErrorCode, DevicePluginsSnapshot } from './device-plugins.ts';
+export { SHELL_SCRIPT_PATH, readShellScript, renderShellPage, shellBuilt } from './shell.ts';
 export { createGatewayServer } from './server.ts';
 export { handleLlmRequest, LlmQuotaLedger } from './llm.ts';
 export { McpRegistry, McpRegistryError, toServerName } from './mcp-registry.ts';

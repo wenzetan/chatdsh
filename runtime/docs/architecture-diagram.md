@@ -18,21 +18,20 @@ flowchart TB
     X["外部程序<br/>MCP 客户端"]
   end
   subgraph P["控制平面 @chatdsh/gateway"]
-    PROXY["反向代理与身份注入"]
-    ACC["账号、会话归属、工作区成员"]
-    DEV["设备注册与订阅"]
-    SCH["定时任务调度"]
+    PROXY["反向代理与按设备路由"]
+    ACC["设备与会话归属、工作区成员"]
+    DEV["设备在线状态与订阅"]
     PUSH["跨设备推送中枢"]
     SYNC["会话日志只读副本"]
     SHARE["分享快照服务端渲染"]
     SWITCH["chatBackend 与 memoryBackend 开关"]
-    POOL["运行时进程池"]
+    POOL["运行时进程托管"]
     SUP["Hermes 生命周期托管与 Hindsight 探活"]
     POWER["强制不休眠电源策略"]
     EXT["扩展包安装记录与分发"]
   end
   subgraph R["运行时平面"]
-    RT["每账号一个 DSH 进程<br/>只绑回环"]
+    RT["一个 DSH 进程<br/>只绑回环"]
     HS["Hermes 实例（可选）"]
   end
   subgraph D["数据平面"]
@@ -40,7 +39,7 @@ flowchart TB
     IDX["工作区与检索索引<br/>SQLite FTS5 或 Postgres"]
     OBJ["附件与制品<br/>本地目录或对象存储"]
     MEM["记忆 bank<br/>Hindsight 或 Hermes 内置"]
-    CP["控制平面 SQLite 或 Postgres<br/>账号、设备、任务、副本"]
+    CP["控制平面 SQLite 或 Postgres<br/>设备、任务、副本"]
     HST["Hermes state.db"]
   end
   B -->|"HTTPS 与 SSE"| PROXY
@@ -48,7 +47,7 @@ flowchart TB
   M -->|"HTTPS 与 WebSocket"| PROXY
   T -->|"回环 HTTPS"| PROXY
   X -->|"MCP 协议"| RT
-  PROXY -->|"回环，注入身份头部"| RT
+  PROXY -->|"回环"| RT
   PROXY -->|"回环或 tailnet"| HS
   POOL -->|"按需启停"| RT
   SUP -->|"按 chatBackend 启停"| HS
@@ -63,12 +62,11 @@ flowchart TB
   SWITCH -->|"下发配置与 bundles"| POOL
   ACC --> CP
   DEV --> CP
-  SCH --> CP
   SYNC --> CP
   EXT --> CP
 ```
 
-隔离分两层。账号与租户落在进程边界上，每账号一个 DSH 进程、一份 `$DSH_HOME`，进程内的授权层恒为 owner。工作区落在目录与归属判定上，会话创建时把工作区根目录写进 `cwd`，会话日志按 `cwd` 的项目键分目录存放。
+隔离落在两处：运行时只绑回环，外部只能经控制平面进入；控制平面按设备分派请求，未登记的设备按不存在处理，`/d/<deviceId>/` 之外的请求走部署的运行时。工作区落在目录与归属判定上，会话创建时把工作区根目录写进 `cwd`，会话日志按 `cwd` 的项目键分目录存放。
 
 ## 二、控制平面的模块构成
 
@@ -83,9 +81,8 @@ flowchart LR
     HIN["Hermes 平台适配器接收端点"]
   end
   subgraph CORE["核心层"]
-    AUTH["会话校验与设备令牌"]
+    AUTH["设备令牌与节点鉴权"]
     ROUTE["归属判定与设备路由"]
-    IDINJ["身份头部注入"]
     SW["后端开关与电源策略"]
     SCHED["任务表与到期判定"]
     DELIV["设备订阅与投递分级"]
@@ -96,7 +93,7 @@ flowchart LR
     PROXY2["反向代理到运行时"]
     PUSHW["WebSocket 与本地通知投递"]
     SHAREV["只读快照渲染"]
-    POOLW["进程池与空闲回收"]
+    POOLW["进程托管与空闲回收"]
     HERMW["Hermes 启停与探活"]
     HINW["Hindsight 探活与降级标记"]
   end
@@ -106,9 +103,8 @@ flowchart LR
   SHAREIN --> SHAREV
   HIN --> DELIV
   AUTH --> ROUTE
-  ROUTE --> IDINJ
+  ROUTE --> PROXY2
   ROUTE --> POOLW
-  IDINJ --> PROXY2
   SW --> POOLW
   SW --> HERMW
   SCHED -->|"唤醒运行时并投递消息"| POOLW
@@ -170,10 +166,10 @@ flowchart TB
 ```mermaid
 flowchart TB
   subgraph HOST["宿主平面：随进程加载一次"]
-    H1["core-identity 注册 ctx.provide，取身份供分派与审计"]
+    H1["core-session-index 写 ctx.sessionProjections"]
     H2["@chatdsh/core-diagnostics 提供客户端与导出管道；@chatdsh/host-telemetry 注册 ctx.chatdshTelemetry"]
     H2B["host-model-provider 登记模型路由；host-context-insights 算上下文占用；host-skills 维护技能开关"]
-    H3["core-session-index 写 ctx.sessionProjections"]
+    H3["host-projects 扩展 ctx.storageDomain"]
     H4["host-projects 扩展 ctx.storageDomain"]
     H5["host-artifacts 用 ctx.storageDomain 与 ctx.attachments"]
     H6["host-assistants 写 dsh-agent-preset-registry"]
@@ -208,7 +204,7 @@ flowchart TB
 
 存储、聊天后端、记忆后端、桌面壳与命令行各自成组合包，由 profile 的 bundles 列表选择。组合包之间不表达「基础」关系，同一组合包在列表里只出现一次。
 
-当前实现的组合包七个：`bundle-hosted`、`bundle-worker`、`bundle-desktop`、`bundle-storage-jsonl`、`bundle-storage-postgres`、`bundle-memory-hindsight`、`bundle-chat-hermes`；`preset-chat` 是 agent preset 声明，在 `packages/preset/` 下，不算组合包。
+当前实现的组合包六个：`bundle-hosted`、`bundle-desktop`、`bundle-storage-jsonl`、`bundle-storage-postgres`、`bundle-memory-hindsight`、`bundle-chat-hermes`；`preset-chat` 是 agent preset 声明，在 `packages/preset/` 下，不算组合包。
 
 ```mermaid
 flowchart TB
@@ -232,14 +228,10 @@ flowchart TB
     WEBAPP["dsh-web-app<br/>Web 与桌面"]
     DESKB["bundle-desktop"]
     TUI["dsh-tui<br/>命令行"]
-    WORKB["bundle-worker"]
-    HEADL["dsh-headless<br/>长任务"]
   end
   WEBAPP --> STORE
   DESKB --> FORM
   TUI --> FORM
-  WORKB --> FORM
-  HEADL --> FORM
   STORE --> CHAT
   STORE --> MEM
   CHAT --> FORM
@@ -253,7 +245,7 @@ flowchart LR
   P1["chatdsh-web"] --> L1["dsh-base、dsh-web-app、bundle-hosted、preset-chat"]
   P2["chatdsh-desktop"] --> L2["dsh-base、dsh-web-app、bundle-storage-jsonl、bundle-hosted、bundle-desktop、preset-chat"]
   P3["chatdsh-cli"] --> L3["dsh-base、dsh-experimental-ralph-bundle、dsh-tui"]
-  P4["chatdsh-worker"] --> L4["dsh-base、dsh-headless、bundle-hosted、bundle-memory-hindsight、bundle-worker"]
+  P4["chatdsh-hermes"] --> L4["dsh-base、dsh-web-app、bundle-hosted、bundle-chat-hermes、preset-chat"]
 ```
 
 ## 六、客户端模块加载次序
@@ -298,8 +290,8 @@ sequenceDiagram
   participant LG as 权威会话日志
   participant SY as 控制平面副本
   CL->>GW: 提交消息，带 requestId 与 traceparent
-  GW->>GW: 校验应用会话，判定归属与设备
-  GW->>RT: 转发请求，注入身份头部与 traceparent
+  GW->>GW: 判定归属与目标设备
+  GW->>RT: 转发请求，带上 traceparent
   RT->>PR: agent/pre-step 注入项目指令与记忆召回
   RT->>AG: 追加用户消息，开启回合
   AG->>LM: 请求模型，stream 入口做额度检查
@@ -309,7 +301,7 @@ sequenceDiagram
   TL-->>AG: 工具结果
   AG->>LG: 追加表面事件与工具记录
   AG->>SY: 推送事件信封与同步水位
-  SY-->>CL: 广播给该账号的订阅端
+  SY-->>CL: 广播给在线订阅端
   AG->>PR: 折叠回合用量
   AG->>GW: 回合结束上报
 ```
@@ -320,23 +312,21 @@ sequenceDiagram
 
 ## 八、数据落盘布局
 
-数据根下先分租户，再分账号，每账号一份 `$DSH_HOME`。租户目录从第一天就存在，单机下只有一个 `default`。
+数据根下只有一份部署：控制平面的库、运行时数据与日志同属一个 `$DSH_HOME`。
 
-当前实现的落盘只有三处：控制平面的 SQLite 库（图中 `gateway` 那一支）、各账号的 `$DSH_HOME`（含 `profiles` 与 `sessions`）、以及 `logs`。租户目录、`objects`、`hermes` 与 `chat` 四个子目录尚未实现：附件与制品走在存储域里，不落文件系统；Hermes 与聊天会话目前都还没有对应的落盘位置。
+当前实现的落盘只有三处：控制平面的 SQLite 库（图中 `gateway` 那一支）、运行时的 `$DSH_HOME`（含 `profiles` 与 `sessions`）、以及 `logs`。`objects`、`hermes` 与 `chat` 三个子目录尚未实现：附件与制品走在存储域里，不落文件系统；Hermes 与聊天会话目前都还没有对应的落盘位置。
 
 ```mermaid
 flowchart TB
   R["数据根"] --> G["gateway：控制平面 SQLite 库、密钥、设备与订阅、任务表、会话日志副本"]
-  R --> T["tenants/default：单机下唯一的租户"]
-  R --> L["logs：带租户与账号标记"]
+  R --> L["logs：带部署标记"]
   R --> O["objects：附件与制品"]
-  T --> A["accounts/accountId：每个账号一个运行时的数据"]
-  A --> H["harness：即 DSH_HOME，含 profiles、sessions、settings.yaml"]
-  A --> M["hermes：HERMES_HOME，chatBackend 为 hermes 时存在"]
-  A --> C["chat：聊天会话的专用 cwd，不构成工作区"]
-  A --> W["workspaces/workspaceId：各工作区的根目录"]
+  R --> H["harness：即 DSH_HOME，含 profiles、sessions、settings.yaml"]
+  R --> M["hermes：HERMES_HOME，chatBackend 为 hermes 时存在"]
+  R --> C["chat：聊天会话的专用 cwd，不构成工作区"]
   H --> S["sessions/projectKey/sessionDir/session.v版本.jsonl.zstd"]
   H --> PR["profiles/名称：manifest 与 cordis.patch.yml"]
+  H --> W["workspaces/workspaceId：各工作区的根目录"]
 ```
 
 ## 九、聊天后端与记忆后端的四种组合
@@ -363,13 +353,13 @@ flowchart TB
 flowchart TB
   subgraph WEB["Web 形态"]
     W1["浏览器界面"] --> W2["控制平面"]
-    W2 --> W3["每账号一个 DSH 进程，随机回环端口"]
+    W2 --> W3["一个 DSH 进程，随机回环端口"]
   end
   subgraph DESK["桌面形态"]
     D1["启动器：单实例锁、launch-root、拉起控制平面"] --> D2["控制平面：回环 27777 与 EasyTier 27778"]
-    D2 --> D3["每账号一个 DSH 进程"]
+    D2 --> D3["一个 DSH 进程"]
     D2 --> D4["Hermes 实例，可选"]
-    D2 -->|"反向代理并注入身份"| D5["渲染进程"]
+    D2 -->|"反向代理并按设备路由"| D5["渲染进程"]
     D5 -->|"HTTP 与 SSE"| D2
   end
   subgraph CLIM["命令行形态"]
@@ -392,7 +382,7 @@ flowchart TB
 ```mermaid
 flowchart LR
   GW2["控制平面"]
-  DEVD["设备表：deviceId、syncScope、能力声明"]
+  DEVD["设备表：deviceId、能力声明"]
   CL2["客户端 B"]
   RA["执行节点 A 的 DSH 进程"]
   WA["节点 A 的工作区目录"]
@@ -454,7 +444,6 @@ flowchart TB
   S5["桌面主进程 chatdsh-desktop"]
   S6["移动端 chatdsh-mobile"]
   S7["命令行 chatdsh-cli"]
-  S8["长任务 chatdsh-worker"]
   S9["MCP 服务端 chatdsh-mcp"]
   SVC["ctx.chatdshTelemetry<br/>统一服务契约：event、log、counter、histogram、gauge、span、inject、extract"]
   EX1["进程内 OTLP exporter"]
@@ -467,7 +456,6 @@ flowchart TB
   S5 --> SVC
   S6 --> SVC
   S7 --> SVC
-  S8 --> SVC
   S9 --> SVC
   S4 -->|"同源上报"| RELAY
   RELAY --> SVC
@@ -504,13 +492,12 @@ flowchart TB
   G3 --> V5["verify-client-ui：真实 Chrome 走完首次进入流程"]
   G4["第七节 会话回合"] --> V6["verify-acp：创建会话、恢复会话、核对投影落盘"]
   G5["第九节 开关组合"] --> V7["verify-memory：对 Hindsight 做写入与召回"]
-  G6["第十一节 执行节点"] --> V8["verify-routing 与 verify-routing-live：反代落到各自运行时"]
-  G6 --> V9["verify-import：带 parentSession 的导入与跨账号拒绝"]
-  G6 --> V10["verify-isolation：归属隔离与跨账号拒绝"]
+  G6["第十一节 执行节点"] --> V8["verify-routing 与 verify-routing-live：两台设备各自命中自己的运行时"]
+  G6 --> V9["verify-import：带 parentSession 的导入"]
+  G6 --> V10["verify-account-migration：旧库删账号表与账号列后仍可读写"]
   G6 --> V11["verify-multi-client 与 verify-receipt-sync：序列一致与已读水位"]
   G7["第十三节 遥测"] --> V12["check-telemetry：包内声明、源码与文档清单三处一致"]
   G7 --> V13["verify-telemetry-sync：连接器同步与导出核对"]
-  G8["第十二节 审批与推送"] --> V14["verify-schedule：到期任务执行与定时推送"]
 ```
 
 各项验收的当前状态与所缺条件记在[验收状态](acceptance.md)与[后续清单](next-steps.md)。

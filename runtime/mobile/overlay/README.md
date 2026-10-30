@@ -38,5 +38,5 @@
 |---|---|---|
 | `androidApp/build.gradle.kts` | 接管 | 版本号取自 `mobile/version.properties`，签名换成本仓库的 release 密钥 |
 | `androidApp/.../ui/DshTheme.kt` | 接管 | 配色按 [`docs/ui-baseline-design.md`](../../docs/ui-baseline-design.md) 的令牌重写，保留上游接口名 |
-| `androidApp/.../platform/ControlPlanePairing.kt` | 新增 | 与控制平面配对、保存设备令牌、换取运行时启动路径 |
+| `androidApp/.../platform/ControlPlanePairing.kt` | 新增 | 控制平面 HTTP 配对契约的原生客户端：配对码换设备令牌、用令牌换运行时启动路径 |
 | `androidApp/.../telemetry/MobileTelemetry.kt` | 新增 | 按 [`docs/mobile-protocol.md`](../../docs/mobile-protocol.md) 第三节上报移动端信号 |

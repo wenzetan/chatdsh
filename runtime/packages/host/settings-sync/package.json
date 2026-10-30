@@ -1,0 +1,46 @@
+{
+  "name": "@chatdsh/host-settings-sync",
+  "version": "0.1.0",
+  "description": "ChatDSH 宿主平面插件：白名单设置的跨设备同步（上报变更、接收推送、写本机 home 层）",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.sync.settings.rejected",
+        "chatdsh.sync.settings.failed"
+      ],
+      "spans": [
+        "chatdsh.sync.settings.push",
+        "chatdsh.sync.settings.apply"
+      ],
+      "metrics": [
+        "chatdsh_sync_settings_pushes_total",
+        "chatdsh_sync_settings_applies_total"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/core-contracts": "workspace:*"
+  },
+  "peerDependencies": {
+    "js-yaml": "^4.3.2"
+  }
+}

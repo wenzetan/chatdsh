@@ -28,7 +28,6 @@ child.stdout.on('data', (chunk) => { output += chunk; });
 child.stderr.on('data', (chunk) => { output += chunk; });
 
 const base = `http://127.0.0.1:${PORT}`;
-const login = 'multi@example.test';
 
 /** 等控制平面就绪。 */
 async function waitReady(timeoutMs = 30_000) {
@@ -45,12 +44,9 @@ async function waitReady(timeoutMs = 30_000) {
   throw new Error(`控制平面未就绪：\n${output.slice(-600)}`);
 }
 
-/** 带身份头的请求。 */
+/** 一次控制平面请求。 */
 function call(path, init = {}) {
-  return fetch(`${base}${path}`, {
-    ...init,
-    headers: { ...(init.headers ?? {}), 'tailscale-user-login': login },
-  });
+  return fetch(`${base}${path}`, init);
 }
 
 /** 上报一批事件。 */

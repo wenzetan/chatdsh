@@ -68,6 +68,7 @@ export {
   LlmError,
   QUOTA_EXCEEDED_CODE,
   attributionHeaders,
+  createUserMessage,
   isQuotaExceededError,
 } from '@deepseek-ai/dsh-llm';
 export type {
@@ -76,8 +77,11 @@ export type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
+  MessageSource,
+  MessageSourceMap,
   StreamChunk,
   TokenUsage,
+  UserMessage,
 } from '@deepseek-ai/dsh-llm';
 
 // ── 子代理 ──────────────────────────────────────────────────────
@@ -139,6 +143,7 @@ export {
 export {
   agentPresetsOf,
   agentsOf,
+  connectionOf,
   hostWebServerOf,
   llmOf,
   loaderOf,

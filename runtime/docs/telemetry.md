@@ -116,9 +116,8 @@ flowchart TB
 | 浏览器客户端 | `chatdsh-browser` | 客户端插件包名 |
 | 桌面主进程 | `chatdsh-desktop` | `@chatdsh/desktop` |
 | 命令行 | `chatdsh-cli` | 全局 `dsh-tui`，不另设包 |
-| 长任务 | `chatdsh-worker` | 包名 |
 
-名称形状统一为三段式：日志事件 `chatdsh.<domain>.<fact>`，span `chatdsh.<domain>.<operation>`，指标 `chatdsh_<domain>_<measure><后缀>`。`domain` 取 `gateway`、`runtime`、`session`、`tool`、`llm`、`memory`、`mcp`、`client`、`desktop`、`mobile`、`cli`、`sync`、`share`、`push`、`schedule`、`telemetry`。
+名称形状统一为三段式：日志事件 `chatdsh.<domain>.<fact>`，span `chatdsh.<domain>.<operation>`，指标 `chatdsh_<domain>_<measure><后缀>`。`domain` 取 `gateway`、`runtime`、`session`、`tool`、`llm`、`memory`、`mcp`、`client`、`desktop`、`mobile`、`cli`、`sync`、`share`、`push`、`telemetry`。
 
 指标后缀按类型固定：计数器加 `_total`，直方图用 `_seconds` 或 `_bytes`，当前量用裸名并带单位后缀。单位遵循 OpenTelemetry 约定：时间用秒，尺寸用字节，比例用 0 到 1 的小数。
 
@@ -132,9 +131,9 @@ flowchart TB
 | `chatdsh.version` | 产品版本 | 版本号 |
 | `deployment.environment` | 部署环境 | `local`、`dev`、`staging`、`prod` |
 
-上下文属性按可用性附加：`session.id`、`workspace.id`、`account.id`、`turn`、`step`、`tool.name`、`mcp.method`、`provider`、`model`、`request.id`、`error.type`、`error.code`、`outcome`。`account.id` 是控制平面生成的 UUID，不使用邮箱、登录名或设备名。
+上下文属性按可用性附加：`session.id`、`workspace.id`、`deviceId`、`turn`、`step`、`tool.name`、`mcp.method`、`provider`、`model`、`request.id`、`error.type`、`error.code`、`outcome`。`deviceId` 是控制平面登记的设备标识。
 
-基数有硬上限。指标属性只能取有界集合，每个属性的取值上限为 32；`session.id`、`workspace.id`、`account.id`、`request.id`、文件路径、工具参数一律不进指标属性，它们只出现在日志与 span 上。这条限制保证指标流的列数与内存不随使用量增长。
+基数有硬上限。指标属性只能取有界集合，每个属性的取值上限为 32；`session.id`、`workspace.id`、`deviceId`、`request.id`、文件路径、工具参数一律不进指标属性，它们只出现在日志与 span 上。这条限制保证指标流的列数与内存不随使用量增长。
 
 ## 六、接口清单
 
@@ -146,16 +145,14 @@ flowchart TB
 |---|---|---|---|
 | span | `chatdsh.gateway.http` | 每个入站 HTTP 请求 | `http.route`、`http.method`、`http.status_code` |
 | span | `chatdsh.gateway.proxy` | 反代到运行时的转发 | `runtime.id`、`http.status_code` |
-| span | `chatdsh.gateway.identity` | 身份头解析与账号匹配 | `auth.mode`、`outcome` |
 | span | `chatdsh.gateway.access` | 会话归属判定 | `session.id`、`workspace.id`、`outcome` |
 | span | `chatdsh.gateway.runtime.lifecycle` | 运行时启动、就绪、停止、回收 | `action`、`runtime.id`、`outcome` |
 | span | `chatdsh.gateway.replica.append` | 会话副本追加 | `session.id`、`seq`、`bytes`、`outcome` |
 | span | `chatdsh.gateway.share.render` | 分享快照渲染 | `share.id`、`up_to_seq` |
 | span | `chatdsh.gateway.push.deliver` | 推送投递 | `device.kind`、`outcome` |
-| span | `chatdsh.gateway.schedule.run` | 定时任务执行 | `task.id`、`action`、`outcome` |
 | span | `chatdsh.gateway.power.policy` | 电源策略下发与生效 | `power.mode`、`outcome` |
 | span | `chatdsh.gateway.webhook` | 外部 webhook 投递处理 | `automation.id`、`outcome` |
-| event | `chatdsh.gateway.auth.failed` | 认证失败 | `auth.mode`、`error.code` |
+| event | `chatdsh.gateway.auth.failed` | 认证失败 | `error.type`、`error.code` |
 | event | `chatdsh.gateway.runtime.ready` | 运行时打印启动地址并探活通过 | `runtime.id` |
 | event | `chatdsh.gateway.runtime.exited` | 托管运行时意外退出 | `runtime.id`、`exit.code`、`signal` |
 | event | `chatdsh.gateway.power.failed` | 阻止睡眠失败或被执行环境拒绝 | `power.mode`、`error.code` |
@@ -164,7 +161,6 @@ flowchart TB
 | metric | `chatdsh_http_request_duration_seconds` | 全部入站请求 | `route`、`method` |
 | metric | `chatdsh_replica_lag_sessions` | 副本落后会话数 | 无 |
 | metric | `chatdsh_push_deliveries_total` | 推送投递 | `device.kind`、`outcome` |
-| metric | `chatdsh_schedule_runs_total` | 定时任务 | `action`、`outcome` |
 | metric | `chatdsh_power_policy_active` | 当前生效的保活与阻止睡眠档位 | `power.mode` |
 | metric | `chatdsh_webhook_receipts_total` | webhook 投递结果 | `outcome` |
 | metric | `chatdsh_mcp_registry_writes_total` | MCP 端点上报次数 | `outcome` |
@@ -180,6 +176,26 @@ flowchart TB
 | event | `chatdsh.gateway.mobile.upgrade.rejected` | 手机 WebSocket 升级被拒绝 | `error.type`、`error.code` |
 | metric | `chatdsh_mobile_upgrades_total` | 手机 WebSocket 升级结果 | `outcome` |
 | span | `chatdsh.gateway.mobile.pairing` | 下发配对载荷 | `outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.device.pair` | 节点配对并签发节点令牌 | `platform`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.device.link` | 设备长连接的生命周期 | `role`、`platform`、`outcome` |
+| span | `chatdsh.gateway.device.request` | 沿设备连接转发一次请求 | `deviceId`、`outcome`、`http.status_code`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.device.rejected` | 节点配对、长连接升级、协议与前缀路由的拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.device.disconnected` | 设备长连接断开 | `role`、`platform`、`reason` |
+| metric | `chatdsh_gateway_device_pairs_total` | 节点配对结果 | `outcome` |
+| metric | `chatdsh_gateway_device_links_total` | 设备长连接生命周期 | `outcome` |
+| metric | `chatdsh_gateway_device_requests_total` | 沿设备连接转发的请求 | `outcome` |
+| span | `chatdsh.gateway.device.proxy` | `/d/<deviceId>/` 前缀反代的一次转发 | `deviceId`、`http.method`、`http.status_code`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.ownership.write` | 会话归属写入与设备绑定 | `outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.ownership.rejected` | 会话归属写入被拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_gateway_device_proxies_total` | 按设备路由的转发结果 | `outcome` |
+| metric | `chatdsh_gateway_ownership_writes_total` | 会话归属写入结果 | `outcome` |
+| span | `chatdsh.gateway.sessions.list` | 左栏聚合会话列表的读取 | `device.count`、`session.count`、`outcome` |
+| span | `chatdsh.gateway.device.plugins` | 按设备取组合包与插件行 | `deviceId`、`bundle.count`、`plugin.count`、`device.status_code`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_gateway_device_plugins_total` | 按设备取插件清单的结果 | `outcome` |
+| span | `chatdsh.gateway.settings.read` | 读白名单设置 | `namespace.count`、`outcome` |
+| span | `chatdsh.gateway.settings.write` | 写一条白名单设置并推给其余设备 | `outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.settings.rejected` | 设置写入被拒绝（越界命名空间等） | `outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_gateway_settings_writes_total` | 设置同步写入结果 | `outcome` |
 
 ### 6.2 运行时宿主平面
 
@@ -199,6 +215,16 @@ flowchart TB
 | span | `chatdsh.runtime.model.provider.resolve` | 模型提供方注册校验 | `provider`、`outcome` |
 | span | `chatdsh.runtime.context.insight` | 计算一个会话的上下文占用 | `session.id`、`outcome` |
 | span | `chatdsh.runtime.skill.toggle` | 技能启用状态切换 | `skill.id`、`enabled`、`outcome`、`error.type` |
+| span | `chatdsh.runtime.device.link` | 设备到控制平面的长连接生命周期 | `outcome` |
+| span | `chatdsh.runtime.device.forward` | 把长连接转发来的请求交给本地运行时 | `method`、`http.status_code`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.runtime.device.rejected` | 长连接建立失败、被拒绝或协议违规 | `outcome`、`error.type`、`error.code` |
+| event | `chatdsh.runtime.device.forward.failed` | 转发到本地运行时失败 | `outcome`、`error.type`、`error.code` |
+| span | `chatdsh.sync.settings.push` | 设置变更上报控制平面 | `namespace`、`key`、`outcome` |
+| span | `chatdsh.sync.settings.apply` | 接收控制平面推送并写本机 home 层 | `namespace`、`key`、`outcome` |
+| event | `chatdsh.sync.settings.rejected` | 设置上报或下发被拒绝 | `outcome`、`error.code` |
+| event | `chatdsh.sync.settings.failed` | 设置上报不可达等失败 | `outcome`、`error.type` |
+| metric | `chatdsh_sync_settings_pushes_total` | 设置上报结果 | `outcome` |
+| metric | `chatdsh_sync_settings_applies_total` | 设置下发结果 | `outcome` |
 | event | `chatdsh.runtime.boot.failed` | 启动失败 | `stage`、`error.type`、`error.code` |
 | event | `chatdsh.runtime.plugin.conflict` | 服务注册冲突或席位冲突 | `plugin.name`、`conflict.kind` |
 | event | `chatdsh.runtime.model.provider.failed` | 模型提供方注册校验失败 | `provider`、`error.type`、`error.code` |
@@ -206,6 +232,8 @@ flowchart TB
 | event | `chatdsh.chat.hermes.approval.relayed` | Hermes 审批应答结果 | `outcome`、`error.code` |
 | event | `chatdsh.runtime.approval.decided` | 审批应答 | `decision`、`decided_by` |
 | metric | `chatdsh_runtime_boot_seconds` | 启动耗时 | `stage` |
+| metric | `chatdsh_runtime_device_links_total` | 设备长连接生命周期 | `outcome` |
+| metric | `chatdsh_runtime_device_forwards_total` | 设备侧转发到本地运行时的请求 | `outcome` |
 | metric | `chatdsh_sessions_live` | 存活会话数 | `session.kind` |
 | metric | `chatdsh_session_events_total` | 会话事件数 | `event.type` |
 | metric | `chatdsh_remote_calls_total` | Remote 调用数 | `method`、`outcome`、`error_code` |
@@ -246,7 +274,7 @@ flowchart TB
 | span | `chatdsh.gateway.mcp.registry` | MCP 全局注册与端点记录的读写 | `outcome`、`error.code` |
 | span | `chatdsh.llm.retry` | 重试 | `attempt`、`error.code` |
 | event | `chatdsh.llm.request.completed` | 请求结束 | `provider`、`model`、`prompt.tokens`、`completion.tokens`、`outcome` |
-| event | `chatdsh.llm.quota.rejected` | 额度拒绝 | `account.id`、`error.code` |
+| event | `chatdsh.llm.quota.rejected` | 额度拒绝 | `error.code` |
 | metric | `chatdsh_llm_requests_total` | 请求数 | `provider`、`model`、`outcome` |
 | metric | `chatdsh_llm_request_duration_seconds` | 请求耗时 | `provider` |
 | metric | `chatdsh_llm_first_token_seconds` | 首 token 延迟 | `provider` |
@@ -333,6 +361,7 @@ flowchart TB
 | span | `chatdsh.dependency.probe` | Hermes、Hindsight 探活 | `dependency`、`outcome` |
 | event | `chatdsh.memory.degraded` | 记忆降级 | `operation`、`reason`、`error.type` |
 | metric | `chatdsh_memory_recall_seconds` | 召回耗时 | `bank_kind` |
+| metric | `chatdsh_memory_injections_total` | 召回注入结果 | `outcome` |
 | metric | `chatdsh_dependency_probe_failures_total` | 探活失败 | `dependency` |
 | span | `chatdsh.import.seed` | 把会话副本还原成会话种子 | `records.count`、`seed.count`、`outcome` |
 | event | `chatdsh.import.seed.failed` | 副本形状不合法 | `error.type`、`records.count` |
@@ -367,10 +396,10 @@ flowchart TB
 |---|---|---|
 | 浏览器到控制平面 | HTTP 头 `traceparent`、`tracestate` | 浏览器侧由客户端插件注入 |
 | 控制平面到运行时 | HTTP 头 `traceparent`、`tracestate` | 反代时透传，不重写 |
+| 控制平面到设备长连接 | 请求帧里的 `headers.traceparent`、`headers.tracestate` | 设备侧据此新建子 span；缺字段时新开 trace |
 | 运行时到工具子进程 | 环境变量 `TRACEPARENT` | 子进程退出后由父 span 收尾 |
 | Remote 调用 | 消息信封字段 `traceparent` | 请求与响应各带一次 |
 | SSE 与 WebSocket | 首帧与每批事件的 `traceparent` 字段 | 断线重连从游标补齐时新建 span 并链接原 trace |
-| 定时任务 | 任务表列 `traceparent` | 延迟执行时还原，跨进程仍能串联 |
 | MCP | `params._meta.traceparent` | 客户端与服务端双向传播 |
 | 桌面进程间通信 | 消息字段 `traceparent` | 主进程与渲染进程共享 trace |
 | 移动端到控制平面 | HTTP 头 `traceparent` | 设备令牌与 trace 分开 |

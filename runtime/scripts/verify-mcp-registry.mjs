@@ -42,7 +42,6 @@ const child = spawn(process.execPath, [resolve(ROOT, 'gateway/lib/main.js')], {
     ...process.env,
     DSH_HOME: home, // gitleaks:allow
     CHATDSH_GATEWAY_PORT: String(PORT),
-    CHATDSH_ACCESS_PROVIDER: 'manual',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -67,8 +66,7 @@ try {
     method,
     headers: {
       'content-type': 'application/json',
-      'tailscale-user-login': 'alice',
-      'x-chatdsh-device-id': deviceId,
+      'x-chatdsh-node-id': deviceId,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });

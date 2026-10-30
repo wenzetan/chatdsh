@@ -59,7 +59,6 @@ test('stream() 把请求转发到控制平面的模型入口并交回流式分�
 
   const adapter = new GatewayLlmAdapter({
     baseUrl: `${baseUrl}/chatdsh/gateway/llm`,
-    accountId: 'acct-1',
     quota: { limit: 1000, used: 10 },
     apiKeyEnv: 'CHATDSH_LLM_ROUTER_TEST_KEY',
   });
@@ -71,7 +70,6 @@ test('stream() 把请求转发到控制平面的模型入口并交回流式分�
     assert.equal(seen.length, 1);
     assert.equal(seen[0].url, '/chatdsh/gateway/llm');
     assert.equal(seen[0].method, 'POST');
-    assert.equal(seen[0].headers['x-chatdsh-account-id'], 'acct-1');
     const body = JSON.parse(seen[0].body);
     assert.equal(body.provider, 'gateway');
     assert.equal(body.model, 'test-model');
@@ -89,7 +87,6 @@ test('额度不足时在发出请求之前抛出 QUOTA，且区分 ChatDSH 错�
   });
   const adapter = new GatewayLlmAdapter({
     baseUrl: `${baseUrl}/chatdsh/gateway/llm`,
-    accountId: 'acct-2',
     quota: { limit: 100, used: 100 },
   });
 
@@ -98,26 +95,24 @@ test('额度不足时在发出请求之前抛出 QUOTA，且区分 ChatDSH 错�
       collect(adapter.stream(options())),
       (error) => error.name === 'LlmQuotaError'
         && error.code === 'QUOTA'
-        && error.chatdshCode === 'quota-exceeded'
-        && error.accountId === 'acct-2',
+        && error.chatdshCode === 'quota-exceeded',
     );
     assert.equal(requests, 0);
-    assert.ok(new LlmQuotaError({ accountId: 'acct-2', limit: 100, used: 100 }) instanceof Error);
+    assert.ok(new LlmQuotaError({ limit: 100, used: 100 }) instanceof Error);
   } finally {
     server.close();
   }
 });
 
-test('额度守卫按账号分别计数，并拒绝把已用额度算成可用', () => {
+test('额度守卫只有一份读数，拒绝把已用额度算成可用', () => {
   const guard = createQuotaGuard({ limit: 10 });
-  assert.deepEqual(guard.check('acct-1'), { allowed: true, limit: 10, used: 0, remaining: 10 });
-  guard.record('acct-1', 10);
+  assert.deepEqual(guard.check(), { allowed: true, limit: 10, used: 0, remaining: 10 });
+  guard.record(10);
   assert.throws(
-    () => guard.check('acct-1'),
+    () => guard.check(),
     (error) => error instanceof LlmQuotaError && error.code === 'QUOTA' && error.reading.used === 10,
   );
-  assert.deepEqual(guard.check('acct-2'), { allowed: true, limit: 10, used: 0, remaining: 10 });
-  assert.throws(() => guard.record('acct-1', -1), /额度/);
+  assert.throws(() => guard.record(-1), /额度/);
 });
 
 test('上游 429 与 402 映射为可区分的错误码', async () => {
@@ -127,7 +122,6 @@ test('上游 429 与 402 映射为可区分的错误码', async () => {
   });
   const adapter = new GatewayLlmAdapter({
     baseUrl: `${baseUrl}/chatdsh/gateway/llm`,
-    accountId: 'acct-3',
     quota: { limit: 100, used: 0 },
   });
   try {
@@ -167,7 +161,6 @@ test('上游拒绝时错误对象保留响应原文与上游错误码', async ()
   });
   const adapter = new GatewayLlmAdapter({
     baseUrl: `${baseUrl}/chatdsh/gateway/llm`,
-    accountId: 'acct-4',
     quota: { limit: 100, used: 0 },
   });
   try {

@@ -13,25 +13,29 @@ import { createMemoryClient } from '../../packages/host/memory/lib/client.js';
 
 const HINDSIGHT = process.env.HINDSIGHT_URL ?? 'http://127.0.0.1:8889';
 
-test('聊天会话只读写账号 bank', () => {
-  assert.deepEqual(banksFor({ accountId: 'a1', tenantId: 'default' }), {
-    recall: ['acct:a1'],
-    write: 'acct:a1',
+test('聊天会话只读写 acct', () => {
+  assert.deepEqual(banksFor({}), {
+    recall: ['acct'],
+    write: 'acct',
   });
 });
 
-test('私有工作区召回组 bank 与账号 bank，写入账号 bank', () => {
-  assert.deepEqual(banksFor({ accountId: 'a1', tenantId: 'default', memoryGroupId: 'w9' }), {
-    recall: ['t:default:ws:w9', 'acct:a1'],
-    write: 'acct:a1',
+test('工作区召回组 bank 与 acct，写入 acct', () => {
+  assert.deepEqual(banksFor({ memoryGroupId: 'w9' }), {
+    recall: ['ws:w9', 'acct'],
+    write: 'acct',
   });
 });
 
-test('共享工作区把记忆写进组 bank', () => {
-  assert.deepEqual(banksFor({ accountId: 'a1', tenantId: 'default', memoryGroupId: 'w9', shared: true }), {
-    recall: ['t:default:ws:w9', 'acct:a1'],
-    write: 't:default:ws:w9',
-  });
+test('工作区标识里的斜杠编码进组 bank，名字里不出现路径分隔符', () => {
+  const banks = banksFor({ memoryGroupId: '/workspace/chatdsh' });
+  assert.deepEqual(banks.recall, ['ws:%2Fworkspace%2Fchatdsh', 'acct']);
+  assert.equal(banks.write, 'acct');
+  // bank 名要经 HTTP 路径发给 Hindsight，裸斜杠会被当成路径分段而返回 404。
+  assert.ok(banks.recall.every((bank) => !bank.includes('/')));
+  // 编码可逆：组 bank 里那一段能还原成工作区标识。
+  const prefix = 'ws:';
+  assert.equal(decodeURIComponent(banks.recall[0].slice(prefix.length)), '/workspace/chatdsh');
 });
 
 test('多路召回按文本去重并保序', () => {
@@ -52,7 +56,7 @@ test('对真实 Hindsight 完成探活、写入与召回', async () => {
   assert.equal(await client.probe(), true, 'Hindsight 应当可用');
 
   const marker = `chatdsh-e2e-${Date.now()}`;
-  const bank = 'acct:chatdsh-e2e';
+  const bank = 'chatdsh-e2e-test';
   const written = await client.write(bank, {
     content: `端到端验证写入的标记 ${marker}`,
     context: 'chatdsh 记忆接入测试',
@@ -79,21 +83,18 @@ test('回合记忆保留用户与助手文本并按上限截断', () => {
   assert.equal(composeTurnMemory([]), '');
 });
 
-test('回合写入按工作区是否共享选择 bank', () => {
+test('回合写入落在 acct', () => {
   const messages = [{ role: 'user', text: '问题' }, { role: 'assistant', text: '结论' }];
-  const privatePlan = planTurnWrite({ cwd: '/work/private', shared: false, messages });
-  assert.equal(privatePlan.bank, 'acct:local');
-  assert.equal(privatePlan.content, '用户：问题\n助手：结论');
+  const workspacePlan = planTurnWrite({ cwd: '/work/private', messages });
+  assert.equal(workspacePlan.bank, 'acct');
+  assert.equal(workspacePlan.content, '用户：问题\n助手：结论');
 
-  const sharedPlan = planTurnWrite({ cwd: '/work/shared', shared: true, messages });
-  assert.equal(sharedPlan.bank, 't:default:ws:/work/shared');
-
-  const chatPlan = planTurnWrite({ cwd: '', shared: false, messages });
-  assert.equal(chatPlan.bank, 'acct:local');
+  const chatPlan = planTurnWrite({ cwd: '', messages });
+  assert.equal(chatPlan.bank, 'acct');
 });
 
 test('空回合不产生写入计划', () => {
-  assert.equal(planTurnWrite({ cwd: '/work', shared: false, messages: [] }), undefined);
+  assert.equal(planTurnWrite({ cwd: '/work', messages: [] }), undefined);
 });
 
 test('同一会话的同一回合只允许写一次', () => {
@@ -144,16 +145,14 @@ test('摘要流式文本同时兼容 text 与 delta 字段', () => {
 test('模型摘要写入计划使用摘要内容并截断', () => {
   const plan = planTurnWrite({
     cwd: '/work/private',
-    shared: false,
     messages: [{ role: 'user', text: '问题' }],
     content: '  模型生成的结论  ',
   });
-  assert.equal(plan.bank, 'acct:local');
+  assert.equal(plan.bank, 'acct');
   assert.equal(plan.content, '模型生成的结论');
 
   const long = planTurnWrite({
     cwd: '',
-    shared: false,
     messages: [{ role: 'user', text: '问题' }],
     content: 'x'.repeat(5000),
   });

@@ -4,9 +4,9 @@
 
 ## 一、兼容矩阵
 
-| DSH 内核 | 已验证的 dsh-tui | chatdsh-web | chatdsh-desktop | chatdsh-worker | chatdsh-cli |
-|---|---|---|---|---|---|
-| `0.2.1-rc.2` | `0.16.1` | 通过 | 通过 | 通过 | 通过 |
+| DSH 内核 | 已验证的 dsh-tui | chatdsh-web | chatdsh-desktop | chatdsh-cli |
+|---|---|---|---|---|
+| `0.2.1-rc.2` | `0.16.1` | 通过 | 通过 | 通过 |
 
 `dsh-tui` 的版本由内核版本决定：它内部有一份已验证版本清单，内核落在清单外时启动页会报告版本漂移。`chatdsh-cli` 的 profile 声明 `0.16.1`，并在 bundles 里挂上 `@deepseek-ai/dsh-experimental-ralph-bundle`，因为 dsh-tui 0.16.1 的补丁层按 id 关闭 `tool-ralph`，这一行由该组合包插入。
 

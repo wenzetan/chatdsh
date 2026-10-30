@@ -20,8 +20,8 @@ const { ChatdshContextInsightsService } = await import('../../packages/host/cont
 const { ChatdshSkillsService } = await import('../../packages/host/skills/lib/index.js');
 
 test('服务把依赖声明在静态字段上', () => {
-  assert.ok(ChatdshMemoryService.inject.includes('systemPrompt'));
   assert.ok(ChatdshMemoryService.inject.includes('sessionPersistence'));
+  assert.ok(ChatdshMemoryService.inject.includes('llm'));
   assert.ok(ChatdshHermesChatService.inject.includes('sessions'));
   assert.ok(ChatdshHermesChatService.inject.includes('sessionPersistence'));
   assert.ok(ChatdshModelProviderService.inject.includes('llm'));

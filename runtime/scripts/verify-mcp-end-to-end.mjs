@@ -73,7 +73,6 @@ try {
       ...process.env,
       DSH_HOME: gatewayHome, // gitleaks:allow
       CHATDSH_GATEWAY_PORT: String(GATEWAY_PORT),
-      CHATDSH_ACCESS_PROVIDER: 'manual',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -98,8 +97,7 @@ try {
     method: 'PUT',
     headers: {
       'content-type': 'application/json',
-      'tailscale-user-login': 'e2e',
-      'x-chatdsh-device-id': DEVICE,
+      'x-chatdsh-node-id': DEVICE,
     },
     body: JSON.stringify({
       servers: {

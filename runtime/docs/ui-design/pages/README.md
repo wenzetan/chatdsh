@@ -34,7 +34,7 @@
 | `settings-business.html` | 十个 ChatDSH 业务设置区段 |
 | `right-dock.html` | 右侧栏四类页签、制品预览、页签管理 |
 | `plane-sync.html` | 设备与归属、会话同步、用量、副本清理、导入、收件箱、附件同步、通知与未读 |
-| `plane-ops.html` | 定时任务、自动化、MCP 注册表、模型额度 |
+| `plane-ops.html` | 自动化、MCP 注册表、模型额度 |
 | `plane-share.html` | 分享记录、创建、撤销、快照页 |
 | `plane-diagnostics.html` | 诊断页、健康检查、遥测、插件清单、版本 |
 | `native-desktop.html` | 原生菜单、托盘、更新、安全模式、恢复窗口、崩溃证据、权限向导、桌面控制确认 |

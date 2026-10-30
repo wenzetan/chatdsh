@@ -102,6 +102,8 @@ export interface ConnectorsConfig {
   readonly gatewayUrl?: string;
   /** 本设备标识，与控制平面的设备记录一致。 */
   readonly deviceId?: string;
+  /** 节点令牌，向控制平面证明设备身份；缺省取环境变量 `CHATDSH_NODE_TOKEN`。 */
+  readonly nodeToken?: string;
   /** 读取注册表的超时，单位毫秒。 */
   readonly requestTimeoutMs?: number;
 }
@@ -109,7 +111,7 @@ export interface ConnectorsConfig {
 export class ChatdshConnectorService extends TypertRemoteService {
   static inject = ['storageDomain', 'loader'];
 
-  private readonly config: { gatewayUrl?: string; deviceId: string; requestTimeoutMs: number };
+  private readonly config: { gatewayUrl?: string; deviceId: string; nodeToken: string; requestTimeoutMs: number };
 
   private connectors: Table<ConnectorRecord> | undefined;
 
@@ -118,6 +120,7 @@ export class ChatdshConnectorService extends TypertRemoteService {
     this.config = {
       ...(config.gatewayUrl === undefined ? {} : { gatewayUrl: config.gatewayUrl }),
       deviceId: config.deviceId ?? 'local',
+      nodeToken: config.nodeToken ?? process.env.CHATDSH_NODE_TOKEN ?? '',
       requestTimeoutMs: config.requestTimeoutMs ?? 5000,
     };
   }
@@ -128,6 +131,7 @@ export class ChatdshConnectorService extends TypertRemoteService {
     return new McpRegistryClient({
       gatewayUrl: this.config.gatewayUrl,
       deviceId: this.config.deviceId,
+      nodeToken: this.config.nodeToken,
       requestTimeoutMs: this.config.requestTimeoutMs,
     });
   }

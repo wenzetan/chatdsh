@@ -23,10 +23,10 @@ function registry() {
 test('设备上报的服务器成为全局注册，其他设备可读', () => {
   const { store, registry: mcp } = registry();
   try {
-    mcp.upsertServers('acct-1', 'device-a', {
+    mcp.upsertServers('device-a', {
       context7: { type: 'http', url: 'https://mcp.context7.com/mcp' },
     });
-    const snapshot = mcp.snapshot('acct-1');
+    const snapshot = mcp.snapshot();
     assert.deepEqual(snapshot.servers.map((server) => server.name), ['context7']);
     const endpoints = snapshot.endpoints.filter((endpoint) => endpoint.server === 'context7');
     assert.equal(endpoints.length, 1);
@@ -41,13 +41,13 @@ test('设备上报的服务器成为全局注册，其他设备可读', () => {
 test('同一服务器在不同设备上保留各自的连接方式', () => {
   const { store, registry: mcp } = registry();
   try {
-    mcp.upsertServers('acct-1', 'device-internal', {
+    mcp.upsertServers('device-internal', {
       context7: { type: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
     });
-    mcp.upsertServers('acct-1', 'device-external', {
+    mcp.upsertServers('device-external', {
       context7: { type: 'http', url: 'https://mcp.context7.com/mcp' },
     });
-    const endpoints = mcp.snapshot('acct-1').endpoints.filter((endpoint) => endpoint.server === 'context7');
+    const endpoints = mcp.snapshot().endpoints.filter((endpoint) => endpoint.server === 'context7');
     assert.equal(endpoints.length, 2);
     const internal = endpoints.find((endpoint) => endpoint.deviceId === 'device-internal');
     const external = endpoints.find((endpoint) => endpoint.deviceId === 'device-external');
@@ -62,13 +62,13 @@ test('同一服务器在不同设备上保留各自的连接方式', () => {
 test('上报是覆盖式的：同一设备的旧端点被替换', () => {
   const { store, registry: mcp } = registry();
   try {
-    mcp.upsertServers('acct-1', 'device-a', {
+    mcp.upsertServers('device-a', {
       context7: { type: 'http', url: 'https://old.example/mcp' },
     });
-    mcp.upsertServers('acct-1', 'device-a', {
+    mcp.upsertServers('device-a', {
       context7: { type: 'http', url: 'https://new.example/mcp' },
     });
-    const endpoints = mcp.snapshot('acct-1').endpoints;
+    const endpoints = mcp.snapshot().endpoints;
     assert.equal(endpoints.length, 1);
     assert.equal(endpoints[0].row.url, 'https://new.example/mcp');
   } finally {
@@ -79,14 +79,14 @@ test('上报是覆盖式的：同一设备的旧端点被替换', () => {
 test('设备可以移除自己的一段端点，其他设备不受影响', () => {
   const { store, registry: mcp } = registry();
   try {
-    mcp.upsertServers('acct-1', 'device-a', { context7: { type: 'http', url: 'https://a.example/mcp' } });
-    mcp.upsertServers('acct-1', 'device-b', { context7: { type: 'http', url: 'https://b.example/mcp' } });
-    mcp.removeServer('acct-1', 'device-a', 'context7');
-    const endpoints = mcp.snapshot('acct-1').endpoints;
+    mcp.upsertServers('device-a', { context7: { type: 'http', url: 'https://a.example/mcp' } });
+    mcp.upsertServers('device-b', { context7: { type: 'http', url: 'https://b.example/mcp' } });
+    mcp.removeServer('device-a', 'context7');
+    const endpoints = mcp.snapshot().endpoints;
     assert.equal(endpoints.length, 1);
     assert.equal(endpoints[0].deviceId, 'device-b');
     // 全局注册仍在：还有别的设备在用这台服务器。
-    assert.deepEqual(mcp.snapshot('acct-1').servers.map((server) => server.name), ['context7']);
+    assert.deepEqual(mcp.snapshot().servers.map((server) => server.name), ['context7']);
   } finally {
     store.close();
   }
@@ -95,21 +95,9 @@ test('设备可以移除自己的一段端点，其他设备不受影响', () =>
 test('最后一段端点移除后全局注册也随之消失', () => {
   const { store, registry: mcp } = registry();
   try {
-    mcp.upsertServers('acct-1', 'device-a', { context7: { type: 'http', url: 'https://a.example/mcp' } });
-    mcp.removeServer('acct-1', 'device-a', 'context7');
-    assert.deepEqual(mcp.snapshot('acct-1').servers, []);
-  } finally {
-    store.close();
-  }
-});
-
-test('不同账号的注册互相隔离', () => {
-  const { store, registry: mcp } = registry();
-  try {
-    mcp.upsertServers('acct-1', 'device-a', { context7: { type: 'http', url: 'https://a.example/mcp' } });
-    mcp.upsertServers('acct-2', 'device-b', { other: { type: 'http', url: 'https://b.example/mcp' } });
-    assert.deepEqual(mcp.snapshot('acct-1').servers.map((server) => server.name), ['context7']);
-    assert.deepEqual(mcp.snapshot('acct-2').servers.map((server) => server.name), ['other']);
+    mcp.upsertServers('device-a', { context7: { type: 'http', url: 'https://a.example/mcp' } });
+    mcp.removeServer('device-a', 'context7');
+    assert.deepEqual(mcp.snapshot().servers, []);
   } finally {
     store.close();
   }
@@ -118,10 +106,10 @@ test('不同账号的注册互相隔离', () => {
 test('端点里不保存凭据值，只保存环境变量名', () => {
   const { store, registry: mcp } = registry();
   try {
-    mcp.upsertServers('acct-1', 'device-a', {
+    mcp.upsertServers('device-a', {
       context7: { type: 'http', url: 'https://mcp.context7.com/mcp', credentialEnv: 'CONTEXT7_API_KEY' },
     });
-    const endpoint = mcp.snapshot('acct-1').endpoints[0];
+    const endpoint = mcp.snapshot().endpoints[0];
     assert.equal(endpoint.credentialEnv, 'CONTEXT7_API_KEY');
     assert.equal(JSON.stringify(endpoint).includes('secret'), false);
   } finally {
@@ -132,7 +120,7 @@ test('端点里不保存凭据值，只保存环境变量名', () => {
 /** 起一个只装配 MCP 注册表所需的网关。 */
 async function startGateway() {
   const { createGatewayServer } = await import('../../gateway/lib/server.js');
-  const { ReplicaStore, ShareStore, ScheduleStore, ReceiptStore, PushQueue } = await import('../../gateway/lib/store.js');
+  const { ReplicaStore, ShareStore, ReceiptStore, PushQueue } = await import('../../gateway/lib/store.js');
   const { createPushHub } = await import('../../gateway/lib/push.js');
   const store = new GatewayStore(':memory:');
   const telemetry = {
@@ -145,11 +133,10 @@ async function startGateway() {
     withContext: (_carrier, fn) => fn(),
   };
   const server = createGatewayServer({
-    config: { ...readConfig(), port: 0, accessProvider: 'manual', llmGateway: { quota: {} } },
+    config: { ...readConfig(), port: 0, llmGateway: { quota: {} } },
     store,
     replica: new ReplicaStore(store.handle()),
     share: new ShareStore(store.handle()),
-    schedule: new ScheduleStore(store.handle()),
     receipts: new ReceiptStore(store.handle()),
     push: createPushHub({ queue: new PushQueue(store.handle()), devices: store, mode: 'all-once', escalationMs: 1000, telemetry }),
     telemetry,
@@ -164,20 +151,20 @@ test('路由：PUT 上报端点，GET 读到全局注册，DELETE 移除本段',
     const base = server.url();
     const put = await fetch(`${base}/chatdsh/gateway/mcp`, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', 'tailscale-user-login': 'alice', 'x-chatdsh-device-id': 'device-a' },
+      headers: { 'content-type': 'application/json', 'x-chatdsh-node-id': 'device-a' },
       body: JSON.stringify({ servers: { context7: { type: 'http', url: 'https://mcp.context7.com/mcp' } } }),
     });
     assert.equal(put.status, 200);
     assert.equal((await put.json()).written, 1);
 
-    const get = await fetch(`${base}/chatdsh/gateway/mcp`, { headers: { 'tailscale-user-login': 'alice' } });
+    const get = await fetch(`${base}/chatdsh/gateway/mcp`);
     const snapshot = await get.json();
     assert.deepEqual(snapshot.servers.map((item) => item.name), ['context7']);
     assert.equal(snapshot.endpoints[0].deviceId, 'device-a');
 
     const del = await fetch(`${base}/chatdsh/gateway/mcp?server=context7`, {
       method: 'DELETE',
-      headers: { 'tailscale-user-login': 'alice', 'x-chatdsh-device-id': 'device-a' },
+      headers: { 'x-chatdsh-node-id': 'device-a' },
     });
     assert.equal(del.status, 200);
     assert.deepEqual((await del.json()).servers, []);

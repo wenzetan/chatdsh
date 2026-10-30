@@ -106,7 +106,7 @@ Web 端的界面外壳与内容界面由以下模块提供，ChatDSH 直接复�
 | `@chatdsh/client-memory` | `settings.section`（`list`） | bank 浏览、检索、关联工作区、废弃项目上报；`memoryBackend` 为 `none` 时只显示启用入口 |
 | `@chatdsh/client-assistants` | `settings.section`（`list`） | 助手目录、preset 声明编辑 |
 | `@chatdsh/client-connectors` | `settings.section`（`list`） | MCP 服务器条目、凭据录入与授权 |
-| `@chatdsh/client-account` | `settings.section`（`list`） | 应用登录、两步验证、设备会话 |
+| `@chatdsh/client-account` | `settings.section`（`list`） | 设备列表与在线状态 |
 | `@chatdsh/client-share` | `settings.section`（`list`） | 创建分享、快照参数、撤销与用量 |
 | `@chatdsh/client-approval` | `settings.section`（`list`） | 审批记录查看与人工接管，按 `chatdshApprovals` 投影渲染 |
 

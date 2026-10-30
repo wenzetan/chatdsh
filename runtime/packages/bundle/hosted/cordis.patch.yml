@@ -6,10 +6,6 @@
 # 宿主平面插件的注册点在架构文档 4.3 节；会话平面 preset 与客户端插件行在后续阶段加入。
 
 - insert:
-    # 身份：从控制平面注入的请求头部取出账号、工作区、设备与请求标识。
-    - id: chatdsh-identity
-      name: '@chatdsh/core-identity'
-
     # 遥测：唯一的遥测出口，注册 ctx.chatdshTelemetry、状态端点、自检端点与浏览器中继。
     # 平台形态与端点由本部署的 profile 补丁层给出。
     - id: chatdsh-telemetry
@@ -37,6 +33,16 @@
     # 上报：把会话事件信封推给控制平面，形成只读副本。
     - id: chatdsh-push
       name: '@chatdsh/host-push'
+
+    # 设备长连接：设备主动连到控制平面，接收并本地执行转发来的请求。
+    # 控制平面地址与节点令牌由环境变量下发；两者缺一时插件不激活，设备形态以外是常态。
+    - id: chatdsh-device-link
+      name: '@chatdsh/host-device-link'
+
+    # 设置白名单同步：监听本机设置变更并上报控制平面，接收推送后写本机 home 层。
+    # 控制平面地址与节点令牌缺一时插件不激活。
+    - id: chatdsh-settings-sync
+      name: '@chatdsh/host-settings-sync'
 
     # 审批投影：把审计事件折叠成可查询的待处理列表与最近结果。
     - id: chatdsh-approval

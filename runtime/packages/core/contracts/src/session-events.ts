@@ -59,7 +59,6 @@ export type SessionKind = 'work' | 'chat';
 /** 会话归属记录，控制平面持有并由运行时投影补全。 */
 export interface SessionOwnership {
   readonly sessionId: string;
-  readonly accountId: string;
   /** 工作会话的工作区标识；聊天会话为空。 */
   readonly workspaceId?: string;
   /** 会话类型，由 `workspaceId` 是否为空判定，写入后不再变化。 */

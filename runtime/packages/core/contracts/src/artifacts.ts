@@ -50,8 +50,6 @@ export interface ArtifactVersion {
 /** 附件的元数据。 */
 export interface AttachmentMetadata {
   readonly id: string;
-  /** 上传者账号。 */
-  readonly accountId: string;
   /** 关联会话；上传后尚未发送时为空。 */
   readonly sessionId?: string;
   /** 原始文件名。 */

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { tempHome } from '../../scripts/lib/cleanup.mjs';
 import { createTelemetryClient } from '../../packages/core/diagnostics/lib/client.js';
 import { defaultTelemetryConfig } from '../../packages/core/diagnostics/lib/config.js';
-import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ScheduleStore, ShareStore } from '../../gateway/lib/store.js';
+import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ShareStore } from '../../gateway/lib/store.js';
 import { createPushHub } from '../../gateway/lib/push.js';
 import { createGatewayServer } from '../../gateway/lib/server.js';
 import { AutomationStore } from '../../gateway/lib/automation.js';
@@ -25,7 +25,6 @@ async function startGateway() {
   const store = new GatewayStore(databasePath);
   const replica = new ReplicaStore(store.handle());
   const share = new ShareStore(store.handle());
-  const schedule = new ScheduleStore(store.handle());
   const receipts = new ReceiptStore(store.handle());
   const push = createPushHub({
     queue: new PushQueue(store.handle()),
@@ -39,8 +38,6 @@ async function startGateway() {
       host: '127.0.0.1',
       port: 0,
       runtimeUrl: 'http://127.0.0.1:1',
-      runtimeRoutes: {},
-      accessProvider: 'manual',
       databasePath,
       environment: 'test',
       version: '0.0.0',
@@ -51,7 +48,6 @@ async function startGateway() {
     store,
     replica,
     share,
-    schedule,
     receipts,
     push,
     telemetry,
@@ -75,7 +71,6 @@ test('webhook 路由：合法投递 202，重复投递 202 duplicate，脏数据
     const automations = new AutomationStore(gateway.store.handle());
     automations.create({
       id: 'a1',
-      accountId: 'acct',
       name: '构建通知',
       trigger: { kind: 'webhook', secretEnv: 'HOOK_SECRET' },
       action: { kind: 'start-session', prompt: '总结这次构建' },

@@ -119,7 +119,6 @@ export const TELEMETRY_RESOURCE_ATTRIBUTES = {
 export const TELEMETRY_CONTEXT_ATTRIBUTES = {
   sessionId: 'session.id',
   workspaceId: 'workspace.id',
-  accountId: 'account.id',
   turn: 'turn',
   step: 'step',
   toolName: 'tool.name',
@@ -140,7 +139,6 @@ export const TELEMETRY_SURFACES = [
   'desktop',
   'mobile',
   'cli',
-  'worker',
   'mcp',
 ] as const;
 
@@ -155,7 +153,6 @@ export const TELEMETRY_SERVICE_NAMES: Readonly<Record<TelemetrySurface, string>>
   desktop: 'chatdsh-desktop',
   mobile: 'chatdsh-mobile',
   cli: 'chatdsh-cli',
-  worker: 'chatdsh-worker',
   mcp: 'chatdsh-mcp',
 };
 

@@ -13,7 +13,7 @@ ensureDeps(resolve(import.meta.dirname, '../..'));
 ensureDeps(resolve(REPO, 'dsh-adapter'));
 
 const { createGatewayServer } = await import('../../gateway/lib/server.js');
-const { GatewayStore, ReplicaStore, ShareStore, ScheduleStore, ReceiptStore, PushQueue, readConfig } = await import('../../gateway/lib/store.js');
+const { GatewayStore, ReplicaStore, ShareStore, ReceiptStore, PushQueue, readConfig } = await import('../../gateway/lib/store.js');
 const { createPushHub } = await import('../../gateway/lib/push.js');
 
 /** 起一个有界流式响应的上游模型网关。 */
@@ -37,7 +37,6 @@ async function serveUpstream() {
 async function startGateway(upstreamUrl, quota) {
   const config = {
     ...readConfig(),
-    accessProvider: 'manual',
     llmGateway: { upstreamUrl, quota, apiKeyEnv: undefined },
   };
   const store = new GatewayStore(':memory:');
@@ -46,7 +45,6 @@ async function startGateway(upstreamUrl, quota) {
     store,
     replica: new ReplicaStore(store.handle()),
     share: new ShareStore(store.handle()),
-    schedule: new ScheduleStore(store.handle()),
     receipts: new ReceiptStore(store.handle()),
     push: createPushHub({
       queue: new PushQueue(store.handle()),
@@ -88,7 +86,6 @@ test('模型入口转发 SSE 分块并带上控制平面身份头', async () => 
     assert.match(text, /"type":"finish"/);
     assert.match(text, /"kind":"stop"/);
     assert.equal(upstream.requests.length, 1);
-    assert.equal(typeof upstream.requests[0].headers['x-chatdsh-account-id'], 'string');
     assert.deepEqual(JSON.parse(upstream.requests[0].body), {
       model: 'test-model',
       messages: [],

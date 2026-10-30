@@ -1,7 +1,8 @@
 // 手机业务通道的端到端验收：真实控制平面 → 托管运行时 → 真实移动网关插件。
 //
 // 依次核对：配对签发设备令牌、令牌取启动路径、未带令牌的 WebSocket 升级被拒绝、
-// 带令牌的升级到达插件并收到 hello、吊销后 HTTP 与 WebSocket 同时拒绝。
+// 配对子协议在同一条连接上先给 paired 再给 hello、配对令牌重连到达插件、
+// 吊销后 HTTP 与 WebSocket 同时拒绝。
 // 全程使用临时数据根，结束后清理；日志只在失败时打印，且由运行时与控制平面自行脱敏。
 //
 // 用法：node scripts/verify-mobile-channel.mjs [--keep]
@@ -102,7 +103,7 @@ function upgradeRejected(token) {
   return new Promise((resolveAttempt) => {
     const options = token === undefined
       ? { protocols: ['dsh-mobile-v1'] }
-      : { protocols: ['dsh-mobile-v1'], headers: { 'x-chatdsh-device-token': token } };
+      : { protocols: ['dsh-mobile-v1'], headers: { authorization: `Bearer ${token}` } };
     const socket = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/ws/mobile`, options);
     socket.addEventListener('open', () => { socket.close(); resolveAttempt(false); });
     socket.addEventListener('error', () => resolveAttempt(true));
@@ -110,25 +111,26 @@ function upgradeRejected(token) {
   });
 }
 
-/** 用配对子协议升级，返回 paired 帧；失败时返回 undefined。 */
+/** 用配对子协议升级，在同一连接上收集到 hello 为止的帧；失败时返回已收到的帧。 */
 function pairOverWebSocket(code) {
-  return new Promise((resolveFrame) => {
+  return new Promise((resolveFrames) => {
+    const frames = [];
     let settled = false;
-    const finish = (value) => {
+    const finish = () => {
       if (settled) return;
       settled = true;
-      resolveFrame(value);
+      resolveFrames(frames);
     };
     const socket = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/ws/mobile`, {
       protocols: ['dsh-mobile-v1', `dsh-pair.${code}`],
     });
     socket.addEventListener('message', (event) => {
-      const frame = JSON.parse(String(event.data));
-      if (frame.kind === 'paired') { socket.close(); finish(frame); }
+      frames.push(JSON.parse(String(event.data)));
+      if (frames.some((frame) => frame.kind === 'hello')) { socket.close(); finish(); }
     });
-    socket.addEventListener('error', () => finish(undefined));
-    socket.addEventListener('close', () => finish(undefined));
-    setTimeout(() => finish(undefined), 10000);
+    socket.addEventListener('error', finish);
+    socket.addEventListener('close', finish);
+    setTimeout(finish, 15000);
   });
 }
 
@@ -144,13 +146,13 @@ function pairingRejected(code) {
   });
 }
 
-/** 带令牌升级并收集到 hello 为止的帧。 */
-function collectUntilHello(token) {
+/** 带凭据升级并收集到 hello 为止的帧。 */
+function collectUntilHello(headers) {
   return new Promise((resolveFrames) => {
     const frames = [];
     const socket = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/ws/mobile`, {
       protocols: ['dsh-mobile-v1'],
-      headers: { 'x-chatdsh-device-token': token },
+      headers,
     });
     socket.addEventListener('message', (event) => {
       frames.push(JSON.parse(String(event.data)));
@@ -159,6 +161,18 @@ function collectUntilHello(token) {
     socket.addEventListener('error', () => resolveFrames(frames));
     setTimeout(() => resolveFrames(frames), 15000);
   });
+}
+
+/** hello 帧必须带通道能力：客户端靠这些能力决定界面。 */
+function assertHello(hello, label) {
+  if (hello === undefined) throw new Error(`${label}没有收到 hello`);
+  if (hello.protocol !== 3) throw new Error(`${label}的 hello 协议版本不是 3：${hello.protocol}`);
+  for (const capability of ['split-channels', 'session-create']) {
+    if (!Array.isArray(hello.capabilities) || !hello.capabilities.includes(capability)) {
+      throw new Error(`${label}的 hello 缺少能力 ${capability}`);
+    }
+  }
+  return hello;
 }
 
 let exitCode = 0;
@@ -177,34 +191,35 @@ try {
   if (!await upgradeRejected(undefined)) throw new Error('未带令牌的 WebSocket 升级没有被拒绝');
   console.log('未带令牌的升级被拒绝');
 
-  // 配对子协议：上游客户端走的是「带 dsh-pair.<code> 升级 → 收到 paired 帧拿令牌」，
-  // 这条路径必须与控制平面的配对接口给出同样的结果。
+  // 配对子协议：上游客户端走的是「带 dsh-pair.<code> 升级 → 同一连接上先收 paired 再收
+  // hello」，配对连接必须活到 hello 到达，客户端在手动配对期间不会重连。
   if (!await pairingRejected('wrong-pairing-code')) throw new Error('错误配对码没有被拒绝');
-  const pairedFrame = await pairOverWebSocket(PAIRING_CODE);
-  if (pairedFrame === undefined) throw new Error('配对子协议没有返回 paired 帧');
+  const pairedFrames = await pairOverWebSocket(PAIRING_CODE);
+  const pairedFrame = pairedFrames.find((frame) => frame.kind === 'paired');
+  if (pairedFrame === undefined) throw new Error(`配对子协议没有返回 paired 帧：${JSON.stringify(pairedFrames).slice(0, 300)}`);
   if (typeof pairedFrame.token !== 'string' || pairedFrame.token === '') throw new Error('paired 帧缺少令牌');
-  console.log('配对子协议返回 paired 帧，客户端可零改动接入');
+  if (pairedFrames[0].kind !== 'paired') throw new Error(`配对连接的首帧不是 paired：${pairedFrames[0].kind}`);
+  assertHello(pairedFrames.find((frame) => frame.kind === 'hello'), '配对连接');
+  console.log('配对连接上依次收到 paired 与 hello，客户端配对后不需要重连');
 
-  const frames = await collectUntilHello(paired.token);
-  const hello = frames.find((frame) => frame.kind === 'hello');
-  if (hello === undefined) throw new Error(`带令牌的升级没有收到 hello：${JSON.stringify(frames).slice(0, 300)}`);
-  if (hello.protocol !== 3) throw new Error(`hello 的协议版本不是 3：${hello.protocol}`);
-  for (const capability of ['split-channels', 'session-create']) {
-    if (!Array.isArray(hello.capabilities) || !hello.capabilities.includes(capability)) {
-      throw new Error(`hello 缺少能力 ${capability}`);
-    }
+  const hello = assertHello(
+    (await collectUntilHello({ authorization: `Bearer ${pairedFrame.token}` })).find((frame) => frame.kind === 'hello'),
+    '配对令牌重连'
+  );
+  console.log(`配对令牌重连到达插件，hello 协议 ${hello.protocol}，能力 ${hello.capabilities.length} 项`);
+
+  for (const deviceId of [paired.deviceId, pairedFrame.device.id]) {
+    const revoke = await fetch(`${base}/chatdsh/gateway/mobile/devices?id=${encodeURIComponent(deviceId)}`, {
+      method: 'DELETE',
+    });
+    if (!revoke.ok) throw new Error(`吊销设备失败：${revoke.status}`);
   }
-  console.log(`带令牌的升级到达插件，hello 协议 ${hello.protocol}，能力 ${hello.capabilities.length} 项`);
-
-  const revoke = await fetch(`${base}/chatdsh/gateway/mobile/devices?id=${encodeURIComponent(paired.deviceId)}`, {
-    method: 'DELETE',
-  });
-  if (!revoke.ok) throw new Error(`吊销设备失败：${revoke.status}`);
   const afterRevoke = await fetch(`${base}/chatdsh/gateway/mobile/session`, {
     headers: { 'x-chatdsh-device-token': paired.token },
   });
   if (afterRevoke.status !== 401) throw new Error(`吊销后取启动路径没有被拒绝：${afterRevoke.status}`);
   if (!await upgradeRejected(paired.token)) throw new Error('吊销后的 WebSocket 升级没有被拒绝');
+  if (!await upgradeRejected(pairedFrame.token)) throw new Error('配对连接签发的令牌在吊销后仍能升级');
   console.log('吊销后 HTTP 与 WebSocket 同时拒绝');
   console.log('手机业务通道验收通过');
 } catch (error) {

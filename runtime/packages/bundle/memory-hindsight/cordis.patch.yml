@@ -10,6 +10,8 @@
         hindsightUrl: http://127.0.0.1:8889
         apiKeyEnv: HINDSIGHT_API_KEY
         maxTokens: 1024
-        requestTimeoutMs: 5000
+        # 本机 Hindsight 一次召回实测 21 到 23 秒（向量检索加重排），五秒会让每次召回都走
+        # 降级分支，记忆功能等于不可用。
+        requestTimeoutMs: 60000
         mirrorToOwnBank: false
         additionalBanks: []

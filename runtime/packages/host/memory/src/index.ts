@@ -11,17 +11,19 @@ import {
   AGENT_EVENTS,
   SESSION_EVENTS,
   Remote,
+  createUserMessage,
   schema as z,
   llmOf,
   sessionPersistenceOf,
-  systemPromptOf,
   telemetryOf,
   TypertRemoteService,
   type Context,
+  type UserMessage,
 } from '@chatdsh/adapter';
+import type { MemoryRecallMessageSource } from '@chatdsh/core-contracts';
 import { createMemoryClient, type MemoryClient, type RecallOptions, type WriteOptions } from './client.ts';
-import { banksFor, collectSummaryText, composeSummaryPrompt, lastUserText, planTurnWrite, renderRecallSection, summaryRequestOf, TurnWriteDeduper, type MemoryHit, type SummaryConfigLike, type TurnMessage } from './rules.ts';
-export { banksFor, collectSummaryText, composeSummaryPrompt, composeTurnMemory, dedupeHits, lastUserText, planTurnWrite, renderRecallSection, summaryRequestOf, TurnWriteDeduper } from './rules.ts';
+import { banksFor, collectSummaryText, composeSummaryPrompt, lastUserText, planTurnWrite, RecallSequenceDeduper, renderRecallSection, shouldRecall, summaryRequestOf, TurnWriteDeduper, type MemoryHit, type SummaryConfigLike, type TurnMessage } from './rules.ts';
+export { banksFor, collectSummaryText, composeSummaryPrompt, composeTurnMemory, dedupeHits, lastUserText, planTurnWrite, RecallSequenceDeduper, renderRecallSection, shouldRecall, summaryRequestOf, TurnWriteDeduper } from './rules.ts';
 export type { SummaryConfigLike, SummaryPrompt, SummaryRequest, TurnMessage, TurnWritePlan } from './rules.ts';
 export type { MemoryHit, MemoryScope } from './rules.ts';
 export { MemoryUnavailableError } from './client.ts';
@@ -33,24 +35,27 @@ export const name = 'chatdsh-memory';
 /** 记忆运行时使用的服务名，同时是 Remote 命名空间。 */
 export const SERVICE_NAME = 'chatdshMemory';
 
-/** 依赖：提示席位用于注入召回结果，会话持久化用于回合结束后读取日志。 */
-export const inject = ['systemPrompt', 'sessionPersistence', 'llm'];
-
-/** 提示上下文席位的名字。 */
-export const RECALL_CONTEXT_NAME = 'chatdsh-memory:recall';
-
-/** 召回结果在提示里的排序位置：排在项目说明之后、工具说明之前。 */
-export const RECALL_CONTEXT_ORDER = 20;
-
-/** 提示席位的注册面。 */
-interface PromptBound {
-  context(spec: { name: string; order: number; interpolate: boolean; text: () => string }): () => void;
-}
+/** 依赖：会话持久化用于回合结束后读取日志，模型运行时用于回合摘要。 */
+export const inject = ['sessionPersistence', 'llm'];
 
 /** 一个 agent 在本插件看来需要的部分。 */
 interface AgentLike {
   readonly session: { readonly id: string; readonly header: { readonly cwd?: string } };
-  readonly ctx: { readonly systemPrompt: PromptBound };
+}
+
+/**
+ * 把召回结果包成一条用户消息。
+ *
+ * 消息的来源标识是 `memory-recall`，界面按它把这段内容显示成「相关记忆」。
+ * @param hits - 召回结果。
+ * @returns 冻结的用户消息。
+ */
+function createRecallMessage(hits: readonly MemoryHit[]): UserMessage {
+  const source: MemoryRecallMessageSource = { kind: 'memory-recall' };
+  return createUserMessage({
+    content: [{ type: 'text', text: renderRecallSection(hits) }],
+    source,
+  });
 }
 
 /** 记忆后端的状态，供界面展示。 */
@@ -109,7 +114,7 @@ interface MemoryTelemetry {
  * 记忆接入服务。
  *
  * 召回与写入都先确认服务可用；失败时记一条 `chatdsh.memory.degraded` 并把错误抛给调用方，
- * 由调用方决定如何呈现。这个服务不缓存召回结果，也不在内存里留一份副本。
+ * 由调用方决定如何呈现。这个服务不缓存召回内容，只按会话记住上一次追加的召回编号序列。
  */
 export class ChatdshMemoryService extends TypertRemoteService {
   /** 配置 schema，供加载器校验。 */
@@ -122,7 +127,7 @@ export class ChatdshMemoryService extends TypertRemoteService {
    * 只对函数插件生效。写成模块级时实例拿不到 `ctx.sessionPersistence`，回合写入会在
    * 运行时抛「cannot get property without inject」。
    */
-  static inject = ['systemPrompt', 'sessionPersistence', 'llm'];
+  static inject = ['sessionPersistence', 'llm'];
 
   private readonly client: MemoryClient;
   private readonly extraBanks: readonly string[];
@@ -130,8 +135,8 @@ export class ChatdshMemoryService extends TypertRemoteService {
   private readonly maxTokens: number;
   /** 摘要请求的提供方与模型；两项都缺省时保持规则抽取。 */
   private readonly summaryConfig: SummaryConfigLike;
-  /** 每个会话最近一次召回的结果，供提示席位同步读取。 */
-  private readonly recalls = new Map<string, { hits: MemoryHit[]; at: number; query: string }>();
+  /** 每个会话上一次追加的召回编号序列，用于避免同一批记忆重复进入历史。 */
+  private readonly recalledSequences = new RecallSequenceDeduper();
   /** 已经写过记忆的回合，避免重放或重复事件造成重复写入。 */
   private readonly writtenTurns = new TurnWriteDeduper();
 
@@ -147,24 +152,18 @@ export class ChatdshMemoryService extends TypertRemoteService {
   /**
    * 挂上会话生命周期。
    *
-   * 每新建一个 agent，就在它的作用域里注册一个提示席位，席位读该会话最近一次的召回结果；
-   * 每步开始前按当前问题重新召回并覆盖这份结果。席位与 agent 同生共死，卸载时自动回收。
+   * 每步开始前按当前问题召回一次，命中就在本步进入的消息末尾追加一条用户消息，内容是
+   * 该会话场景下 bank 里的记忆。追加只改本步进入的消息列表，已经进入历史的前缀保持不变。
+   * 回合结束后把本回合写回记忆。
    */
   async [TypertRemoteService.init](): Promise<void> {
-    this.ctx.on(AGENT_EVENTS.created, (payload) => {
-      const agent = payload.agent;
-      systemPromptOf(agent.ctx).context({
-        name: RECALL_CONTEXT_NAME,
-        order: RECALL_CONTEXT_ORDER,
-        interpolate: false,
-        text: () => renderRecallSection(this.recalls.get(agent.session.id)?.hits ?? []),
-      });
-      return undefined;
-    });
-
     this.ctx.on(AGENT_EVENTS.preStep, async (payload, next) => {
-      await this.refreshRecall(payload.agent, payload.messages);
-      return next();
+      const decision = await next();
+      if (decision.kind === 'reject') return decision;
+      if (!shouldRecall({ step: payload.step, messages: payload.messages })) return decision;
+      const hits = await this.recallFor(payload.agent, payload.messages);
+      if (hits.length === 0) return decision;
+      return { ...decision, messages: [...decision.messages, createRecallMessage(hits)] };
     });
 
     // 回合结束后把本回合的用户与助手消息写回记忆。写入是后台动作：失败只记降级事件，
@@ -178,8 +177,7 @@ export class ChatdshMemoryService extends TypertRemoteService {
    * 把一个回合写进记忆。
    *
    * 回合内容从会话日志读：最后一条 `turn/start` 到本次 `turn/end` 之间的 user/message
-   * 与 assistant/message。写入 bank 由 `banksFor` 决定，共享工作区写组 bank，私有工作区
-   * 写账号 bank。同一个会话的同一回合只写一次。
+   * 与 assistant/message。写入一律落在 `acct`。同一个会话的同一回合只写一次。
    */
   private async persistTurn(session: { readonly id: string; readonly header: { readonly cwd?: string } }, endSeq: number): Promise<void> {
     const cwd = session.header.cwd ?? '';
@@ -216,7 +214,7 @@ export class ChatdshMemoryService extends TypertRemoteService {
       }
 
       const summary = await this.summarizeTurn(messages);
-      const plan = planTurnWrite({ cwd, shared: this.workspaceShared(cwd), messages, ...(summary === undefined ? {} : { content: summary }) });
+      const plan = planTurnWrite({ cwd, messages, ...(summary === undefined ? {} : { content: summary }) });
       if (plan === undefined) return;
       await this.write(plan.bank, { content: plan.content, context: 'turn-summary' });
     } catch {
@@ -277,33 +275,40 @@ export class ChatdshMemoryService extends TypertRemoteService {
     });
   }
 
-  /** 工作区是否标记为共享；项目插件未安装时按私有处理。 */
-  private workspaceShared(cwd: string): boolean {
-    if (cwd === '') return false;
-    const projects = this.ctx.reflect.get('chatdshProjects') as { get?: (path: string) => { shared?: boolean } | undefined } | undefined;
-    return projects?.get?.(cwd)?.shared === true;
-  }
-
   /**
-   * 按本步的问题重新召回。
+   * 按本步的问题召回。
    *
-   * 失败时记一条降级事件并保留上一次结果：记忆是可选能力，它的后端不可达不应该让会话停下。
+   * 失败时记一条降级事件并返回空结果：记忆是可选能力，它的后端不可达不应该让会话停下。
+   * 召回结果的编号序列与上一次追加的相同就返回空结果，同一批记忆不重复进入历史。
    */
-  private async refreshRecall(agent: AgentLike, messages: readonly unknown[]): Promise<void> {
+  private async recallFor(agent: AgentLike, messages: readonly unknown[]): Promise<readonly MemoryHit[]> {
     const question = lastUserText(messages);
-    if (question === '') return;
-    // 同一回合内的连续工具调用不重复召回，用五秒的窗口界定「同一回合」：
-    // 用户隔一会儿再问同一个问题时仍会重新召回，不因为文本相同就永远跳过。
-    const previous = this.recalls.get(agent.session.id);
-    if (previous !== undefined && previous.query === question && Date.now() - previous.at < 5_000) return;
+    if (question === '') return [];
     const cwd = agent.session.header.cwd ?? '';
-    const banks = banksFor({ accountId: 'local', tenantId: 'default', memoryGroupId: cwd === '' ? undefined : cwd }).recall;
+    const banks = banksFor({ memoryGroupId: cwd === '' ? undefined : cwd }).recall;
+    let hits: readonly MemoryHit[];
     try {
-      const hits = await this.recall(banks, { query: question });
-      this.recalls.set(agent.session.id, { hits, at: Date.now(), query: question });
+      hits = await this.recall(banks, { query: question });
     } catch {
       this.telemetry()?.event('chatdsh.memory.degraded', { operation: 'pre-step-recall', reason: 'hindsight-unreachable' });
+      this.reportInjection('unavailable');
+      return [];
     }
+    if (hits.length === 0) {
+      this.reportInjection('empty');
+      return [];
+    }
+    if (!this.recalledSequences.accept(agent.session.id, hits.map((hit) => hit.id))) {
+      this.reportInjection('repeat');
+      return [];
+    }
+    this.reportInjection('appended');
+    return hits;
+  }
+
+  /** 记一次召回注入的结果，按 outcome 聚合：追加、同一批重复、无命中、后端不可达。 */
+  private reportInjection(outcome: string): void {
+    this.telemetry()?.counter('chatdsh_memory_injections_total', { description: '记忆召回的注入结果' }).add(1, { outcome });
   }
 
   /** 后端状态：可用性与连接参数，不带凭据。 */
@@ -358,7 +363,7 @@ export class ChatdshMemoryService extends TypertRemoteService {
   async write(bank: string, options: WriteOptions) {
     const telemetry = this.telemetry();
     if (telemetry === undefined) return this.client.write(bank, options);
-    return telemetry.runSpan('chatdsh.memory.write', { 'bank.kind': bank.startsWith('t:') ? 'workspace' : 'acct' }, async (span) => {
+    return telemetry.runSpan('chatdsh.memory.write', { 'bank.kind': bank.startsWith('ws:') ? 'workspace' : 'acct' }, async (span) => {
       const result = await this.client.write(bank, options);
       span.setAttribute('outcome', 'delivered');
       return result;

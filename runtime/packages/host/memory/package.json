@@ -31,12 +31,14 @@
         "chatdsh.memory.summary"
       ],
       "metrics": [
-        "chatdsh_memory_recall_seconds"
+        "chatdsh_memory_recall_seconds",
+        "chatdsh_memory_injections_total"
       ]
     }
   },
   "dependencies": {
     "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/core-contracts": "workspace:*",
     "@chatdsh/hindsight-adapter": "link:../../../../hindsight-adapter"
   }
 }

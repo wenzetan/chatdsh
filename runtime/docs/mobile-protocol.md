@@ -31,7 +31,9 @@ WebSocket 配对：连 `/ws/mobile` 时把一次性配对码放进子协议 `dsh
 { "kind": "paired", "token": "<设备令牌>", "device": { "id": "<deviceId>", "name": "<名称>" } }
 ```
 
-随后关闭这条连接；客户端用拿到的令牌以 `x-chatdsh-device-token` 或 `Authorization: Bearer` 重新连 `/ws/mobile`，才进入业务帧。配对码错误或已过期回 401 `pairing-code-invalid`，未配置配对码回 404 `pairing-disabled`。
+随后同一条连接上继续收到运行时插件的 `hello` 帧，配对到此完成，业务帧在连接上直接可用。客户端在手动配对期间不会重连，配对连接必须活到 `hello` 到达。之后的每次重连都不带配对码，改为在 `Authorization: Bearer` 或 `x-chatdsh-device-token` 里带设备令牌连 `/ws/mobile`。
+
+手机带来的配对码与设备令牌由控制平面消费，转发到运行时插件时会被移除：插件只在本机回环上接受控制平面的连接，它自己的设备鉴权按设计关闭，插件把每条桥接连接都当成控制平面这一个客户端。配对码错误或已过期回 401 `pairing-code-invalid`，未配置配对码回 404 `pairing-disabled`，运行时拒绝升级时回 502 `runtime-upgrade-rejected` 并撤销刚写入的设备。
 
 业务通道与配对的拒绝都会写事件并计数：升级阶段拒绝写 `chatdsh.gateway.mobile.upgrade.rejected`（配对路径写 `chatdsh.gateway.mobile.rejected`），计数指标是 `chatdsh_mobile_upgrades_total`。
 
@@ -100,7 +102,7 @@ WebSocket 配对：连 `/ws/mobile` 时把一次性配对码放进子协议 `dsh
 | 429 | `too-many-batches` | 单台设备每分钟超过 60 批 |
 | 503 | `queue-full` | 控制平面中转队列已满 |
 
-记录名只接受 6.7 节登记的七个名称：`chatdsh.mobile.startup`、`chatdsh.mobile.connect`、`chatdsh.mobile.push.deliver`、`chatdsh.mobile.queue.replay`、`chatdsh.mobile.keystore`、`chatdsh_mobile_connect_seconds`、`chatdsh_mobile_offline_queue_depth`。属性键只接受 `chatdsh.surface`、`chatdsh.component`、`chatdsh.instance.id`、`chatdsh.version`、`deployment.environment`、`session.id`、`workspace.id`、`account.id`、`turn`、`step`、`tool.name`、`mcp.method`、`provider`、`model`、`request.id`、`error.type`、`error.code`、`outcome`、`device.kind`、`attempt`、`kind`、`count`、`action`。`chatdsh.surface=mobile` 与 `device.kind=mobile` 由控制平面补写，客户端传同键也会被覆盖。
+记录名只接受 6.7 节登记的七个名称：`chatdsh.mobile.startup`、`chatdsh.mobile.connect`、`chatdsh.mobile.push.deliver`、`chatdsh.mobile.queue.replay`、`chatdsh.mobile.keystore`、`chatdsh_mobile_connect_seconds`、`chatdsh_mobile_offline_queue_depth`。属性键只接受 `chatdsh.surface`、`chatdsh.component`、`chatdsh.instance.id`、`chatdsh.version`、`deployment.environment`、`session.id`、`workspace.id`、`turn`、`step`、`tool.name`、`mcp.method`、`provider`、`model`、`request.id`、`error.type`、`error.code`、`outcome`、`device.kind`、`attempt`、`kind`、`count`、`action`。`chatdsh.surface=mobile` 与 `device.kind=mobile` 由控制平面补写，客户端传同键也会被覆盖。
 
 遥测关闭时端点返回 404，移动端按 `telemetry.enabled=false` 停止采集，行为与开启时一致。
 

@@ -24,7 +24,7 @@ function option(name, fallback) {
 const PROFILE = option('profile', 'chatdsh-acp-live');
 const TIMEOUT = Number.parseInt(option('timeout', '120000'), 10);
 const HINDSIGHT = process.env.HINDSIGHT_URL ?? 'http://127.0.0.1:8889';
-const BANK = 'acct:local';
+const BANK = 'acct';
 const MARKER = `chatdsh-turn-${Date.now()}`;
 const RUN_STARTED = Date.now() - 5_000;
 

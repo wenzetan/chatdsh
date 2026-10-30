@@ -13,9 +13,9 @@ import { createTelemetryClient } from '@chatdsh/core-diagnostics/client';
 import { defaultTelemetryConfig } from '@chatdsh/core-diagnostics/config';
 import { createGatewayServer } from './server.ts';
 import { createPushHub } from './push.ts';
+import { DeviceLinkHub } from './device-link.ts';
 import { createRuntimeSupervisor, parseRuntimeLaunchConfig } from './runtime.ts';
-import { createScheduler } from './scheduler.ts';
-import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ScheduleStore, ShareStore, dataRoot, readConfig } from './store.ts';
+import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, SettingsStore, ShareStore, dataRoot, readConfig } from './store.ts';
 
 const config = readConfig();
 
@@ -39,8 +39,8 @@ const bootstrapSecret = process.env.CHATDSH_BOOTSTRAP_SECRET;
 const store = new GatewayStore(config.databasePath);
 const replica = new ReplicaStore(store.handle());
 const share = new ShareStore(store.handle());
-const schedule = new ScheduleStore(store.handle());
 const receipts = new ReceiptStore(store.handle());
+const settings = new SettingsStore(store.handle());
 const push = createPushHub({
   queue: new PushQueue(store.handle()),
   devices: store,
@@ -48,28 +48,23 @@ const push = createPushHub({
   escalationMs: config.pushEscalationMs,
   telemetry: { counter: (name, options) => telemetry.counter(name, options) },
 });
+const deviceLink = new DeviceLinkHub({ store, telemetry });
 const server = createGatewayServer({
   config,
   store,
   replica,
   share,
-  schedule,
   receipts,
+  settings,
   push,
   telemetry,
+  deviceLink,
   runtime,
   bootstrapSecret,
 });
 
 await runtime.start();
-const scheduler = createScheduler({
-  store: schedule,
-  telemetry,
-  push,
-  runtimeUrl: runtime.url(),
-  intervalMs: 2000,
-});
-scheduler.start();
+push.start();
 
 await server.start();
 telemetry.log('info', 'gateway listening', { 'http.route': 'healthz' });
@@ -80,7 +75,8 @@ async function shutdown(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   telemetry.log('info', 'gateway stopping', { reason: signal });
-  scheduler.stop();
+  push.stop();
+  deviceLink.stop();
   await server.stop();
   await runtime.stop();
   await telemetry.flush(3000);

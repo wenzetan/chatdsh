@@ -87,22 +87,21 @@ node scripts/telemetry-probe.mjs            # 向本机 OpenObserve 写日志、
 | `verify-acp.mjs` | 用 ACP 客户端创建会话、恢复会话，并核对投影落盘 | `--profile chatdsh-acp --cwd <目录>`，数据根里要装好该 profile |
 | `verify-client-asset.mjs` | 客户端产物可取回、条目图包含自建包 | `--profile chatdsh-web --package <包名>` |
 | `verify-client-ui.mjs` | 真实 Chrome 走完首次进入流程，界面里出现自建预设 | 数据根里装好 `chatdsh-web`；需要本机有 Chrome |
-| `verify-isolation.mjs` | 两个账号的归属隔离与跨账号拒绝 | 无 |
 | `verify-multi-client.mjs` | 两端读同一副本的序列一致、补齐与幂等 | 无 |
 | `verify-receipt-sync.mjs` | 一端上报已读，另一端收到带新水位的通知；副本变更广播 | 无 |
-| `verify-import.mjs` | 从副本导入带 `parentSession` 的新会话，跨账号被拒绝 | 无 |
-| `verify-routing.mjs` | 两个账号的反代分别落到各自的运行时 | 无 |
-| `verify-routing-live.mjs` | 同上，但用两个真实实例 | 本机能起两个 `dsh` 实例 |
+| `verify-import.mjs` | 从副本导入带 `parentSession` 的新会话 | 无 |
+| `verify-routing.mjs` | 两台设备经 `/d/<deviceId>/` 各自命中自己的运行时 | 本机能起两个 `dsh` 实例 |
+| `verify-routing-live.mjs` | 同上，用 Web 与桌面两种形态核对页面指纹 | 本机能起两个 `dsh` 实例 |
+| `verify-account-migration.mjs` | 旧库删账号表与账号列之后仍可读写，额度并成一行 | 无 |
 | `verify-mcp-connection.mjs` | 连接器记录驱动的 MCP 客户端完成握手并拉取工具列表 | 无 |
 | `verify-telemetry-sync.mjs` | 启动时的连接器同步把记录转成加载器行，并核对导出的遥测 | 无 |
-| `verify-schedule.mjs` | 到期任务被执行，设备收到定时推送 | 无 |
 | `verify-memory.mjs` | 对 Hindsight 做写入与召回 | 本机 Hindsight 可达（默认 `127.0.0.1:8889`） |
 
 这些脚本与单元测试都通过 `scripts/lib/cleanup.mjs` 的 `tempHome` 分配临时数据根，正常结束、异常退出、信号中断三种情况下都会删除。排查问题时设 `CHATDSH_KEEP_RUN=1` 保留现场。
 
 `.run` 下另有四个长期条目：`pnpm-store` 是 `.npmrc` 指向的包存储，`dsh-home` 是 `pnpm verify:*` 的数据根，`verify-home` 是早期 ACP 验收留下的数据根（脚本现在自建临时根，这个目录可以删掉），`acp-client.mjs` 是 ACP 验收用的客户端脚本。
 
-其中几个脚本会启动 `dsh` 进程（`verify-acp`、`verify-client-ui`、`verify-mcp-connection`、`verify-telemetry-sync`、`verify-routing-live`）。可执行文件由 `scripts/lib/dsh.mjs` 定位：先看 `DSH_BIN`，再找与当前 node 同目录的 `dsh`，最后看 `PATH`，因此 `pnpm verify:*` 与 `node scripts/…` 都能用。数据根里要装好对应的 profile——`verify-acp` 需要 `chatdsh-acp`，其余 Web 形态的脚本需要 `chatdsh-web`。
+其中几个脚本会启动 `dsh` 进程（`verify-acp`、`verify-client-ui`、`verify-mcp-connection`、`verify-telemetry-sync`、`verify-routing`、`verify-routing-live`）。可执行文件由 `scripts/lib/dsh.mjs` 定位：先看 `DSH_BIN`，再找与当前 node 同目录的 `dsh`，最后看 `PATH`，因此 `pnpm verify:*` 与 `node scripts/…` 都能用。数据根里要装好对应的 profile——`verify-acp` 需要 `chatdsh-acp`，其余 Web 形态的脚本需要 `chatdsh-web`。
 
 各项验收的当前状态与「缺什么条件、条件满足后跑哪个脚本」见 [docs/acceptance.md](docs/acceptance.md) 与 [docs/next-steps.md](docs/next-steps.md)。
 
@@ -110,8 +109,8 @@ node scripts/telemetry-probe.mjs            # 向本机 OpenObserve 写日志、
 
 ```sh
 node scripts/extensions.mjs list    --profile chatdsh-web
-node scripts/extensions.mjs install packages/bundle/worker --profile chatdsh-web
-node scripts/extensions.mjs remove  @chatdsh/bundle-worker   --profile chatdsh-web
+node scripts/extensions.mjs install packages/bundle/storage-postgres --profile chatdsh-web
+node scripts/extensions.mjs remove  @chatdsh/bundle-storage-postgres --profile chatdsh-web
 ```
 
 安装写两处：`bundles` 列表与 `dependencies`；补丁层的内容由扩展包自己提供。装卸之后都要在 profile 目录执行一次 `pnpm install`，再跑组合检查。

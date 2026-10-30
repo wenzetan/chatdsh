@@ -19,7 +19,7 @@ import {
   type SessionEvent,
 } from '@chatdsh/adapter';
 import {
-  IDENTITY_HEADERS,
+  NODE_HEADERS,
   type ChatdshTelemetry,
   type TelemetrySpan,
 } from '@chatdsh/core-contracts';
@@ -45,15 +45,20 @@ export interface PushConfig {
   batchSize: number;
   /** 本设备标识，控制平面据此区分来源。 */
   deviceId: string;
+  /** 节点令牌，向控制平面证明设备身份；缺省取环境变量 `CHATDSH_NODE_TOKEN`。 */
+  nodeToken?: string;
 }
 
 /** 配置 schema。 */
 export const Config: z<PushConfig> = z.object({
   enabled: z.boolean().default(true),
-  gatewayUrl: z.string().default('http://127.0.0.1:3170'),
+  // 控制平面地址与本设备标识取设备形态的两个环境变量，与设备长连接同一处下发；
+  // 都没有配置时退回本机默认端口。
+  gatewayUrl: z.string().default(process.env.CHATDSH_CONTROL_URL ?? 'http://127.0.0.1:3170'),
   flushIntervalMs: z.number().default(2000),
   batchSize: z.number().default(64),
-  deviceId: z.string().default('local'),
+  deviceId: z.string().default(process.env.CHATDSH_DEVICE_ID ?? 'local'),
+  nodeToken: z.string().default(process.env.CHATDSH_NODE_TOKEN ?? ''),
 });
 
 /** 上报给控制平面的单条事件，带事件本体。 */
@@ -227,12 +232,15 @@ export class ChatdshPushService extends Service {
     telemetry?: ChatdshTelemetry,
   ): Promise<boolean> {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        [NODE_HEADERS.id]: this.config.deviceId,
+      };
+      const nodeToken = this.config.nodeToken ?? '';
+      if (nodeToken !== '') headers.authorization = `Bearer ${nodeToken}`;
       const response = await fetch(`${this.config.gatewayUrl}/chatdsh/gateway/replica`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          [IDENTITY_HEADERS.deviceId]: this.config.deviceId,
-        },
+        headers,
         body: JSON.stringify({ sessionId, events: batch }),
       });
       if (!response.ok) {

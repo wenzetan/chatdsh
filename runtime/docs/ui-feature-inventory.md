@@ -75,7 +75,7 @@ flowchart TB
 | 47 | `chatdsh-skills` | `@chatdsh/client-skills` |
 | 48 | `chatdsh-automation` | `@chatdsh/client-automation` |
 | 50 | `chatdsh-share` | `@chatdsh/client-share` |
-| 55 | `chatdsh-account` | `@chatdsh/client-account` |
+| 55 | `chatdsh-devices` | `@chatdsh/client-account` |
 | 60 | `chatdsh-memory` | `@chatdsh/client-memory` |
 | 65 | `chatdsh-approval` | `@chatdsh/client-approval` |
 | 70 | `chatdsh-connectors` | `@chatdsh/client-connectors` |
@@ -186,7 +186,6 @@ Web、移动端、桌面渲染进程共用这一层。命令行不复用 React �
 | UI-53 | 会话日志设置 | `ui-settings-session-log` | 存储位置、保留期、导出 |
 | UI-54 | 插件管理页 | `ui-plugin-manager` | 安装中、启用失败、版本不兼容 |
 | UI-55 | 插件市场 | `ui-plugin-market` | 索引不可达、无结果、安装确认 |
-| UI-56 | 定时任务 | `ui-schedule` | 待执行、已执行、已取消、失败 |
 | UI-57 | 任务面板 | `ui-jobs` | 运行中、完成、失败、日志 |
 | UI-58 | 账号设置 | `ui-settings-account` | 单机形态关闭，由 ChatDSH 账号区段替代 |
 
@@ -531,7 +530,6 @@ Web 形态不提供受沙箱网页页签，浏览器操作由会话工具承担�
 | CP-10 | 未读与已读 | 未读计数、已读上报、跨端同步 | `POST /chatdsh/gateway/receipt` | 接口完成 |
 | CP-11 | 通知设置 | `all-at-once`、`two-stage`、第一级与第二级时长 | `notifyMode` 与阈值配置 | 设计目标 |
 | CP-12 | 通知撤回 | 处理一端后关闭其他端的通知 | 推送事件 | 设计目标 |
-| CP-13 | 定时任务 | 新建、列表、取消、执行结果 | `/chatdsh/gateway/schedule` | 接口完成 |
 | CP-14 | 自动化 | 列表、启停、webhook 地址、投递记录 | `/chatdsh/gateway/automations` 与 `/webhook/<id>` | 部分完成 |
 | CP-15 | MCP 注册表 | 按设备维护的服务器端点 | `GET/PUT/DELETE /chatdsh/gateway/mcp` | 接口完成 |
 | CP-16 | 模型入口额度 | 额度上限、已用、拒绝原因、上游错误说明 | `CHATDSH_LLM_QUOTA_LIMIT`、`chatdsh/gateway/llm` | 接口完成 |
@@ -584,7 +582,7 @@ Web 形态不提供受沙箱网页页签，浏览器操作由会话工具承担�
 | 右栏 | 文档预览、文件树、终端、网页、制品预览 | 页签、工具栏、内容区 |
 | 设置 | 通用、模型、插件、插件清单、外壳、Agent 循环、子代理、网页检索、会话日志、账号 | 设置导航、表单、开关、保存栏 |
 | 业务面板 | Projects、Artifacts、Memory、Assistants、Connectors、Account、Share、Approval、Automation、Model Provider、Skills、Context Insights | 列表、详情、表单、空状态、错误状态 |
-| 控制平面 | 设备、会话同步、用量、导入、分享、定时任务、自动化、MCP 注册表、模型额度、诊断 | 表格、详情抽屉、确认弹窗、图表 |
+| 控制平面 | 设备、会话同步、用量、导入、分享、自动化、MCP 注册表、模型额度、诊断 | 表格、详情抽屉、确认弹窗、图表 |
 | 移动端 | 抽屉导航、会话全宽、全屏审批、底部输入、原生通知 | 安全区、触控尺寸、输入法内边距 |
 | 桌面原生 | 托盘菜单、更新弹窗、安全模式、恢复窗口、权限向导、桌面控制指示条 | 原生窗口、系统对话框、常驻指示条 |
 | 命令行 | 会话场景、审批场景、设置页、面板、命令树、状态栏 | 终端全屏场景、列表、输入行 |

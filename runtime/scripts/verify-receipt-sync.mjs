@@ -1,6 +1,6 @@
 // 已读同步的验收。
 //
-// 两个订阅连在同一个账号上，一端上报已读水位，另一端应当收到一条带着新水位的通知。
+// 两个订阅连在同一个控制平面上，一端上报已读水位，另一端应当收到一条带着新水位的通知。
 // 用一次性推模式（all-at-once）避免两段式的升级时序干扰这一项。
 //
 // 用法：node scripts/verify-receipt-sync.mjs [--port 3188]
@@ -33,7 +33,6 @@ child.stdout.on('data', (chunk) => { output += chunk; });
 child.stderr.on('data', (chunk) => { output += chunk; });
 
 const base = `http://127.0.0.1:${PORT}`;
-const login = 'receipt@example.test';
 
 async function waitReady(timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
@@ -53,7 +52,7 @@ async function waitReady(timeoutMs = 30_000) {
 async function subscribe(deviceId) {
   const controller = new AbortController();
   const response = await fetch(`${base}/chatdsh/gateway/events`, {
-    headers: { 'tailscale-user-login': login, 'x-chatdsh-device-id': deviceId },
+    headers: { 'x-chatdsh-node-id': deviceId },
     signal: controller.signal,
   });
   const received = [];
@@ -84,10 +83,10 @@ try {
   await waitReady();
   console.log(`控制平面已就绪：${base}`);
 
-  const sessionId = '99999999-8888-7777-6666-555555555555';
+  const sessionId = '[CARD_REDACTED]-[CARD_REDACTED]';
   await fetch(`${base}/chatdsh/gateway/replica`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'tailscale-user-login': login },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, events: [0, 1, 2, 3].map((seq) => ({ seq, kind: 'session/end-seed', time: Date.now() + seq, bytes: 4 })) }),
   });
 
@@ -98,13 +97,13 @@ try {
   // 副本有新事件时，在线设备也应当收到通知——这是跨端实时一致性的来源。
   await fetch(`${base}/chatdsh/gateway/replica`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'tailscale-user-login': login },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, events: [{ seq: 4, kind: 'session/end-seed', time: Date.now(), bytes: 4 }] }),
   });
 
   const response = await fetch(`${base}/chatdsh/gateway/receipt`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'tailscale-user-login': login, 'x-chatdsh-device-id': 'device-a' },
+    headers: { 'Content-Type': 'application/json', 'x-chatdsh-node-id': 'device-a' },
     body: JSON.stringify({ sessionId, readUpToSeq: 3 }),
   });
   console.log(`上报已读：${response.status}`);
@@ -112,9 +111,7 @@ try {
 
   await new Promise((settle) => setTimeout(settle, 1200));
 
-  const receipts = await (await fetch(`${base}/chatdsh/gateway/receipt?sessionId=${sessionId}`, {
-    headers: { 'tailscale-user-login': login },
-  })).json();
+  const receipts = await (await fetch(`${base}/chatdsh/gateway/receipt?sessionId=${sessionId}`)).json();
   console.log(`已读记录：${JSON.stringify(receipts.receipts ?? [])}`);
   if ((receipts.receipts ?? []).length === 0) failures.push('已读记录为空');
   if ((receipts.receipts ?? []).some((row) => row.deviceId !== 'device-a')) {

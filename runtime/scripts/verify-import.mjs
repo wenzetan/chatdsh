@@ -4,7 +4,7 @@
 // 事件复制过去。源设备是否在线不参与这一步，读的是控制平面保存的副本。
 //
 // 用法：node scripts/verify-import.mjs [--port 3189]
-// 退出码 0 表示导入成功、事件一致、归属关系正确、跨账号被拒绝。
+// 退出码 0 表示导入成功、事件一致、归属关系正确。
 
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -40,11 +40,9 @@ async function waitReady(timeoutMs = 30_000) {
   throw new Error(`控制平面未就绪：\n${output.slice(-600)}`);
 }
 
-function as(login) {
-  return (path, init = {}) => fetch(`${base}${path}`, {
-    ...init,
-    headers: { ...(init.headers ?? {}), 'tailscale-user-login': login },
-  });
+/** 一次控制平面请求。 */
+function call(path, init = {}) {
+  return fetch(`${base}${path}`, init);
 }
 
 const failures = [];
@@ -52,11 +50,9 @@ try {
   await waitReady();
   console.log(`控制平面已就绪：${base}`);
 
-  const alice = as('alice@example.test');
-  const bob = as('bob@example.test');
   const sourceId = 'abcdef01-2345-6789-abcd-ef0123456789';
 
-  const appended = await alice('/chatdsh/gateway/replica', {
+  const appended = await call('/chatdsh/gateway/replica', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -66,7 +62,7 @@ try {
   });
   if (appended.status !== 200) failures.push(`源会话上报失败（${appended.status}）`);
 
-  const imported = await alice('/chatdsh/gateway/import', {
+  const imported = await call('/chatdsh/gateway/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sourceSessionId: sourceId, cwd: '/work/b' }),
@@ -79,13 +75,13 @@ try {
   if (record.imported !== 3) failures.push(`导入的事件数应为 3，实际 ${record.imported}`);
 
   // 新会话的副本应当与源会话逐条一致。
-  const copy = await (await alice(`/chatdsh/gateway/replica?sessionId=${record.sessionId}`)).json();
+  const copy = await (await call(`/chatdsh/gateway/replica?sessionId=${record.sessionId}`)).json();
   const seqs = (copy.events ?? []).map((event) => event.seq);
   console.log(`新会话副本序号：${JSON.stringify(seqs)}，水位 ${JSON.stringify(copy.watermark)}`);
   if (JSON.stringify(seqs) !== JSON.stringify([0, 1, 2])) failures.push('新会话的副本事件与源不一致');
 
   // 归属表里应当能看到这条导入关系与新的 cwd。
-  const ownership = await (await alice('/chatdsh/gateway/ownership')).json();
+  const ownership = await (await call('/chatdsh/gateway/ownership')).json();
   const importedRow = (ownership.sessions ?? []).find((row) => row.sessionId === record.sessionId);
   if (importedRow === undefined) {
     failures.push('归属表里没有导入的会话');
@@ -94,15 +90,6 @@ try {
     if (importedRow.parentSession !== sourceId) failures.push('归属表里的 parentSession 不对');
     if (importedRow.cwd !== '/work/b') failures.push('导入的会话没有采用请求里的工作目录');
   }
-
-  // 跨账号导入应当被拒绝。
-  const cross = await bob('/chatdsh/gateway/import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sourceSessionId: sourceId }),
-  });
-  console.log(`跨账号导入：${cross.status}`);
-  if (cross.status !== 403) failures.push(`跨账号导入没有被拒绝（${cross.status}）`);
 } catch (error) {
   console.log(`验收中断：${error instanceof Error ? error.message : String(error)}`);
   failures.push('runtime');

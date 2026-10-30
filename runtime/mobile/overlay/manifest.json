@@ -13,7 +13,7 @@
     },
     {
       "path": "androidApp/src/main/kotlin/com/clarklevis/dsh/android/platform/ControlPlanePairing.kt",
-      "reason": "上游没有控制平面的概念：它的配对直接面向运行时插件。这个新增文件负责与控制平面配对、保存设备令牌、换取运行时启动路径，业务通道仍走上游的插件协议。",
+      "reason": "上游没有控制平面的概念：它的配对直接面向运行时插件。这个新增文件按 docs/mobile-protocol.md 第一节实现控制平面的 HTTP 配对契约：配对码换设备令牌，设备令牌换运行时启动路径；界面上的手动配对走同一套协议的 WebSocket 通道，业务帧沿用上游插件协议。",
       "added": true
     },
     {

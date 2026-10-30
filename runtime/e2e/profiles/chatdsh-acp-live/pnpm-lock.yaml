@@ -17,9 +17,6 @@ importers:
       '@chatdsh/bundle-memory-hindsight':
         specifier: link:../../../packages/bundle/memory-hindsight
         version: link:../../../packages/bundle/memory-hindsight
-      '@chatdsh/core-identity':
-        specifier: link:../../../packages/core/identity
-        version: link:../../../packages/core/identity
       '@chatdsh/core-session-index':
         specifier: link:../../../packages/core/session-index
         version: link:../../../packages/core/session-index
@@ -38,6 +35,9 @@ importers:
       '@chatdsh/host-context-insights':
         specifier: link:../../../packages/host/context-insights
         version: link:../../../packages/host/context-insights
+      '@chatdsh/host-device-link':
+        specifier: link:../../../packages/host/device-link
+        version: link:../../../packages/host/device-link
       '@chatdsh/host-import':
         specifier: link:../../../packages/host/import
         version: link:../../../packages/host/import
@@ -59,6 +59,9 @@ importers:
       '@chatdsh/host-push':
         specifier: link:../../../packages/host/push
         version: link:../../../packages/host/push
+      '@chatdsh/host-settings-sync':
+        specifier: link:../../../packages/host/settings-sync
+        version: link:../../../packages/host/settings-sync
       '@chatdsh/host-skills':
         specifier: link:../../../packages/host/skills
         version: link:../../../packages/host/skills

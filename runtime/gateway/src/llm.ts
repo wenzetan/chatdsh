@@ -1,12 +1,11 @@
 /**
  * 控制平面的模型入口。
  *
- * 运行时的 `@chatdsh/host-llm-router` 把模型请求转发到这里。入口做四件事：按身份头部
- * 定位账号、在转发之前检查额度、把 DSH 请求翻译成 OpenAI 兼容请求、把上游的 SSE 响应
- * 翻译回 DSH 的分块。
+ * 运行时的 `@chatdsh/host-llm-router` 把模型请求转发到这里。入口做三件事：在转发之前
+ * 检查额度、把 DSH 请求翻译成 OpenAI 兼容请求、把上游的 SSE 响应翻译回 DSH 的分块。
  *
- * 额度账本按账号累计，拒绝时返回 402 与 `quota-exceeded` 错误码；这个错误码由运行时侧
- * 映射成 `QUOTA`，不进入请求失败的重试与压缩恢复路径。
+ * 单账号形态下额度账本只有一份读数，拒绝时返回 402 与 `quota-exceeded` 错误码；这个
+ * 错误码由运行时侧映射成 `QUOTA`，不进入请求失败的重试与压缩恢复路径。
  * @module @chatdsh/gateway/llm
  */
 
@@ -20,7 +19,7 @@ import { createStreamTranslator, writeFrame } from './stream.ts';
 export interface LlmGatewayConfig {
   /** 上游模型网关的 chat completions 地址；缺省时入口返回 503。 */
   readonly upstreamUrl?: string;
-  /** 每个账号的可用额度；缺省表示不限制。 */
+  /** 可用额度；缺省表示不限制。 */
   readonly quota: LlmQuotaConfig;
   /** 上游凭据所在的环境变量名；凭据本身不落配置。 */
   readonly apiKeyEnv?: string;
@@ -30,16 +29,16 @@ export interface LlmGatewayConfig {
 export interface LlmQuotaConfig {
   /** 额度上限，取 token 数。 */
   readonly limit?: number;
-  /** 启动时已经用掉的额度，计入每个账号。 */
+  /** 启动时已经用掉的额度。 */
   readonly used?: number;
 }
 
 /** 额度账本的存储面，控制平面用 SQLite 实现。 */
 export interface QuotaLedgerStore {
-  /** 取某账号已经用掉的额度。 */
-  llmQuotaUsed(accountId: string): number;
-  /** 累加某账号的额度用量。 */
-  recordLlmQuota(accountId: string, tokens: number): number;
+  /** 取已经用掉的额度。 */
+  llmQuotaUsed(): number;
+  /** 累加额度用量。 */
+  recordLlmQuota(tokens: number): number;
 }
 
 /** 额度读数。 */
@@ -54,7 +53,7 @@ export interface QuotaReading {
   readonly remaining?: number;
 }
 
-/** 额度账本：按账号读取与累加已用额度。 */
+/** 额度账本：读取与累加已用额度。 */
 export class LlmQuotaLedger {
   private readonly store: QuotaLedgerStore;
   private readonly limit: number | undefined;
@@ -66,16 +65,16 @@ export class LlmQuotaLedger {
     this.initialUsed = config.used ?? 0;
   }
 
-  /** 某账号的额度读数。 */
-  readingOf(accountId: string): QuotaReading {
-    const used = this.initialUsed + this.store.llmQuotaUsed(accountId);
+  /** 额度读数。 */
+  readingOf(): QuotaReading {
+    const used = this.initialUsed + this.store.llmQuotaUsed();
     if (this.limit === undefined) return { allowed: true, used };
     return { allowed: used < this.limit, limit: this.limit, used, remaining: Math.max(0, this.limit - used) };
   }
 
   /** 记录一次用量。 */
-  record(accountId: string, tokens: number): void {
-    this.store.recordLlmQuota(accountId, tokens);
+  record(tokens: number): void {
+    this.store.recordLlmQuota(tokens);
   }
 }
 
@@ -86,7 +85,7 @@ type LlmTelemetry = Pick<ChatdshTelemetry, 'event' | 'counter'>;
  * 处理一次模型入口请求。
  * @param request - 入站请求。
  * @param response - 响应。
- * @param options - 上游配置、额度账本、遥测与账号。
+ * @param options - 上游配置、额度账本与遥测。
  */
 export async function handleLlmRequest(
   request: IncomingMessage,
@@ -95,18 +94,16 @@ export async function handleLlmRequest(
     readonly config: LlmGatewayConfig;
     readonly ledger: LlmQuotaLedger;
     readonly telemetry: LlmTelemetry;
-    readonly accountId: string;
   },
 ): Promise<void> {
-  const { config, ledger, telemetry, accountId } = options;
+  const { config, ledger, telemetry } = options;
   if (request.method !== 'POST') {
     sendJson(response, 405, { error: 'method-not-allowed' });
     return;
   }
-  const reading = ledger.readingOf(accountId);
+  const reading = ledger.readingOf();
   if (!reading.allowed) {
     telemetry.event('chatdsh.llm.quota.rejected', {
-      'account.id': accountId,
       'error.code': CHATDSH_ERROR_CODES.quotaExceeded,
     });
     telemetry.counter('chatdsh_llm_requests_total', { description: '模型请求数' })
@@ -127,7 +124,6 @@ export async function handleLlmRequest(
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     accept: 'text/event-stream',
-    'x-chatdsh-account-id': accountId,
   };
   const key = config.apiKeyEnv === undefined ? undefined : process.env[config.apiKeyEnv];
   if (key !== undefined) headers.authorization = `Bearer ${key}`;

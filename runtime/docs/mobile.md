@@ -57,7 +57,7 @@ ClashMi、EasyTier 与 ZeroTier 都以 Android VPN 形式接入。Android 的按
 |---|---|
 | DSH 协议解码、事件折叠、会话状态机、投影与历史同步 | 上游 `shared/` |
 | 界面结构、Compose 组件、导航、会话页与设置页 | 上游 `androidApp/` |
-| 控制平面配对、设备令牌保存、启动路径换取 | 本仓库新增 `ControlPlanePairing.kt` |
+| 控制平面配对与设备令牌保存 | 上游 `AndroidMultiGatewayStore` 与 `shared/` 传输层，配对在控制平面的 WebSocket 通道上完成；HTTP 配对契约的原生客户端是新增的 `ControlPlanePairing.kt` |
 | 配色令牌与深浅色映射 | 本仓库接管 `DshTheme.kt` |
 | 移动端遥测上报 | 本仓库新增 `MobileTelemetry.kt` |
 | 构建、签名、版本号、产物分发 | 本仓库 `scripts/` |

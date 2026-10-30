@@ -11,8 +11,9 @@ import { join } from 'node:path';
 import { tempHome } from '../../scripts/lib/cleanup.mjs';
 import { createTelemetryClient } from '../../packages/core/diagnostics/lib/client.js';
 import { defaultTelemetryConfig } from '../../packages/core/diagnostics/lib/config.js';
-import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ScheduleStore, ShareStore } from '../../gateway/lib/store.js';
+import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ShareStore } from '../../gateway/lib/store.js';
 import { createPushHub } from '../../gateway/lib/push.js';
+import { DeviceLinkHub } from '../../gateway/lib/device-link.js';
 import { createGatewayServer } from '../../gateway/lib/server.js';
 import { AutomationStore } from '../../gateway/lib/automation.js';
 
@@ -49,7 +50,6 @@ async function startGateway(upstreamUrl) {
   const store = new GatewayStore(databasePath);
   const replica = new ReplicaStore(store.handle());
   const share = new ShareStore(store.handle());
-  const schedule = new ScheduleStore(store.handle());
   const receipts = new ReceiptStore(store.handle());
   const push = createPushHub({
     queue: new PushQueue(store.handle()),
@@ -58,13 +58,12 @@ async function startGateway(upstreamUrl) {
     escalationMs: 1000,
     telemetry: { counter: (name, options) => telemetry.counter(name, options) },
   });
+  const deviceLink = new DeviceLinkHub({ store, telemetry });
   const server = createGatewayServer({
     config: {
       host: '127.0.0.1',
       port: 0,
       runtimeUrl: upstreamUrl,
-      runtimeRoutes: {},
-      accessProvider: 'manual',
       databasePath,
       environment: 'test',
       version: '0.0.0',
@@ -76,10 +75,10 @@ async function startGateway(upstreamUrl) {
     store,
     replica,
     share,
-    schedule,
     receipts,
     push,
     telemetry,
+    deviceLink,
     runtime: {
       url: () => upstreamUrl,
       bootPath: () => '/?token=test-token',
@@ -91,7 +90,9 @@ async function startGateway(upstreamUrl) {
   return {
     url: server.url(),
     store,
+    deviceLink,
     async close() {
+      deviceLink.stop();
       await server.stop();
       await telemetry.shutdown();
       store.close();
@@ -125,7 +126,6 @@ test('启动路径、反代头部与设备 cookie 一起接通', async () => {
     assert.equal(forwarded.headers.host, new URL(upstream.url).host);
     assert.equal(forwarded.headers.origin, upstream.url);
     assert.equal(forwarded.headers['x-forwarded-host'], new URL(gateway.url).host);
-    assert.ok(typeof forwarded.headers['x-chatdsh-account-id'] === 'string');
     assert.equal(forwarded.headers.traceparent, traceparent);
 
     const deviceId = deviceCookie.split(';')[0].split('=')[1];
@@ -133,13 +133,13 @@ test('启动路径、反代头部与设备 cookie 一起接通', async () => {
       headers: { cookie: `chatdsh-device=${deviceId}` },
     });
     const listed = await devices.json();
-    assert.ok(listed.devices.some((device) => device.id === deviceId), '设备列表应当包含本次请求的设备');
+    assert.deepEqual(listed.devices, [], '还没有节点配对时设备列表为空');
 
-    const accountId = listed.accountId;
+    assert.ok(gateway.store.listDevices().some((device) => device.id === deviceId), '设备列表应当包含本次请求的设备');
+
     const automations = new AutomationStore(gateway.store.handle());
     automations.create({
       id: 'auto-1',
-      accountId,
       name: '构建完成通知',
       trigger: { kind: 'webhook', secretEnv: 'HOOK_SECRET' },
       action: { kind: 'start-session', prompt: '总结构建' },
@@ -214,7 +214,6 @@ test('WebSocket 升级经控制平面转发到运行时', async () => {
     assert.equal(received.length, 1);
     assert.equal(received[0].host, `127.0.0.1:${upstreamPort}`);
     assert.equal(received[0].origin, `http://127.0.0.1:${upstreamPort}`);
-    assert.ok(typeof received[0]['x-chatdsh-account-id'] === 'string');
 
     const echoed = new Promise((resolve) => socket.once('data', (chunk) => resolve(chunk.toString('utf8'))));
     socket.write('ping-frame');
@@ -258,7 +257,7 @@ test('手机配对换取设备令牌，再取运行时启动路径', async () =>
     const missing = await fetch(`${gateway.url}/chatdsh/gateway/mobile/session`);
     assert.equal(missing.status, 401);
 
-    const devices = await (await fetch(`${gateway.url}/chatdsh/gateway/devices`)).json();
+    const devices = await (await fetch(`${gateway.url}/chatdsh/gateway/mobile/devices`)).json();
     assert.ok(devices.devices.some((device) => device.id === pairing.deviceId && device.platform === 'android'));
   } finally {
     await gateway.close();

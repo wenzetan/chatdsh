@@ -62,7 +62,6 @@ export const MOBILE_ATTRIBUTE_KEYS: readonly string[] = [
   'deployment.environment',
   'session.id',
   'workspace.id',
-  'account.id',
   'turn',
   'step',
   'tool.name',

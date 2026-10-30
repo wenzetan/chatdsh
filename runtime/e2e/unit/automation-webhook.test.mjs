@@ -11,7 +11,6 @@ import { handleWebhook } from '../../gateway/lib/automation.js';
 function record(overrides = {}) {
   return {
     id: 'a1',
-    accountId: 'acct',
     name: '构建通知',
     trigger: { kind: 'webhook', secretEnv: 'HOOK_SECRET' },
     action: { kind: 'start-session', prompt: '总结这次构建' },
@@ -26,8 +25,7 @@ test('store 建表后可写入并查到自动化记录', () => {
   store.create(record());
   assert.equal(store.get('a1').name, '构建通知');
   assert.deepEqual(store.get('a1').trigger, { kind: 'webhook', secretEnv: 'HOOK_SECRET' });
-  assert.deepEqual(store.list('acct').map((item) => item.id), ['a1']);
-  assert.deepEqual(store.list('other'), []);
+  assert.deepEqual(store.list().map((item) => item.id), ['a1']);
 });
 
 test('同一 eventId 只记录一次', () => {

@@ -100,10 +100,10 @@
 
   <header class="plate-hd">
     <div class="top"><a href="../catalog.html">← 页面目录</a><span>控制平面 · 运维</span></div>
-    <h1>定时任务、自动化、MCP 注册表与额度</h1>
-    <p class="lead">四类运维页面共用表格与列表两种版式。定时任务与自动化按记录行呈现，注册表按设备分组，额度页给出上限、已用与拒绝原因。</p>
+    <h1>自动化、MCP 注册表与额度</h1>
+    <p class="lead">三类运维页面共用表格与列表两种版式。自动化按记录行呈现，注册表按设备分组，额度页给出上限、已用与拒绝原因。</p>
     <div class="tags">
-      <span class="cdh-badge cdh-badge--brand">四组能力</span>
+      <span class="cdh-badge cdh-badge--brand">三组能力</span>
       <span class="cdh-badge">cron 与 webhook</span>
       <span class="cdh-badge">按设备端点</span>
       <span class="cdh-badge">额度与拒绝原因</span>
@@ -114,110 +114,6 @@
     <span class="bar"></span>
     <div><b>运维页面的三条统一规则：</b>失败行保留并给出错误码；停用或未接线处如实标注，不做假成功；危险动作（取消、删除、撤销）写影响范围。</div>
   </div>
-
-  <section class="sect">
-    <div class="sect-hd"><h2>定时任务</h2><em>CP-13 · UI-56</em><span class="aside">四种状态</span></div>
-    <p class="sect-lead">定时任务按下次执行时间排序，右侧给出启用开关与取消入口。已执行的行可以查看结果与产出会话。</p>
-
-    <div class="grid-side">
-      <div class="demo">
-        <div class="demo-hd">任务列表<span class="tag">状态 · 待执行 · 已执行 · 已取消 · 失败</span></div>
-        <div class="demo-bd">
-          <div class="rowflex" style="margin-bottom: 10px">
-            <button class="cdh-btn cdh-btn--sm cdh-btn--primary">新建任务</button>
-            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">按工作区筛选</button>
-            <span class="grow"></span>
-            <span class="small faint">共 7 个 · 启用 5</span>
-          </div>
-
-          <div class="sched">
-            <span class="when">今天 03:00</span>
-            <div class="what"><b>夜间依赖巡检</b><span>cron 0 3 * * * · zerocode-web · 全量档</span></div>
-            <span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>待执行</span>
-            <span class="sw" data-on="true"></span>
-            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">取消</button>
-          </div>
-
-          <div class="sched">
-            <span class="when">今天 09:30</span>
-            <div class="what"><b>界面快照归档</b><span>每天 09:30 · design-system · 聊天档</span></div>
-            <span class="cdh-badge cdh-badge--ok"><i class="cdh-dot"></i>已执行 · 2m 14s</span>
-            <span class="sw" data-on="true"></span>
-            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">查看结果</button>
-          </div>
-
-          <div class="sched">
-            <span class="when">10月27日 03:00</span>
-            <div class="what"><b>夜间依赖巡检</b><span>cron 0 3 * * * · zerocode-web · 已取消一次</span></div>
-            <span class="cdh-badge cdh-badge--warn">已取消</span>
-            <span class="sw" data-on="true"></span>
-            <span class="small faint">取消于 10月26日 02:12</span>
-          </div>
-
-          <div class="sched">
-            <span class="when">昨天 03:00</span>
-            <div class="what"><b>依赖巡检（旧工作区）</b><span>cron 0 3 * * * · legacy-web · 全量档</span></div>
-            <span class="cdh-badge cdh-badge--danger">失败 · 目录不存在</span>
-            <span class="sw" data-on="false"></span>
-            <button class="cdh-btn cdh-btn--sm cdh-btn--ghost">查看日志</button>
-          </div>
-        </div>
-        <div class="demo-cap">取消后该行保留并标为已取消，下一次执行时间前进一天；失败行给出失败原因与日志入口。</div>
-      </div>
-
-      <div class="stack">
-        <div class="demo">
-          <div class="demo-hd">新建任务<span class="tag">表单</span></div>
-          <div class="demo-bd">
-            <div class="form">
-              <div class="field">
-                <span class="lbl">名称</span>
-                <input class="cdh-input" value="夜间依赖巡检" readonly />
-              </div>
-              <div class="field">
-                <span class="lbl">触发方式</span>
-                <div class="rowflex" style="gap: 6px">
-                  <span class="cdh-badge cdh-badge--brand">cron</span>
-                  <span class="cdh-badge">固定间隔</span>
-                </div>
-              </div>
-              <div class="field">
-                <span class="lbl">表达式</span>
-                <input class="cdh-input mono" value="0 3 * * *" readonly />
-                <span class="hint">下次执行 10月27日 03:00，时区 Asia/Shanghai。</span>
-              </div>
-              <div class="field">
-                <span class="lbl">动作</span>
-                <div class="sel mono">启动会话 · zerocode-web · 工作档<span class="caret">▾</span></div>
-              </div>
-            </div>
-          </div>
-          <div class="demo-cap">表达式非法时就地报错并给出示例；时区随控制平面配置，不随浏览器变化。</div>
-        </div>
-
-        <div class="demo">
-          <div class="demo-hd">取消确认<span class="tag">状态 · 危险动作</span></div>
-          <div class="demo-bd">
-            <div class="stage" style="min-height: 170px; padding: 0">
-              <div class="scrim"></div>
-              <div class="dlg danger">
-                <div class="hd">
-                  <h4>取消这次执行</h4>
-                  <p>只取消本次排队中的执行，任务本身与后续计划保持不变。</p>
-                </div>
-                <div class="bd"><div class="kv"><dt>时间</dt><dd class="mono">10月27日 03:00</dd></div></div>
-                <div class="ft">
-                  <button class="cdh-btn cdh-btn--danger">取消执行</button>
-                  <button class="cdh-btn cdh-btn--ghost">保留</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="demo-cap">区分「取消这次执行」与「删除任务」，两个动作在两个入口里出现。</div>
-        </div>
-      </div>
-    </div>
-  </section>
 
   <section class="sect">
     <div class="sect-hd"><h2>自动化与投递记录</h2><em>CP-14 · AUT-06 · AUT-08</em><span class="aside">webhook · 去重 · 失败原因</span></div>

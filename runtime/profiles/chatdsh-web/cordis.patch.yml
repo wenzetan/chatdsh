@@ -85,13 +85,15 @@
 
 # 模型路由器：把网关 provider 接管过来，默认模型改选它。
 #
-# 入口地址与控制平面同机；账号取运行时注入的身份头部，入口侧按账号累计额度。
+# 入口地址取控制平面同机的回环地址，端口与控制平面的 CHATDSH_GATEWAY_PORT 一致，
+# 未设置时按控制平面缺省的 3170。运行时是控制平面的子进程，继承同一个环境变量。
+# 账号取运行时注入的身份头部，入口侧按账号累计额度。
 # 上游测试网关地址与密钥由控制平面的 CHATDSH_LLM_GATEWAY_URL 与 CHATDSH_LLM_API_KEY_ENV
 # 给出；额度上限由 CHATDSH_LLM_QUOTA_LIMIT 给出，留空表示不限制。
 - id: chatdsh-llm-router
   name: '@chatdsh/host-llm-router'
   config:
-    baseUrl: 'http://127.0.0.1:3170/chatdsh/gateway/llm'
+    baseUrl: !!js "'http://127.0.0.1:' + (process.env.CHATDSH_GATEWAY_PORT ?? '3170') + '/chatdsh/gateway/llm'"
     routes:
       - provider: gateway
 
@@ -125,7 +127,7 @@
 - id: chatdsh-connectors
   name: '@chatdsh/host-connectors'
   config:
-    gatewayUrl: http://127.0.0.1:3170
+    gatewayUrl: !!js "'http://127.0.0.1:' + (process.env.CHATDSH_GATEWAY_PORT ?? '3170')"
     deviceId: !!js process.env.CHATDSH_MCP_DEVICE_ID ?? 'local'
 
 - id: chatdsh-mcp-server

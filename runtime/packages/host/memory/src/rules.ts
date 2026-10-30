@@ -17,30 +17,36 @@ export interface MemoryHit {
 
 /** 会话场景，决定读写哪些 bank。 */
 export interface MemoryScope {
-  readonly accountId: string;
-  readonly tenantId: string;
   /** 记忆组标识，默认等于工作区标识。 */
   readonly memoryGroupId?: string;
-  /** 共享工作区把记忆写进组 bank，私有工作区只写账号 bank。 */
-  readonly shared?: boolean;
+}
+
+/**
+ * 把记忆组标识编进 bank 名。
+ *
+ * bank 名要经 HTTP 路径发给 Hindsight，工作区标识是绝对路径，其中的斜杠会让服务端把
+ * bank 名切成多段并返回 404。百分号编码之后一个工作区标识仍对应一个固定字符串，召回与
+ * 写入用的是同一个形式。
+ * @param memoryGroupId - 记忆组标识。
+ * @returns 可以放进 bank 名的一段。
+ */
+function groupSegment(memoryGroupId: string): string {
+  return encodeURIComponent(memoryGroupId);
 }
 
 /**
  * 算出一次会话该召回与写入的 bank。
  *
- * 聊天会话没有工作区：只读写账号 bank。有工作区时召回先查组 bank 再查账号 bank；
- * 写入落在账号 bank 还是组 bank，由工作区是否共享决定。
+ * 聊天会话没有工作区：只读写 `acct`。有工作区时召回先查组 bank 再查 `acct`，
+ * 写入一律落在 `acct`。
  * @param scope - 会话场景。
  * @returns 召回按顺序的 bank 列表与写入 bank。
  */
 export function banksFor(scope: MemoryScope): { recall: string[]; write: string } {
-  const accountBank = `acct:${scope.accountId}`;
+  const accountBank = 'acct';
   if (scope.memoryGroupId === undefined) return { recall: [accountBank], write: accountBank };
-  const groupBank = `t:${scope.tenantId}:ws:${scope.memoryGroupId}`;
-  return {
-    recall: [groupBank, accountBank],
-    write: scope.shared === true ? groupBank : accountBank,
-  };
+  const groupBank = `ws:${groupSegment(scope.memoryGroupId)}`;
+  return { recall: [groupBank, accountBank], write: accountBank };
 }
 
 /**
@@ -93,6 +99,72 @@ export function renderRecallSection(hits: readonly { readonly text: string }[]):
   return `# 相关记忆\n${hits.map((hit) => `- ${hit.text}`).join('\n')}`;
 }
 
+/**
+ * 判断这一步是否该召回。
+ *
+ * 回合开始（`step` 为 1）要召回；用户中途插话时本步带来的消息里会出现用户消息，也要
+ * 召回。工具调用之后的步骤既不开始回合，也没有用户输入，跳过。
+ * @param input - 本步的序号与本步带来的消息。
+ * @returns 是否需要召回。
+ */
+export function shouldRecall(input: {
+  readonly step: number;
+  readonly messages: readonly { readonly source?: { readonly kind?: string } }[];
+}): boolean {
+  if (input.step === 1) return true;
+  return input.messages.some((message) => message.source?.kind === 'user');
+}
+
+/**
+ * 追加去重器。
+ *
+ * 按会话记住上一次追加的召回编号序列：新结果的编号与上一次完全相同时不再追加，避免同一
+ * 批记忆反复进入历史。条目数有上限，长时间运行的进程不会无限增长；淘汰只影响去重判断，
+ * 不影响已经进入历史的内容。
+ */
+export class RecallSequenceDeduper {
+  readonly #last = new Map<string, readonly string[]>();
+
+  constructor(private readonly limit = 1024) {
+    if (!Number.isSafeInteger(limit) || limit <= 0) throw new RangeError(`去重上限必须是正安全整数，收到 ${String(limit)}`);
+  }
+
+  /** 当前记录数。 */
+  get size(): number {
+    return this.#last.size;
+  }
+
+  /**
+   * 接受一批召回编号，并把它记为该会话的最新序列。
+   * @param sessionId - 会话标识。
+   * @param ids - 本次召回结果的编号，按召回顺序。
+   * @returns 与上一次的编号序列不同时为 true。
+   */
+  accept(sessionId: string, ids: readonly string[]): boolean {
+    const previous = this.#last.get(sessionId);
+    const changed = !sameSequence(previous, ids);
+    this.#last.delete(sessionId);
+    this.#last.set(sessionId, [...ids]);
+    while (this.#last.size > this.limit) {
+      const oldest = this.#last.keys().next().value;
+      if (oldest === undefined) break;
+      this.#last.delete(oldest);
+    }
+    return changed;
+  }
+}
+
+/**
+ * 两串召回编号是否逐项相同。
+ * @param previous - 上一次的编号序列。
+ * @param ids - 本次的编号序列。
+ * @returns 逐项相同时为 true。
+ */
+function sameSequence(previous: readonly string[] | undefined, ids: readonly string[]): boolean {
+  if (previous === undefined || previous.length !== ids.length) return false;
+  return previous.every((id, index) => id === ids[index]);
+}
+
 /** 一次回合里用于写入记忆的消息。 */
 export interface TurnMessage {
   readonly role: 'user' | 'assistant';
@@ -138,28 +210,22 @@ export interface TurnWritePlan {
 }
 
 /**
- * 算出一回合记忆写到哪个 bank、写什么内容。
+ * 算出一回合记忆写到哪里、写什么内容。
  *
- * 私有工作区写账号 bank，共享工作区写组 bank，聊天会话（没有 cwd）写账号 bank。
- * 内容为空时不产生计划，避免把空回合写成一条空记忆。
- * @param input - 工作目录、共享标记与本回合消息。
+ * 写入一律落在 `acct`，与召回时是否查了组 bank 无关。内容为空时不产生计划，
+ * 避免把空回合写成一条空记忆。
+ * @param input - 工作目录与本回合消息。
  * @returns 写入计划；没有内容时为 `undefined`。
  */
 export function planTurnWrite(input: {
   readonly cwd: string;
-  readonly shared: boolean;
   readonly messages: readonly TurnMessage[];
   /** 调用方已经生成的摘要；缺省时用规则抽取。 */
   readonly content?: string;
 }): TurnWritePlan | undefined {
   const content = input.content === undefined ? composeTurnMemory(input.messages) : limitMemoryText(input.content);
   if (content === '') return undefined;
-  const banks = banksFor({
-    accountId: 'local',
-    tenantId: 'default',
-    memoryGroupId: input.cwd === '' ? undefined : input.cwd,
-    shared: input.shared,
-  });
+  const banks = banksFor({ memoryGroupId: input.cwd === '' ? undefined : input.cwd });
   return { bank: banks.write, content };
 }
 

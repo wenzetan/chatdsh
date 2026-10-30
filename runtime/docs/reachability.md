@@ -37,7 +37,7 @@ ZeroTier（接口名形如 `zt0`，`198.51.100.1/24`）与 EasyTier（接口 `tu
 
 HTTPS 证书由 Tailscale 提供。Serve 要求 tailnet 已启用 HTTPS 证书，未启用时 `tailscale serve` 会弹出交互式提示请求代为启用。启动器无法驱动交互式提示，因此未启用证书时应当给出明确的操作指引而不是静默失败。
 
-登录身份取自 Serve 注入的来源身份头部，控制平面读它建立会话。首期不启用应用级配对，**访问权等同于 tailnet 成员资格**：tailnet 内的任何设备都能访问，撤销要通过移除节点实现。ACL 与 tailnet 外的访问都排在后续。
+控制平面不读来源身份头部：单账号形态下没有账号体系，身份判定落在设备这一层。首期不启用应用级配对，**访问权等同于 tailnet 成员资格**：tailnet 内的任何设备都能访问，撤销要通过移除节点实现。ACL 与 tailnet 外的访问都排在后续。
 
 这套做法在本机已有先例：OpenClaw 网关支持自动配置 Tailscale Serve（`gateway.tailscale.mode` 的 `serve` 模式，网关保持绑定回环，由 Tailscale 提供 HTTPS、路由与身份头部）。
 
@@ -51,10 +51,10 @@ Tailscale Serve 在转发的请求上注入来源身份头部。从 tailnet 内�
 |---|---|---|
 | `host` | 用户访问的域名 | DSH 的 authority 判定 |
 | `tailscale-headers-info` | `https://tailscale.com/s/serve-headers` | 说明这些头由 Tailscale 注入，指向官方可信条件说明 |
-| `tailscale-user-login` | 形如 `<用户名>@<身份提供方>` | 账号的稳定标识 |
-| `tailscale-user-name` | 用户名 | 显示名 |
-| `tailscale-user-profile-pic` | 头像地址 | 界面展示 |
-| `x-forwarded-for` | 发起请求设备的 tailnet 地址 | 设备识别与审计来源 |
+| `tailscale-user-login` | 形如 `<用户名>@<身份提供方>` | 传输层给出的来源标识，控制平面不使用 |
+| `tailscale-user-name` | 用户名 | 传输层给出的来源标识，控制平面不使用 |
+| `tailscale-user-profile-pic` | 头像地址 | 传输层给出的来源标识，控制平面不使用 |
+| `x-forwarded-for` | 发起请求设备的 tailnet 地址 | 反代透传 |
 | `x-forwarded-host` | 与 `host` 一致 | 反代透传 |
 | `x-forwarded-proto` | `https` | 反代透传 |
 
@@ -64,13 +64,9 @@ Tailscale Serve 在转发的请求上注入来源身份头部。从 tailnet 内�
 
 **Host 保留原始域名。** service 名入口的 `host` 是用户访问的 service 域名，Serve 不改写它，因此 DSH 的 authority 绑定 cookie 与用户看到的域名一致，反代不需要改写 Host。
 
-**身份头只在跨设备访问时出现。** 本机访问自己的 tailnet 名字时这组头缺失，因为它无法确定对端身份。所以登录实现必须在真实客户端场景下验证，本机自测不能作为依据。
+**身份头只在跨设备访问时出现。** 本机访问自己的 tailnet 名字时这组头缺失，因为 Tailscale 无法确定对端身份。这组头是传输层的观察结果，控制平面不据它建立任何记录，因此它缺失时设备功能不受影响。
 
-**登录以 `tailscale-user-login` 为账号稳定标识。** 首次出现该值时为它建账号，`tailscale-user-name` 作显示名，`x-forwarded-for` 作设备识别与审计来源。撤销通过 tailnet 移除节点或撤销 service host 实现。这个值形如 `<用户名>@<身份提供方>`，绑定在具体身份提供方上，换 IdP 或换账号会得到新值，因此账号表需要允许一个账号关联多个 login，或提供一次显式的账号迁移。
-
-可信前提：这些头由本机 Tailscale 守护进程注入，只有在校验请求确实来自 Serve 时才可信。控制平面绑 EasyTier 接口之后，Serve 之外还有一条反代入口，因此校验分两类：带 `tailscale-headers-info` 且 `x-forwarded-for` 落在 tailnet 地址段的请求信任身份头；从 EasyTier 网段直连的请求要求应用级认证，即反代注入的认证头或配对令牌，缺失时拒绝。接入其他可达性提供方时身份头不可用，那时只能依据 `x-forwarded-for` 落在预期地址段内做粗判，或者恢复应用级配对。
-
-即使用上 Tailscale 身份，账号体系与控制平面的授权判定保持不变，Tailscale 身份只是登录环节的一个来源。
+可信前提：这些头由本机 Tailscale 守护进程注入，只有在校验请求确实来自 Serve 时才可信。控制平面绑 EasyTier 接口之后，Serve 之外还有一条反代入口，因此校验分两类：带 `tailscale-headers-info` 且 `x-forwarded-for` 落在 tailnet 地址段的请求信任传输层头部；从 EasyTier 网段直连的请求要求应用级认证，即反代注入的认证头或节点令牌，缺失时拒绝。接入其他可达性提供方时这组头部不可用，那时只能依据 `x-forwarded-for` 落在预期地址段内做粗判，或者恢复应用级配对。
 
 ## 五、可达性提供方的接缝
 
@@ -87,7 +83,7 @@ Tailscale Serve 在转发的请求上注入来源身份头部。从 tailnet 内�
 
 接口需要提供四件事：对外可达的地址、TLS 材料（或说明由外部终止）、请求来源的身份（可能为空）、以及与诊断相关的状态。控制平面在启动时按配置选择实现，客户端配置由控制平面下发，用户不需要为每种方案各配一遍。
 
-已落地的部分：`@chatdsh/core-contracts` 里的 `AccessProvider` 接口与两个实现（`tailscaleProvider`、`manualProvider`），控制平面通过 `CHATDSH_ACCESS_PROVIDER` 选择，缺省为 `tailscale`。`manual` 用于用户自备反代、没有 Serve 注入头部的场景，此时所有请求都归到 `local` 账号。接 easytier 或 zerotier 时实现同一个接口，判定逻辑不用动。
+已落地的部分：控制平面只认传输层的事实，不选择可达性提供方。绑定地址、TLS 与来源网络由部署者按上表决定；控制平面按设备分派请求，来源身份头部不参与任何判定。接 easytier 或 zerotier 时改动落在反代与 DNS 上，控制平面不用动。
 
 ## 六、域名解析与反代约束
 

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { tempHome } from '../../scripts/lib/cleanup.mjs';
-import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ScheduleStore, ShareStore } from '../../gateway/lib/store.js';
+import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ShareStore } from '../../gateway/lib/store.js';
 import { createPushHub } from '../../gateway/lib/push.js';
 import { createGatewayServer } from '../../gateway/lib/server.js';
 import { createTelemetryClient } from '../../packages/core/diagnostics/lib/client.js';
@@ -121,7 +121,6 @@ async function startGateway({ telemetry = new RecordingTelemetry(), runtimeReady
   const store = new GatewayStore(databasePath);
   const replica = new ReplicaStore(store.handle());
   const share = new ShareStore(store.handle());
-  const schedule = new ScheduleStore(store.handle());
   const receipts = new ReceiptStore(store.handle());
   const push = createPushHub({
     queue: new PushQueue(store.handle()),
@@ -136,8 +135,6 @@ async function startGateway({ telemetry = new RecordingTelemetry(), runtimeReady
       host: '127.0.0.1',
       port: 0,
       runtimeUrl: upstream.url,
-      runtimeRoutes: {},
-      accessProvider: 'manual',
       databasePath,
       environment: 'test',
       version: '0.0.0',
@@ -149,7 +146,6 @@ async function startGateway({ telemetry = new RecordingTelemetry(), runtimeReady
     store,
     replica,
     share,
-    schedule,
     receipts,
     push,
     telemetry,

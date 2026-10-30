@@ -22,7 +22,7 @@ import {
   type LlmResolvedModelInfo,
   type StreamChunk,
 } from '@chatdsh/adapter';
-import { CHATDSH_ERROR_CODES, type ChatdshIdentity } from '@chatdsh/core-contracts';
+import { CHATDSH_ERROR_CODES } from '@chatdsh/core-contracts';
 import { GatewayLlmAdapter } from './adapter.ts';
 import { resolveRouterRoute, type RouterRoute } from './config.ts';
 import { LlmQuotaError } from './quota.ts';
@@ -74,12 +74,6 @@ export const Config: z<LlmRouterConfig> = z.object({
   })).required(false),
   requestTimeoutMs: z.number(),
 });
-
-/** 读身份的服务。 */
-interface IdentityService {
-  current(): ChatdshIdentity | undefined;
-  currentOrLocal(): ChatdshIdentity;
-}
 
 /** 用到的遥测面。 */
 interface RouterTelemetry {
@@ -162,7 +156,6 @@ class RoutedAdapter extends LlmAdapter {
             .add(1, { provider: route.provider, model: options.model, outcome: quota ? 'quota-rejected' : 'failed' });
           if (quota) {
             telemetry.event('chatdsh.llm.quota.rejected', {
-              'account.id': error.accountId,
               'error.code': CHATDSH_ERROR_CODES.quotaExceeded,
             });
           }
@@ -197,22 +190,19 @@ function errorCodeOf(error: unknown): string {
  * 加载器只认这个字段。
  */
 export class ChatdshLlmRouterService extends Service {
-  /** 依赖的模型运行时与可选的身份服务。 */
+  /** 依赖的模型运行时。 */
   static inject = ['llm'];
 
   constructor(ctx: Context, config: LlmRouterConfig) {
     super(ctx, 'chatdshLlmRouter');
     const routes = (config.routes ?? []).map((route) => resolveRouterRoute({ ...route, baseUrl: config.baseUrl }));
     const telemetry = telemetryOf<RouterTelemetry>(ctx);
-    const identity = ctx.reflect.get('chatdshIdentity') as IdentityService | undefined;
-    const accountId = identity?.current()?.accountId ?? identity?.currentOrLocal().accountId ?? 'local';
     const requestTimeoutMs = config.requestTimeoutMs ?? 120_000;
 
     for (const route of routes) {
       const inner = new GatewayLlmAdapter({
         baseUrl: route.baseUrl,
         provider: route.provider,
-        accountId,
         quota: { limit: route.limit, used: route.used },
         requestTimeoutMs,
       });

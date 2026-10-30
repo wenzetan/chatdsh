@@ -100,7 +100,6 @@ async function startGateway(options) {
       ...process.env,
       DSH_HOME: options.home, // gitleaks:allow
       CHATDSH_GATEWAY_PORT: String(GATEWAY_PORT),
-      CHATDSH_ACCESS_PROVIDER: 'manual',
       CHATDSH_LLM_GATEWAY_URL: options.upstreamUrl,
       CHATDSH_LLM_API_KEY_ENV: 'CHATDSH_TEST_GATEWAY_API_KEY',
       CHATDSH_LLM_QUOTA_LIMIT: String(options.limit),
@@ -130,10 +129,10 @@ async function startGateway(options) {
 }
 
 /** 一次模型入口调用。 */
-async function callGateway(url, account) {
+async function callGateway(url) {
   const response = await fetch(`${url}/chatdsh/gateway/llm`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'tailscale-user-login': account },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       provider: 'gateway',
       model: MODEL,
@@ -208,7 +207,7 @@ try {
     used: 0,
   });
   children.push(gateway.child);
-  const first = await callGateway(gateway.url, 'llm-router-entry');
+  const first = await callGateway(gateway.url);
   if (first.status !== 200) throw new Error(`模型入口返回 ${first.status}：${first.text.slice(0, 200)}`);
   const entry = readSse(first.text);
   if (entry.visible === '') throw new Error(`模型入口没有返回可见文本：${first.text.slice(0, 300)}`);
@@ -227,7 +226,7 @@ try {
     used: 0,
   });
   children.push(nonStreamGateway.child);
-  const nonStreamCall = await callGateway(nonStreamGateway.url, 'llm-router-nonstream');
+  const nonStreamCall = await callGateway(nonStreamGateway.url);
   if (nonStreamCall.status !== 200) throw new Error(`非流式入口返回 ${nonStreamCall.status}`);
   if (!nonStreamCall.text.includes('text/event-stream') && !nonStreamCall.text.startsWith('data: ')) {
     throw new Error('非流式入口没有返回 SSE 分块');
@@ -246,7 +245,6 @@ try {
   const before = proxy.count();
   const adapter = new GatewayLlmAdapter({
     baseUrl: `${gateway.url}/chatdsh/gateway/llm`,
-    accountId: 'llm-router-runtime',
     quota: { limit: 1_000_000, used: 0 },
   });
   const probe = await probeRoute(adapter, MODEL, AbortSignal.timeout(120_000));
@@ -271,7 +269,7 @@ try {
   });
   children.push(exhausted.child);
   const countBefore = proxy.count();
-  const rejected = await callGateway(exhausted.url, 'llm-router-quota');
+  const rejected = await callGateway(exhausted.url);
   if (rejected.status !== 402) failures.push(`额度拒绝应当返回 402，实际 ${rejected.status}`);
   const body = JSON.parse(rejected.text);
   if (body.error?.code !== 'quota-exceeded') failures.push(`额度拒绝的错误码应当是 quota-exceeded，实际 ${body.error?.code}`);

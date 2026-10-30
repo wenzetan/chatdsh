@@ -38,6 +38,7 @@
     "@deepseek-ai/dsh-agent-preset-registry": "0.2.1-rc.2",
     "@deepseek-ai/dsh-experimental-worktree": "0.2.1-rc.2",
     "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
     "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
     "@deepseek-ai/dsh-otel": "0.2.1-rc.2",
     "@deepseek-ai/dsh-schedule": "0.2.1-rc.2",

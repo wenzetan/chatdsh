@@ -25,3 +25,8 @@ runtime/mobile/base/shared/src/commonTest/kotlin/com/clarklevis/dsh/shared/Gatew
 # 三、上游界面文案的人名占位与凭据存储类的字段名。
 runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/platform/AndroidGatewayCredentialStore.kt:chatdsh-provider-credential:128
 runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/ui/TeamUi.kt:chatdsh-cn-name:485
+#
+# 四、本仓库自有代码里的属性访问被私有域名规则命中：settings-sync 把设置合并交给
+#     HomeLayer 实例，`home` 字段指向这个实例，本身不含网络位置。
+runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:150
+runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:299

@@ -32,6 +32,18 @@ export const UPSTREAM_CLIENT_UI = {
   settings: '@deepseek-ai/dsh-client-ui-settings',
   /** 侧栏的容器。 */
   sidebar: '@deepseek-ai/dsh-client-ui-sidebar',
+  /** 主题切换面板。 */
+  theme: '@deepseek-ai/dsh-client-ui-theme',
+  /** 语言偏好，白名单同步同步它的语言选择。 */
+  locale: '@deepseek-ai/dsh-client-locale',
+  /** 聊天视图偏好，白名单同步同步 transcriptView 与 collapseTiming。 */
+  chat: '@deepseek-ai/dsh-client-ui-chat',
+  /** 产品分析开关，白名单同步同步它的 enabled。 */
+  productAnalytics: '@deepseek-ai/dsh-client-product-analytics',
+  /** 默认模型选择，白名单同步同步 provider、model 与 reasoningEffort。 */
+  agentDefaultModel: '@deepseek-ai/dsh-agent-default-model',
+  /** 预设注册表，白名单同步同步 selectedDefault。 */
+  presetRegistry: '@deepseek-ai/dsh-agent-preset-registry',
 } as const;
 
 /** 上游的工具行：行 id → 包名。会话预设按行 id 挂载它们。 */

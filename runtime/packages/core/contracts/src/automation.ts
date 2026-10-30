@@ -31,7 +31,7 @@ export type AutomationTrigger =
 export type AutomationAction = {
   /** 起一个新会话，把提示词交给它。 */
   readonly kind: 'start-session';
-  /** 目标工作区；省略时落在账号的默认目录。 */
+  /** 目标工作区；省略时落在默认目录。 */
   readonly workspaceId?: string;
   /** 交给会话的提示词。 */
   readonly prompt: string;
@@ -41,8 +41,6 @@ export type AutomationAction = {
 export interface AutomationRecord {
   /** 记录标识。 */
   readonly id: string;
-  /** 所属账号。 */
-  readonly accountId: string;
   /** 展示名。 */
   readonly name: string;
   /** 触发条件。 */

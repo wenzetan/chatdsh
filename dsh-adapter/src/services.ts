@@ -27,6 +27,7 @@ import type { SkillRegistry } from '@deepseek-ai/dsh-skill';
 import type { SubagentRuntime } from '@deepseek-ai/dsh-subagent';
 import type { ScheduleService } from '@deepseek-ai/dsh-schedule';
 import type { WorktreeService } from '@deepseek-ai/dsh-experimental-worktree';
+import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
 
 /** 工具注册表：`ctx.tools`。 */
 export function toolsOf(ctx: Context): ToolRuntime {
@@ -106,6 +107,18 @@ export function scheduleOf(ctx: Context): ScheduleService {
 /** 工作树服务：`ctx.worktrees`。 */
 export function worktreesOf(ctx: Context): WorktreeService {
   return ctx.worktrees;
+}
+
+/**
+ * 浏览器连接服务：`ctx.connection`。
+ *
+ * 只在挂了 Web 前端的组合里存在，因此按名读取：没有它的形态（命令行、ACP）里
+ * 设备长连接仍要能装载，只是不补发本机的界面凭据。
+ * @param ctx - 上下文。
+ * @returns 连接服务；未挂载时 `undefined`。
+ */
+export function connectionOf(ctx: Context): HostConnectionHandle | undefined {
+  return ctx.reflect.get('connection') as HostConnectionHandle | undefined;
 }
 
 /**

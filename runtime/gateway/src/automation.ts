@@ -10,6 +10,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { AUTOMATION_ERROR_CODES, type AutomationEvent, type AutomationRecord } from '@chatdsh/core-contracts';
 import { WebhookInvalidError, normalizeWebhook } from '@chatdsh/forge-bridge';
+import { migrateAccountColumns } from './store.ts';
 
 export type { AutomationEvent, AutomationRecord } from '@chatdsh/core-contracts';
 
@@ -24,7 +25,6 @@ export interface WebhookResult {
 /** 存储里的一行。 */
 interface AutomationRow {
   readonly id: string;
-  readonly account_id: string;
   readonly name: string;
   readonly trigger: string;
   readonly action: string;
@@ -44,7 +44,6 @@ interface EventRow {
 function toRecord(row: AutomationRow): AutomationRecord {
   return {
     id: row.id,
-    accountId: row.account_id,
     name: row.name,
     trigger: JSON.parse(row.trigger) as AutomationRecord['trigger'],
     action: JSON.parse(row.action) as AutomationRecord['action'],
@@ -60,10 +59,10 @@ function toRecord(row: AutomationRow): AutomationRecord {
  */
 export class AutomationStore {
   constructor(private readonly database: DatabaseSync) {
+    migrateAccountColumns(this.database);
     this.database.exec(`
       create table if not exists automations (
         id text primary key,
-        account_id text not null,
         name text not null,
         trigger text not null,
         action text not null,
@@ -77,17 +76,15 @@ export class AutomationStore {
         source text not null,
         primary key (automation_id, event_id)
       );
-      create index if not exists automations_by_account on automations(account_id);
     `);
   }
 
   /** 建立一条自动化记录。标识重复时抛出。 */
   create(record: AutomationRecord): void {
     this.database
-      .prepare('insert into automations (id, account_id, name, trigger, action, enabled, created_at) values (?, ?, ?, ?, ?, ?, ?)')
+      .prepare('insert into automations (id, name, trigger, action, enabled, created_at) values (?, ?, ?, ?, ?, ?)')
       .run(
         record.id,
-        record.accountId,
         record.name,
         JSON.stringify(record.trigger),
         JSON.stringify(record.action),
@@ -99,16 +96,16 @@ export class AutomationStore {
   /** 读一条记录。 */
   get(id: string): AutomationRecord | undefined {
     const row = this.database
-      .prepare('select id, account_id, name, trigger, action, enabled, created_at from automations where id = ?')
+      .prepare('select id, name, trigger, action, enabled, created_at from automations where id = ?')
       .get(id) as unknown as AutomationRow | undefined;
     return row === undefined ? undefined : toRecord(row);
   }
 
-  /** 按账号列出记录。 */
-  list(accountId: string): AutomationRecord[] {
+  /** 列出记录。 */
+  list(): AutomationRecord[] {
     const rows = this.database
-      .prepare('select id, account_id, name, trigger, action, enabled, created_at from automations where account_id = ? order by created_at')
-      .all(accountId) as unknown as AutomationRow[];
+      .prepare('select id, name, trigger, action, enabled, created_at from automations order by created_at')
+      .all() as unknown as AutomationRow[];
     return rows.map(toRecord);
   }
 
@@ -116,14 +113,13 @@ export class AutomationStore {
   /**
    * 切换一条自动化的启用状态。
    * @param id - 自动化标识。
-   * @param accountId - 记录所属账号。
    * @param enabled - 目标状态。
-   * @returns 更新后的记录；记录不存在或不属于该账号时返回 undefined。
+   * @returns 更新后的记录；记录不存在时返回 undefined。
    */
-  setEnabled(id: string, accountId: string, enabled: boolean): AutomationRecord | undefined {
+  setEnabled(id: string, enabled: boolean): AutomationRecord | undefined {
     const result = this.database
-      .prepare('update automations set enabled = ? where id = ? and account_id = ?')
-      .run(enabled ? 1 : 0, id, accountId);
+      .prepare('update automations set enabled = ? where id = ?')
+      .run(enabled ? 1 : 0, id);
     if (Number(result.changes) === 0) return undefined;
     return this.get(id);
   }

@@ -44,6 +44,9 @@
       "path": "packages/client/share"
     },
     {
+      "path": "packages/client/shell"
+    },
+    {
       "path": "packages/client/telemetry"
     },
     {
@@ -74,13 +77,16 @@
       "path": "packages/host/import"
     },
     {
-      "path": "packages/core/identity"
-    },
-    {
       "path": "packages/host/projects"
     },
     {
       "path": "packages/host/push"
+    },
+    {
+      "path": "packages/host/device-link"
+    },
+    {
+      "path": "packages/host/settings-sync"
     },
     {
       "path": "packages/host/telemetry"
@@ -126,9 +132,6 @@
     },
     {
       "path": "packages/bundle/storage-jsonl"
-    },
-    {
-      "path": "packages/bundle/worker"
     },
     {
       "path": "packages/host/model-provider"

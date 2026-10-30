@@ -185,7 +185,7 @@ Hermes 侧有几处约束需要一起处理：
 
 代价是这个标记只在当前设备的界面上显示。不过每条消息的 `source.provider` 都在日志里，任何设备打开都能算出同一结论，只是不显示。
 
-上游已经有一个同类组件的先例：`dsh-client-ui-chat/lib/client.js:4967` 的 `ContextInjectionRow` 渲染注入消息并带 `producer.label`，它的标签来自 `contextProducer`（`:7742-7770`）对 `source.kind` 的映射。自建组件读 `source.provider` 不用这条映射，因为要区分的是执行体而不是注入类型。
+上游已经有一个同类组件的先例：`dsh-client-ui-chat/lib/client.js:4967` 的 `ContextInjectionRow` 渲染注入消息并带 `producer.label`，它的标签来自 `contextProducer`（`:7742-7770`）对 `source.kind` 的映射。自建组件读 `source.provider`，需要区分的是执行体。
 
 ## 五、进程形态与缓存前缀
 
@@ -234,13 +234,13 @@ bank 名去掉账号维度：
 
 `memoryGroupId` 默认等于 `workspaceId`。显式关联记忆组之后，同一个仓库在不同设备上的两份克隆共用一份记忆。这个能力与账号无关，与设备无关，与多形态无关。
 
-`packages/host/memory/src/index.ts:300` 与 `src/rules.ts:157-160` 现在把 `accountId: 'local'`、`tenantId: 'default'` 写成字面量。去掉账号维度之后这两处直接算 bank 名，不再需要这两个字段。
+`packages/host/memory/src/rules.ts` 的 `banksFor` 直接算出这两个名字，没有账号或租户字段参与。
 
 Hindsight 的地址与凭据同样由环境变量下发。它由用户自行部署，可以同机或分机，分机时真的会独立离线，因此「召回返回空、回合继续」的降级保留。
 
 **召回的时机。** 每个回合开始时查一次，目标是补齐用户没有写进消息里的已知事实。工具调用期间不再召回：查询文本不变时，Hindsight 返回的是同一批结果，没有信息增量。
 
-判据用结构而不是时间窗口。`agent/pre-step` 的 payload 带 `turn` 与 `step`：回合开始的 `step === 1`；工具调用之后的 step 里 `messages` 只有工具结果。用户中途插话时 `messages` 里会出现新的 user 消息，那种情况也要召回。
+判据取 payload 的结构。`agent/pre-step` 的 payload 带 `turn` 与 `step`：回合开始的 `step === 1`；工具调用之后的 step 里 `messages` 只有工具结果。用户中途插话时 `messages` 里会出现新的 user 消息，那种情况也要召回。
 
 ```
 step === 1   或   messages 里有 user 消息   → 召回
@@ -331,11 +331,11 @@ this.ctx.on(AGENT_EVENTS.preStep, async (payload, next) => {
 
 ### 8.2 推送
 
-控制平面仍是唯一推送中枢，`gateway/src/push.ts` 的分级、离线队列、升级时刻都已实现，继续使用。补三处：
+控制平面仍是唯一推送中枢，`gateway/src/push.ts` 的分级、离线队列、升级时刻都已实现，继续使用。三处补充的现状：
 
-- 审批提醒。`deliver()` 现在只有副本追加与已读回执两个调用点（`gateway/src/server.ts:729`、`:870`），审批请求产生时没有投递动作。注意这只影响提醒：用户在右栏打开那个会话时，审批卡片在那个设备的 iframe 里自然出现与作答，不需要推送参与。
-- 撤回。`architecture.md:545` 描述了任一端处理之后撤回其余设备的通知，未实现。
-- 移动端后台通知。`architecture.md:511` 标注尚未实现。
+- 审批提醒。已实现：副本上报里出现 `approval/asked` 时控制平面推一条 `kind: approval` 的提醒，用户没打开那个会话的设备也能知道有人在等回答。用户在右栏打开那个会话时，审批卡片在那台设备的 iframe 里自然出现与作答，不需要推送参与。
+- 撤回。已实现：`approval/decided` 进副本后撤回尚未投递的同一会话同一关联键的提醒，重连后不再补发。
+- 移动端后台通知。仍未实现，`architecture.md:511` 有描述；移动端接入推送后补这一条。
 
 单账号下「该账号全部在线设备」就是「全部在线设备」，`all-at-once` 与 `two-stage` 两档的含义不变。`two-stage-with-phone` 在单账号下等价于 `two-stage`，不做。
 
@@ -371,38 +371,46 @@ this.ctx.on(AGENT_EVENTS.preStep, async (payload, next) => {
 | DSH 承载那一轮的界面标注 | 自建 `ui-conversation` 组件读 `source.provider`，不往日志插消息 | 第四节 |
 | 审批的跨设备通知 | iframe 模型下审批卡片在对应设备的右栏出现与作答，不需要特殊通道；剩下的是「用户没打开那个会话时要不要提醒」 | 第八节 8.2 |
 
-## 十一、待实测
+## 十一、Hermes 补齐的实测结论
 
-**Hermes 的补齐是否写入 `state.db`。** 不带 `X-Hermes-Session-Id` 走 `/v1/chat/completions` 并传完整 `messages` 时，`conversation_history` 会传给 agent（`api_server_openai_routes.py:731`），但 agent 是否把这段历史写进 `state.db` 的 `messages` 表取决于 transcript 构建方式。写到，则补齐一次之后回到增量发送即可；没写到，则补齐只在这一次请求里有效，需要每轮都传完整历史。
+两项实测在 `deploy/compose.yaml` 起的测试容器上完成（Hermes 0.22.2，`127.0.0.1:50011`），探针是 `deploy/scripts/hermes-probe.mjs`，可重复执行：
 
-验证方法：对一个已存在的 Hermes 会话先不带 header 传一段合成历史并发一句，再用 `GET /api/sessions/{id}/messages` 读取，看合成历史是否出现。
+```sh
+HERMES_URL=http://127.0.0.1:50011 HERMES_API_KEY=... node deploy/scripts/hermes-probe.mjs
+```
 
-**Hermes 的 fingerprint 稳定性。** 补齐请求不带 header 时会话标识由 `system` 与第一条 user 消息推导。断电期间 DSH 承载改变了 system prompt（工具集不同会改）时，补齐会落到另一个会话。这一点决定补齐请求是否需要把原来的 `system` 一并带上。
+**补齐不写入 `state.db`。** 不带 `X-Hermes-Session-Id` 走 `/v1/chat/completions` 并传完整 `messages` 时，请求体历史作为 `conversation_history` 交给 agent，不落库：会话的 `messages` 表里查不到合成历史标记，只有这一轮的用户消息与助手回复。补齐因此只对当次请求有效，不能靠一轮补齐把缺口写进 Hermes，之后回到增量发送。
+
+**fingerprint 对 `system` 与第一条 user 同时敏感。** 同一 `system` 与同一 first user 的两次请求落到同一个会话标识；改动 `system` 或改动第一条 user 消息都落到另一个会话。补齐请求必须逐字保持原来的 `system` 与第一条 user 消息。
+
+**每一次不带会话头的请求都会把当轮用户消息追加进 `state.db`，但不含请求体里的助手侧历史。** 所以同一会话里会出现内容重复的用户消息，`GET /api/sessions/{id}/messages` 也不反映 DSH 承载期间的助手回复。
+
+**实现影响。** 「缺口」不能一次性补齐：DSH 承载过的轮次在 Hermes 侧永远缺，只要那段对话还要继续交给 Hermes，每一轮都必须带完整历史（不带会话头）。模型的上下文来自请求体，所以对话本身仍然正确；代价是每轮请求的全量历史都要过一遍，以及 `state.db` 只反映 Hermes 自己跑过的轮次。
 
 ## 十二、待补的能力
 
 | 事项 | 现状 | 所在节 |
 |---|---|---|
-| 设备出站长连接 | 未实现，`gateway/src/runtime.ts` 只做本机子进程编排 | 三 |
-| 按 `deviceId` 路由 | 未实现，现在按账号查静态地址 | 三 |
-| `/d/<deviceId>/` 前缀反代 | 未实现，控制平面现在只反代到单个运行时 | 三 |
-| 控制平面托管的静态外壳 | 未实现，现在直接用 DSH 的 web 页面 | 三 |
-| 聚合会话列表的 HTTP 端点 | 部分实现（`/chatdsh/gateway/replica`），缺按设备分组的列表与标题预览 | 三 |
-| 工作区按名字合并的列表 | 未实现 | 三 |
-| 新建会话选设备与目录 | 未实现；`architecture.md:599` 有设计描述 | 三 |
-| 配对码复用到桌面与 Linux 节点 | 移动端的流程已实现，其他平台未接 | 三 |
-| 设备在线状态的上报与展示 | 未实现；只需在线/离线两值，不需要日志末端与待推队列 | 三 |
-| 会话创建时写入 `deviceId` 的来源 | 字段与 `upsertSession` 就绪，值未接通 | 三 |
-| 设备表与节点令牌 | 表结构见 `deployment.md:113`，代码未实现 | 三 |
-| 设备离线时写操作明确失败 | 未实现 | 三 |
+| 设备出站长连接 | 已实现：设备用节点令牌升级 `/chatdsh/gateway/device-link`，控制平面沿连接下发请求 | 三 |
+| 按 `deviceId` 路由 | 部分实现：`/d/<deviceId>/` 前缀按设备转发普通 HTTP 请求，长连接上的帧多路复用未做 | 三 |
+| `/d/<deviceId>/` 前缀反代 | 已实现（HTTP）；带前缀的 WebSocket 升级回 501，不落到宿主机运行时 | 三 |
+| 控制平面托管的静态外壳 | 已实现：根路径返回自建页面，脚本在 `/shell/shell.js`，左栏聚合会话与设备状态，右栏 iframe 指向 `/d/<deviceId>/` | 三 |
+| 聚合会话列表的 HTTP 端点 | 已实现：`GET /chatdsh/gateway/sessions` 按设备分组，标题取副本的标题事件，缺失时用 `cwd` 末段 | 三 |
+| 工作区按名字合并的列表 | 已实现：外壳按 `workspaceName`（`cwd` 末段）跨设备合并，同名节点下列出各设备与路径 | 三 |
+| 新建会话选设备与目录 | 已实现：外壳先选设备再填目录，调 `POST /chatdsh/gateway/ownership` 登记归属并在该设备的 `session/create` 上建会话；目录在本形态下手动输入 | 三 |
+| 配对码复用到桌面与 Linux 节点 | 已实现：`POST /chatdsh/gateway/devices/pair` 签发节点令牌，与移动端共用配对码 | 三 |
+| 设备在线状态的上报与展示 | 已实现：`GET /chatdsh/gateway/devices` 的 `online` 由长连接表判定 | 三 |
+| 会话创建时写入 `deviceId` 的来源 | 已实现：`POST /chatdsh/gateway/ownership` 写入归属，之后不可改 | 三 |
+| 设备表与节点令牌 | 已实现：`node_devices` 表与 `registerNode`、`nodeByTokenHash`、`nodeById`、`listNodes`、`touchNode` | 三 |
+| 设备离线时写操作明确失败 | 已实现：`/d/` 前缀与归属写入在设备离线时回 409 `device-offline` | 三 |
 | `postMessage` 的会话切换通道 | 未实现；不做则同一设备内切换会话也要 iframe 重载 | 三 |
 | Hermes 地址与 Hindsight 地址的环境变量下发 | 未实现，补丁层写死常量 | 四、六 |
 | Hermes 的发送时探测与回退 | 未实现，`chatBackend` 现在是 profile 级选择 | 四 |
 | `ui-conversation` 的「本地执行」标记组件 | 未实现，要读 `assistant/message` 的 `source.provider` | 四 |
-| 审批投递、撤回、移动端后台通知 | 未实现；审批的作答本身在 iframe 里自然成立，缺的是「用户没打开那个会话时」的提醒 | 七 |
-| 记忆召回的注入方式改造 | 现在走 system prompt 席位，要改成 `pre-step` 追加 `UserMessage` | 六 |
+| 审批投递、撤回、移动端后台通知 | 部分实现：审批提醒与撤回已接入推送中枢；移动端后台通知仍未实现 | 七 |
+| 记忆召回的注入方式改造 | 已实现：`agent/pre-step` 追加一条 `UserMessage`，结构判据取代时间窗口 | 六 |
 | 记忆组关联入口 | 未实现，`memoryGroupId` 从 `cwd` 算出 | 六 |
-| `memory-recall` 的 source 登记 | 未实现，要在 `@chatdsh/core-contracts` 声明 | 六 |
-| 设置同步插件 | 未实现；监听 `loader/config-update`，按白名单命名空间上报，接收推送写 home 层 | 七 |
-| 控制平面的设置存储 | 未实现；按命名空间存值与接收时刻 | 七 |
-| 外壳按设备现取插件清单 | 未实现；`ctx.pluginManager.listBundles` 已存在，缺控制平面的转发 | 七 |
+| `memory-recall` 的 source 登记 | 已实现：`@chatdsh/core-contracts` 的 `message-sources.ts` 声明该 kind | 六 |
+| 设置同步插件 | 已实现：`@chatdsh/host-settings-sync` 监听设置变更与易变字段，按白名单命名空间上报，接收推送写本机 home 层 | 七 |
+| 控制平面的设置存储 | 已实现：`settings` 表按命名空间存值与控制平面接收时刻，`GET`/`POST /chatdsh/gateway/settings` | 七 |
+| 外壳按设备现取插件清单 | 已实现：`GET /chatdsh/gateway/devices/<id>/plugins` 沿长连接调 `pluginManager/listBundles` 与 `pluginManager/listPlugins` | 七 |

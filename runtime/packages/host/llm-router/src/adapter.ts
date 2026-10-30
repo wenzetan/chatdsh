@@ -17,7 +17,6 @@ import {
   type LlmResolvedModelInfo,
   type StreamChunk,
 } from '@chatdsh/adapter';
-import { IDENTITY_HEADERS } from '@chatdsh/core-contracts';
 import { mapUpstreamFailure, type UpstreamFailureInput } from './errors.ts';
 import { createQuotaGuard, type QuotaGuard, type QuotaReading } from './quota.ts';
 
@@ -37,8 +36,6 @@ export interface GatewayLlmAdapterOptions {
   readonly baseUrl: string;
   /** provider 路由标识；缺省为 `gateway`。 */
   readonly provider?: string;
-  /** 发起请求的账号标识，写入身份头部。 */
-  readonly accountId: string;
   /** 额度配置。 */
   readonly quota: { readonly limit?: number; readonly used?: number };
   /** 凭据所在的环境变量名；控制平面侧通常不需要，留作直连网关时使用。 */
@@ -71,7 +68,6 @@ export class GatewayLlmAdapter extends LlmAdapter {
   /** 模型入口地址。 */
   readonly baseUrl: string;
 
-  private readonly accountId: string;
   private readonly guard: QuotaGuard;
   private readonly apiKeyEnv: string | undefined;
   private readonly requestTimeoutMs: number;
@@ -85,10 +81,8 @@ export class GatewayLlmAdapter extends LlmAdapter {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       throw new Error(`模型入口地址必须以 http:// 或 https:// 开头：${options.baseUrl}`);
     }
-    if (options.accountId === '') throw new Error('模型入口请求必须带账号标识');
     this.provider = options.provider ?? 'gateway';
     this.baseUrl = options.baseUrl;
-    this.accountId = options.accountId;
     this.apiKeyEnv = options.apiKeyEnv;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
     this.fetchImpl = options.fetch ?? fetch;
@@ -119,12 +113,11 @@ export class GatewayLlmAdapter extends LlmAdapter {
   }
 
   private async *streamUpstream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    this.guard.check(this.accountId);
+    this.guard.check();
     const headers: Record<string, string> = {
       'content-type': 'application/json',
       accept: 'text/event-stream',
       ...attributionHeaders(),
-      [IDENTITY_HEADERS.accountId]: this.accountId,
     };
     const key = this.apiKeyEnv === undefined ? undefined : process.env[this.apiKeyEnv];
     if (key !== undefined) headers.authorization = `Bearer ${key}`;
@@ -166,7 +159,7 @@ export class GatewayLlmAdapter extends LlmAdapter {
     for await (const chunk of parseSse(response.body)) {
       if (chunk.type === 'usage') {
         usageSeen = true;
-        this.guard.record(this.accountId, chunk.usage.inputTokens + chunk.usage.outputTokens);
+        this.guard.record(chunk.usage.inputTokens + chunk.usage.outputTokens);
         this.onUsage?.({ inputTokens: chunk.usage.inputTokens, outputTokens: chunk.usage.outputTokens });
       }
       yield chunk;

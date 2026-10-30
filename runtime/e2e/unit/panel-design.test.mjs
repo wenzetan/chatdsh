@@ -22,7 +22,7 @@ const PANELS = [
   ['model-provider', 'ModelProviderSection'],
   ['skills', 'SkillsSection'],
   ['memory', 'MemorySection'],
-  ['account', 'AccountSection'],
+  ['account', 'DeviceSection'],
   ['share', 'ShareSection'],
   ['connectors', 'ConnectorsSection'],
   ['approval', 'ApprovalSection'],
