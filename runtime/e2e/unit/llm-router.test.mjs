@@ -137,7 +137,7 @@ test('上游 429 与 402 映射为可区分的错误码', async () => {
 });
 
 test('路由器服务把依赖声明在静态字段上', () => {
-  assert.deepEqual(ChatdshLlmRouterService.inject, ['llm']);
+  assert.deepEqual(ChatdshLlmRouterService.inject, ['llm', 'storageDomain', 'sessions']);
 });
 
 test('配置不合法时在装配阶段就地抛出', () => {

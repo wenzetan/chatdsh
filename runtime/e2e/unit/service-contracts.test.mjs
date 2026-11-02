@@ -30,16 +30,29 @@ test('服务把依赖声明在静态字段上', () => {
   assert.ok(ChatdshSkillsService.inject.includes('skills'));
 });
 
-test('模型提供方服务在真实上下文里列出注册信息', () => {
+test('模型提供方服务在真实上下文里列出注册信息', async () => {
   const ctx = new Context();
-  const service = new ChatdshModelProviderService(ctx, {
-    providers: [
-      { provider: 'gateway', baseUrl: 'http://127.0.0.1:20128/v1' },
-      { provider: 'openclaw', displayName: 'OpenClaw', baseUrl: 'https://example.invalid/v1' },
-    ],
+  const dispose = ctx.provide('llm', {
+    listProviders: () => [{ id: 'gateway' }],
+    listModels: () => [],
+    resolveModelInfo: () => undefined,
   });
-  assert.deepEqual(service.list().map((item) => item.provider), ['gateway', 'openclaw']);
-  assert.deepEqual(service.status(), { available: true, providers: 2 });
+  try {
+    const service = new ChatdshModelProviderService(ctx, {
+      providers: [
+        { provider: 'gateway', baseUrl: 'http://127.0.0.1:20128/v1' },
+        { provider: 'openclaw', displayName: 'OpenClaw', baseUrl: 'https://example.invalid/v1' },
+      ],
+    });
+    assert.deepEqual(service.list().map((item) => item.provider), ['gateway', 'openclaw']);
+    assert.equal(service.list()[0].registered, true);
+    assert.equal(service.list()[1].registered, false);
+    const status = await service.status();
+    assert.equal(status.providers, 2);
+    assert.equal(status.available, true);
+  } finally {
+    dispose();
+  }
 });
 
 test('模型提供方服务对非法配置就地抛出', () => {
