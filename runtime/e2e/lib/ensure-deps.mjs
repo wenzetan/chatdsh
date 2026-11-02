@@ -22,6 +22,8 @@ export function ensureDeps(root) {
       if (!existsSync(link)) symlinkSync(join(source, name), link, 'dir');
     }
   }
-  const zod = join(root, 'node_modules', 'zod');
-  if (!existsSync(zod) && existsSync(join(deps, 'zod'))) symlinkSync(join(deps, 'zod'), zod, 'dir');
+  for (const name of ['zod', 'semver', 'yaml', 'js-yaml']) {
+    const link = join(root, 'node_modules', name);
+    if (!existsSync(link) && existsSync(join(deps, name))) symlinkSync(join(deps, name), link, 'dir');
+  }
 }

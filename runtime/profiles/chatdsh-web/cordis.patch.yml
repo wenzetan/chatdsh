@@ -51,6 +51,22 @@
       name: '@chatdsh/client-context-insights'
     - id: chatdsh-client-skills
       name: '@chatdsh/client-skills'
+    - id: chatdsh-client-automation
+      name: '@chatdsh/client-automation'
+    - id: chatdsh-client-workspace-tools
+      name: '@chatdsh/client-workspace-tools'
+    - id: chatdsh-client-notifications
+      name: '@chatdsh/client-notifications'
+    - id: chatdsh-client-data-management
+      name: '@chatdsh/client-data-management'
+    - id: chatdsh-client-exports
+      name: '@chatdsh/client-exports'
+    - id: chatdsh-client-pwa
+      name: '@chatdsh/client-pwa'
+    - id: chatdsh-client-desktop-control
+      name: '@chatdsh/client-desktop-control'
+    - id: chatdsh-client-access
+      name: '@chatdsh/client-access'
 
 # 账号链六行整体禁用。DSH 自带的那套登录、余额与充值接缝绑定 DeepSeek 平台账号，
 # ChatDSH 的账号由控制平面承担，运行时内的授权层恒为 owner，因此这条链不挂载。

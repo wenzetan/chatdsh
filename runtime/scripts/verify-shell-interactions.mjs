@@ -299,13 +299,13 @@ try {
     /** 读右栏状态。 */
     const frameState = async () => page.evaluate(`(() => {
       const iframe = document.querySelector('.shell-iframe');
-      const overlay = document.querySelector('.shell-offline-overlay');
-      const input = document.querySelector('.shell-offline-input');
+      const overlay = document.querySelector('.shell-readonly');
+      const input = document.querySelector('.shell-draft-input');
       return JSON.stringify({
         src: iframe?.getAttribute('src') ?? '',
         overlayHidden: overlay?.hasAttribute('hidden') ?? true,
         inputDisabled: input?.disabled ?? false,
-        overlayText: document.querySelector('.shell-offline-text')?.textContent ?? '',
+        overlayText: document.querySelector('.shell-readonly-body')?.textContent ?? '',
       });
     })()`);
 
@@ -378,14 +378,14 @@ try {
     mkdirSync(newCwd, { recursive: true });
     await page.evaluate(`document.querySelector('.shell-new').click()`);
     await waitFor(async () => {
-      const opened = await page.evaluate(`document.querySelector('.new-session-dialog') !== null`);
+      const opened = await page.evaluate(`document.querySelector('.shell-create-device') !== null`);
       return opened === true ? { ok: true } : { ok: false };
     }, 8000, 200);
     await page.evaluate(`(() => {
-      const select = document.querySelector('.new-session-device');
+      const select = document.querySelector('.shell-create-device');
       select.value = ${JSON.stringify(nodeB.deviceId)};
-      document.querySelector('.new-session-cwd').value = ${JSON.stringify(newCwd)};
-      document.querySelector('.new-session-create').click();
+      document.querySelector('.shell-create-cwd').value = ${JSON.stringify(newCwd)};
+      document.querySelector('.shell-create-submit').click();
       return true;
     })()`);
     const created = await waitFor(async () => {

@@ -41,10 +41,10 @@ const URL_BASE = option('url', 'http://127.0.0.1:8889');
 const PROFILE = option('profile', 'chatdsh-acp-live');
 /** 验收会话里记忆插件的请求超时：本机 Hindsight 的一次召回约二十秒。 */
 const RECALL_TIMEOUT_MS = 90_000;
-/** 会话的工作目录；空串表示聊天会话，召回只查账号 bank。 */
+/** 会话的工作目录；空串表示聊天会话，召回只查共用 bank。 */
 const CWD = option('cwd', resolve(ROOT, '..'));
 const SKIP_SESSION = argv.includes('--skip-session');
-const BANK = 't:chatdsh-verify';
+const BANK = 'chatdsh-verify';
 const PROBE = `验收探针，写于 ${new Date().toISOString()}：蓝鲸的体长记录是三十米。`;
 const MARKER = `chatdsh-recall-${String(Date.now())}`;
 
@@ -220,14 +220,19 @@ try {
   if (!alive) failures.push('Hindsight 不可用');
 
   if (alive) {
-    // 同步写入：异步整合要等一会儿才能召回，验收里用同步换取确定性。
+    // 写入请求在百毫秒级返回；命中取决于服务端后台整合进度，因此按有界时间轮询等待。
     const started = Date.now();
     const written = await client.write(BANK, { content: PROBE, context: '验收脚本', async: false });
     console.log(`写入：${JSON.stringify(written)}（${Date.now() - started} 毫秒）`);
     if (written.items < 1) failures.push('写入没有返回条目数');
 
-    const hits = await client.recall([BANK], { query: '蓝鲸的体长是多少', maxTokens: 2048 });
-    console.log(`召回：${hits.length} 条`);
+    let hits = [];
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      hits = await client.recall([BANK], { query: '蓝鲸的体长是多少', maxTokens: 2048 });
+      if (hits.length > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    console.log(`召回：${hits.length} 条（等待整合 ${Math.round((Date.now() - started) / 1000)} 秒）`);
     for (const hit of hits.slice(0, 3)) {
       console.log(`  - ${String(hit.text ?? hit.content ?? JSON.stringify(hit)).slice(0, 80)}`);
     }
@@ -240,7 +245,7 @@ try {
       console.log('召回注入段：缺少模型凭据，未执行。设置环境变量 CHATDSH_TEST_GATEWAY_API_KEY 后重跑。');
       failures.push('缺模型凭据');
     } else {
-      const scope = { accountId: 'local', tenantId: 'default', memoryGroupId: CWD === '' ? undefined : CWD };
+      const scope = { memoryGroupId: CWD === '' ? undefined : CWD };
       const banks = banksFor(scope);
       const seedBank = banks.recall[0];
       const facts = [
@@ -252,6 +257,16 @@ try {
       }
       console.log(`召回注入段：会话工作目录 ${JSON.stringify(CWD)}，召回 bank ${banks.recall.join('、')}`);
       console.log(`召回注入段：写入 ${facts.length} 条带标记的记忆到 ${seedBank}（标记 ${MARKER}）`);
+
+      // 命中取决于服务端后台整合，先等到种子记忆可召回再起会话，否则两轮都召回不到。
+      let seeded = 0;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        seeded = (await client.recall([seedBank], { query: `验收标记 ${MARKER} 部署端口`, maxTokens: 2048 })).length;
+        if (seeded > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      console.log(`召回注入段：种子记忆已可召回 ${seeded} 条`);
+      if (seeded === 0) failures.push('种子记忆在等待窗口内未能召回');
 
       const { home, sessionId, childError } = await runSession([
         `验收标记 ${MARKER}：蓝鲸的体长记录是多少？请只回复：收到`,

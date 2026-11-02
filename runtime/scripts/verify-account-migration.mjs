@@ -259,9 +259,6 @@ try {
   const receipt = await (await fetch(`${base}/chatdsh/gateway/receipt?sessionId=legacy-session`)).json();
   check(receipt.receipts.some((row) => row.deviceId === 'device-old' && row.readUpToSeq === 1), '旧已读回执读到了');
 
-  const sharePage = await fetch(`${base}/s/legacy-share-token`);
-  check(sharePage.status === 200, '旧分享链接仍可打开', `${sharePage.status}`);
-
   // 写：往旧会话追加副本、写一条新回执、新建一条分享，全部落在迁移后的表结构上。
   const appended = await fetch(`${base}/chatdsh/gateway/replica`, {
     method: 'POST',
@@ -281,12 +278,16 @@ try {
   });
   check(newReceipt.status === 200, '新已读回执写入成功', `${newReceipt.status}`);
 
+  // 分享域用自己的表保存固定快照；写动作要求同源与写令牌。
   const created = await fetch(`${base}/chatdsh/gateway/share`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Origin: base, 'x-chatdsh-csrf': '1' },
     body: JSON.stringify({ sessionId: 'legacy-session' }),
   });
-  check(created.status === 200, '新分享写入成功', `${created.status}`);
+  const createdBody = await created.json();
+  check(created.status === 200, '新分享写入成功', `${created.status} ${JSON.stringify(createdBody)}`);
+  const sharePage = await fetch(`${base}${createdBody.path}`);
+  check(sharePage.status === 200, '迁移后的会话可以建立并打开公开页', `${sharePage.status}`);
 
   // 额度：旧的 300 + 120 必须并成一份读数，超过 400 的上限后请求被拒绝。
   const llm = await fetch(`${base}/chatdsh/gateway/llm`, {
@@ -330,6 +331,13 @@ try {
 
     const pushRows = database.prepare("select id, stage from push_queue where id = 'push-legacy'").all();
     check(pushRows.length === 1, 'push_queue 的旧记录保留并补齐了新列', JSON.stringify(pushRows));
+
+    const legacyShares = database.prepare('select token, session_id, up_to_seq from shares').all();
+    check(
+      legacyShares.length === 1 && legacyShares[0].token === 'legacy-share-token' && legacyShares[0].session_id === 'legacy-session',
+      '旧分享记录在迁移后的表结构里保留',
+      JSON.stringify(legacyShares),
+    );
 
     // 再启动一次，确认迁移是幂等的。
     const again = spawn(process.execPath, [resolve(ROOT, 'gateway/lib/main.js')], {

@@ -7,3 +7,21 @@
 # 补丁才有目标可寻；本部署不使用重复执行能力，因此把整组 `optional-ralph` 关掉。
 - id: optional-ralph
   disabled: true
+
+# 浏览器侧的客户端插件：命令行形态不渲染界面，这些行保留是为了四个形态的组合一致，
+# 包在宿主侧的入口是空实现，装载它不产生任何服务依赖。
+- insert:
+    - id: chatdsh-client-automation
+      name: '@chatdsh/client-automation'
+    - id: chatdsh-client-workspace-tools
+      name: '@chatdsh/client-workspace-tools'
+    - id: chatdsh-client-notifications
+      name: '@chatdsh/client-notifications'
+    - id: chatdsh-client-data-management
+      name: '@chatdsh/client-data-management'
+    - id: chatdsh-client-exports
+      name: '@chatdsh/client-exports'
+    - id: chatdsh-client-pwa
+      name: '@chatdsh/client-pwa'
+    - id: chatdsh-client-desktop-control
+      name: '@chatdsh/client-desktop-control'

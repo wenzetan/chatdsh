@@ -77,3 +77,21 @@
       name: '@chatdsh/host-mcp-server'
       config:
         enabled: false
+
+    # 附件：内容文件进产品数据目录，元数据进结构化存储，同一份内容登记到制品库。
+    - id: chatdsh-attachments
+      name: '@chatdsh/host-attachments'
+
+    # 录音：音频、元数据与转写文本分开存放；没有识别接口时报告不可用并保留录音。
+    - id: chatdsh-voice
+      name: '@chatdsh/host-voice'
+
+    # 原会话定时任务：只做视图与校验，任务本体在运行时自己的 `ctx.schedule` 里。
+    # 它需要宿主的 Web 服务、定时服务与会话服务，这三种在无界面的形态里没有，
+    # 由对应 profile 的补丁层关掉这一行。
+    - id: chatdsh-schedule-ui
+      name: '@chatdsh/host-schedule-ui'
+
+    # 设置增强：终端程序、编辑器、文件管理器与快捷键的补充配置，另带两个浏览器侧区段。
+    - id: chatdsh-settings-enhancements
+      name: '@chatdsh/host-settings-enhancements'

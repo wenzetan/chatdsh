@@ -5,6 +5,28 @@
 - id: chatdsh-assistants
   disabled: true
 
+# 定时任务界面要宿主的 Web 服务，这一形态没有，整行关掉。
+- id: chatdsh-schedule-ui
+  disabled: true
+
+# 浏览器侧的客户端插件：ACP 形态不渲染界面，行保留是为了四个形态的组合一致，
+# 包在宿主侧的入口是空实现，装载它不产生任何服务依赖。
+- insert:
+    - id: chatdsh-client-automation
+      name: '@chatdsh/client-automation'
+    - id: chatdsh-client-workspace-tools
+      name: '@chatdsh/client-workspace-tools'
+    - id: chatdsh-client-notifications
+      name: '@chatdsh/client-notifications'
+    - id: chatdsh-client-data-management
+      name: '@chatdsh/client-data-management'
+    - id: chatdsh-client-exports
+      name: '@chatdsh/client-exports'
+    - id: chatdsh-client-pwa
+      name: '@chatdsh/client-pwa'
+    - id: chatdsh-client-desktop-control
+      name: '@chatdsh/client-desktop-control'
+
 # 上报在这一形态里照常工作，但把间隔压短，端到端验证不必等待默认的 2 秒。
 - id: chatdsh-push
   name: '@chatdsh/host-push'

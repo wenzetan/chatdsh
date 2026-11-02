@@ -35,6 +35,33 @@
       "path": "packages/client/memory"
     },
     {
+      "path": "packages/client/conversation"
+    },
+    {
+      "path": "packages/client/notifications"
+    },
+    {
+      "path": "packages/client/access"
+    },
+    {
+      "path": "packages/client/cli"
+    },
+    {
+      "path": "packages/client/data-management"
+    },
+    {
+      "path": "packages/client/exports"
+    },
+    {
+      "path": "packages/client/pwa"
+    },
+    {
+      "path": "packages/client/desktop-control"
+    },
+    {
+      "path": "packages/client/multi-window"
+    },
+    {
       "path": "packages/client/assistants"
     },
     {
@@ -47,7 +74,13 @@
       "path": "packages/client/shell"
     },
     {
+      "path": "packages/client/session-bridge"
+    },
+    {
       "path": "packages/client/telemetry"
+    },
+    {
+      "path": "packages/client/workspace-tools"
     },
     {
       "path": "packages/client/theme"
@@ -63,6 +96,12 @@
     },
     {
       "path": "packages/host/artifacts"
+    },
+    {
+      "path": "packages/host/attachments"
+    },
+    {
+      "path": "packages/host/backup"
     },
     {
       "path": "packages/host/assistants"
@@ -89,7 +128,16 @@
       "path": "packages/host/settings-sync"
     },
     {
+      "path": "packages/host/settings-enhancements"
+    },
+    {
+      "path": "packages/host/schedule-ui"
+    },
+    {
       "path": "packages/host/telemetry"
+    },
+    {
+      "path": "packages/host/voice"
     },
     {
       "path": "packages/core/session-index"
@@ -168,6 +216,12 @@
     },
     {
       "path": "packages/core/session-persistence-postgres"
+    },
+    {
+      "path": "packages/core/limits"
+    },
+    {
+      "path": "packages/core/deployment"
     },
     {
       "path": "packages/bundle/storage-postgres"

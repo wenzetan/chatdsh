@@ -66,6 +66,12 @@ importers:
 
   packages/bundle/storage-postgres: {}
 
+  packages/client/access:
+    dependencies:
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
+
   packages/client/account:
     dependencies:
       '@chatdsh/core-ui-kit':
@@ -114,6 +120,18 @@ importers:
         specifier: workspace:*
         version: link:../../core/ui-kit
 
+  packages/client/cli:
+    dependencies:
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+      '@chatdsh/core-diagnostics':
+        specifier: workspace:*
+        version: link:../../core/diagnostics
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
   packages/client/connectors:
     dependencies:
       '@chatdsh/core-remote-client':
@@ -137,6 +155,42 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  packages/client/conversation:
+    dependencies:
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
+  packages/client/data-management:
+    dependencies:
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
+  packages/client/desktop-control:
+    dependencies:
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
+
+  packages/client/exports:
+    dependencies:
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
 
   packages/client/memory:
     dependencies:
@@ -162,6 +216,14 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/client/multi-window: {}
+
+  packages/client/notifications:
+    dependencies:
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
+
   packages/client/projects:
     dependencies:
       '@chatdsh/core-remote-client':
@@ -170,6 +232,14 @@ importers:
       '@chatdsh/core-ui-kit':
         specifier: workspace:*
         version: link:../../core/ui-kit
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
+  packages/client/pwa: {}
+
+  packages/client/session-bridge:
+    dependencies:
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -194,13 +264,32 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
-  packages/client/telemetry: {}
+  packages/client/telemetry:
+    dependencies:
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+      '@chatdsh/core-diagnostics':
+        specifier: workspace:*
+        version: link:../../core/diagnostics
 
   packages/client/theme:
     dependencies:
       '@chatdsh/core-ui-kit':
         specifier: workspace:*
         version: link:../../core/ui-kit
+
+  packages/client/workspace-tools:
+    dependencies:
+      '@chatdsh/core-remote-client':
+        specifier: workspace:*
+        version: link:../../core/remote-client
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/core/backends:
     dependencies:
@@ -236,6 +325,8 @@ importers:
       '@opentelemetry/sdk-trace':
         specifier: 2.11.0
         version: 2.11.0(@opentelemetry/api@1.9.1)
+
+  packages/core/limits: {}
 
   packages/core/remote-client: {}
 
@@ -279,6 +370,14 @@ importers:
       '@chatdsh/core-contracts':
         specifier: workspace:*
         version: link:../../core/contracts
+
+  packages/host/attachments:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/host/backup: {}
 
   packages/host/chat-hermes:
     dependencies:
@@ -381,6 +480,9 @@ importers:
       '@chatdsh/adapter':
         specifier: link:../../../../dsh-adapter
         version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
 
   packages/host/push:
     dependencies:
@@ -390,6 +492,24 @@ importers:
       '@chatdsh/core-contracts':
         specifier: workspace:*
         version: link:../../core/contracts
+
+  packages/host/schedule-ui:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../../core/contracts
+
+  packages/host/settings-enhancements:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+      '@chatdsh/core-ui-kit':
+        specifier: workspace:*
+        version: link:../../core/ui-kit
 
   packages/host/settings-sync:
     dependencies:
@@ -422,6 +542,12 @@ importers:
         version: link:../../core/diagnostics
 
   packages/host/usage:
+    dependencies:
+      '@chatdsh/adapter':
+        specifier: link:../../../../dsh-adapter
+        version: link:../../../../dsh-adapter
+
+  packages/host/voice:
     dependencies:
       '@chatdsh/adapter':
         specifier: link:../../../../dsh-adapter
