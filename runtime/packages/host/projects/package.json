@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/host-projects",
   "version": "0.1.0",
-  "description": "ChatDSH 宿主平面插件：在工作区之上扩展标题、项目说明与默认模型，并把项目说明注入会话上下文",
+  "description": "ChatDSH 宿主平面插件：在工作区之上扩展标题、项目说明、默认模型与默认助手，并把项目说明注入会话上下文",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -24,6 +24,20 @@
     "zod": "4.4.3"
   },
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../../dsh-adapter"
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/core-contracts": "workspace:*"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.runtime.project.rejected"
+      ],
+      "spans": [
+        "chatdsh.runtime.project.write"
+      ],
+      "metrics": [
+        "chatdsh_runtime_project_writes_total"
+      ]
+    }
   }
 }

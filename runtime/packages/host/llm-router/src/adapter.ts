@@ -36,8 +36,8 @@ export interface GatewayLlmAdapterOptions {
   readonly baseUrl: string;
   /** provider 路由标识；缺省为 `gateway`。 */
   readonly provider?: string;
-  /** 额度配置。 */
-  readonly quota: { readonly limit?: number; readonly used?: number };
+  /** 额度配置；给出 `guard` 时省略。 */
+  readonly quota?: { readonly limit?: number; readonly used?: number };
   /** 凭据所在的环境变量名；控制平面侧通常不需要，留作直连网关时使用。 */
   readonly apiKeyEnv?: string;
   /** 请求超时，单位毫秒。 */
@@ -88,7 +88,7 @@ export class GatewayLlmAdapter extends LlmAdapter {
     this.fetchImpl = options.fetch ?? fetch;
     this.traceparent = options.traceparent;
     this.onUsage = options.onUsage;
-    this.guard = options.guard ?? createQuotaGuard(options.quota);
+    this.guard = options.guard ?? createQuotaGuard(options.quota ?? {});
   }
 
   /** 提供方元数据。 */

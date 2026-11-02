@@ -23,16 +23,28 @@
   "chatdsh": {
     "telemetry": {
       "events": [
-        "chatdsh.memory.degraded"
+        "chatdsh.memory.degraded",
+        "chatdsh.memory.search.failed",
+        "chatdsh.memory.group.rejected",
+        "chatdsh.memory.write.failed",
+        "chatdsh.memory.queue.rejected"
       ],
       "spans": [
         "chatdsh.memory.recall",
         "chatdsh.memory.write",
-        "chatdsh.memory.summary"
+        "chatdsh.memory.summary",
+        "chatdsh.memory.search",
+        "chatdsh.memory.group.save",
+        "chatdsh.memory.group.detach",
+        "chatdsh.memory.write.queue"
       ],
       "metrics": [
         "chatdsh_memory_recall_seconds",
-        "chatdsh_memory_injections_total"
+        "chatdsh_memory_injections_total",
+        "chatdsh_memory_searches_total",
+        "chatdsh_memory_group_changes_total",
+        "chatdsh_memory_writes_total",
+        "chatdsh_memory_queue_actions_total"
       ]
     }
   },

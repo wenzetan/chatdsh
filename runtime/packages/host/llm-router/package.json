@@ -25,16 +25,19 @@
   "chatdsh": {
     "telemetry": {
       "events": [
-        "chatdsh.llm.quota.rejected"
+        "chatdsh.llm.quota.rejected",
+        "chatdsh.runtime.model.provider.failed"
       ],
       "spans": [
-        "chatdsh.llm.stream"
+        "chatdsh.llm.stream",
+        "chatdsh.runtime.remote.call"
       ],
       "metrics": [
         "chatdsh_llm_requests_total",
         "chatdsh_llm_request_duration_seconds",
         "chatdsh_llm_first_token_seconds",
-        "chatdsh_llm_tokens_total"
+        "chatdsh_llm_tokens_total",
+        "chatdsh_remote_calls_total"
       ]
     }
   },

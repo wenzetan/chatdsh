@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/host-settings-sync",
   "version": "0.1.0",
-  "description": "ChatDSH 宿主平面插件：白名单设置的跨设备同步（上报变更、接收推送、写本机 home 层）",
+  "description": "ChatDSH 宿主平面插件：白名单设置的跨设备同步（上报变更、接收推送、写本机 home 层、表单版本、作用范围与冲突查询）",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/host-artifacts",
   "version": "0.1.0",
-  "description": "ChatDSH 宿主平面插件：制品的存储与版本，内容在产品数据目录，元数据在结构化存储",
+  "description": "ChatDSH 宿主平面插件：制品的版本、安全读取与删除范围，内容在产品数据目录，元数据在结构化存储",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -25,5 +25,18 @@
   },
   "dependencies": {
     "@chatdsh/adapter": "link:../../../../dsh-adapter"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.runtime.artifact.rejected"
+      ],
+      "spans": [
+        "chatdsh.runtime.artifact.access"
+      ],
+      "metrics": [
+        "chatdsh_artifact_operations_total"
+      ]
+    }
   }
 }

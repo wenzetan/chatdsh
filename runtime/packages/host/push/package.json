@@ -28,7 +28,9 @@
       "spans": [
         "chatdsh.sync.event.push"
       ],
-      "metrics": []
+      "metrics": [
+        "chatdsh_replica_lag_sessions"
+      ]
     }
   },
   "dependencies": {

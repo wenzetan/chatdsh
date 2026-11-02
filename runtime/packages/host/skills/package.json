@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/host-skills",
   "version": "0.1.0",
-  "description": "ChatDSH 宿主平面插件：技能目录的启用与停用状态，供面板与工具读取",
+  "description": "ChatDSH 宿主平面插件：技能目录的启用状态、启用决定持久化与来源检索，供面板与工具读取",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -24,12 +24,16 @@
   },
   "chatdsh": {
     "telemetry": {
-      "events": [],
+      "events": [
+        "chatdsh.runtime.skill.rejected"
+      ],
       "spans": [
-        "chatdsh.runtime.skill.toggle"
+        "chatdsh.runtime.skill.toggle",
+        "chatdsh.runtime.skill.search"
       ],
       "metrics": [
-        "chatdsh_skill_toggles_total"
+        "chatdsh_skill_toggles_total",
+        "chatdsh_skill_searches_total"
       ]
     }
   },
@@ -38,6 +42,7 @@
     "@chatdsh/core-contracts": "workspace:*"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-skill": "0.2.1-rc.2"
+    "@deepseek-ai/dsh-skill": "0.2.1-rc.2",
+    "zod": "4.4.3"
   }
 }

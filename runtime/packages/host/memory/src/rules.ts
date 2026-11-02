@@ -11,6 +11,8 @@ export interface MemoryHit {
   readonly id: string;
   readonly text: string;
   readonly type: string;
+  /** 命中的 bank；由客户端按召回来源补上。 */
+  readonly bank?: string;
   readonly tags?: readonly string[];
   readonly score?: number;
 }
@@ -35,6 +37,15 @@ function groupSegment(memoryGroupId: string): string {
 }
 
 /**
+ * 记忆组的 bank 名。
+ * @param memoryGroupId - 记忆组标识。
+ * @returns 以 `ws:` 开头的 bank 名；标识里的斜杠按 URL 编码。
+ */
+export function groupBankName(memoryGroupId: string): string {
+  return `ws:${groupSegment(memoryGroupId)}`;
+}
+
+/**
  * 算出一次会话该召回与写入的 bank。
  *
  * 聊天会话没有工作区：只读写 `acct`。有工作区时召回先查组 bank 再查 `acct`，
@@ -45,8 +56,7 @@ function groupSegment(memoryGroupId: string): string {
 export function banksFor(scope: MemoryScope): { recall: string[]; write: string } {
   const accountBank = 'acct';
   if (scope.memoryGroupId === undefined) return { recall: [accountBank], write: accountBank };
-  const groupBank = `ws:${groupSegment(scope.memoryGroupId)}`;
-  return { recall: [groupBank, accountBank], write: accountBank };
+  return { recall: [groupBankName(scope.memoryGroupId), accountBank], write: accountBank };
 }
 
 /**

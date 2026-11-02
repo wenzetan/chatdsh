@@ -18,6 +18,15 @@ export const SELF_TEST_PATH = '/chatdsh/telemetry/self-test';
 /** 浏览器与移动端上报中继的路径。 */
 export const RELAY_PATH = '/chatdsh/telemetry/browser';
 
+/** 诊断导出的路径。 */
+export const DIAGNOSTICS_PATH = '/chatdsh/telemetry/diagnostics';
+
+/** 运行期开关的路径。 */
+export const STATE_PATH = '/chatdsh/telemetry/state';
+
+/** 写操作要求的同源标识头。 */
+export const CSRF_HEADER = 'x-chatdsh-csrf';
+
 /** 端点需要从服务取得的能力。 */
 export interface EndpointHost {
   /** 当前开关状态。 */
@@ -28,6 +37,10 @@ export interface EndpointHost {
   status(): Promise<Record<string, unknown>>;
   /** 执行一次自检，返回探针标识。 */
   selfTest(): Promise<string>;
+  /** 诊断导出：脱敏后的最近事件与丢弃汇总。 */
+  diagnostics(limit?: number): Promise<Record<string, unknown>>;
+  /** 运行期切换开关并返回新的状态载荷。 */
+  setEnabled(enabled: boolean): Promise<Record<string, unknown>>;
   /** 转发一份上报载荷。 */
   relay(signal: string, body: string): Promise<{ status: number; detail?: string }>;
 }
@@ -62,8 +75,20 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.end(body);
 }
 
+/** 诊断导出的默认条数与上限。 */
+const DIAGNOSTICS_DEFAULT_LIMIT = 64;
+const DIAGNOSTICS_MAX_LIMIT = 256;
+
+/** 解析诊断导出的条数上限。 */
+function parseLimit(rawUrl: string | undefined): number {
+  const query = new URL(rawUrl ?? DIAGNOSTICS_PATH, 'http://127.0.0.1').searchParams.get('limit');
+  const parsed = query === null ? Number.NaN : Number.parseInt(query, 10);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return DIAGNOSTICS_DEFAULT_LIMIT;
+  return Math.min(parsed, DIAGNOSTICS_MAX_LIMIT);
+}
+
 /**
- * 注册三个端点。
+ * 注册端点。
  * @param ctx - 宿主上下文，提供 `webServer`。
  * @param host - 端点背后要调用的服务能力。
  * @returns 释放函数。
@@ -127,6 +152,51 @@ export function registerTelemetryEndpoints(ctx: Context, host: EndpointHost): ()
       const body = await readBody(request);
       const result = await host.relay(signal, body);
       sendJson(response, result.status, result.detail === undefined ? { accepted: result.status === 200 } : { accepted: false, detail: result.detail });
+    },
+  }));
+
+  disposers.push(hostWebServerOf(ctx).register({
+    kind: 'exact',
+    path: DIAGNOSTICS_PATH,
+    handler: async (request, response) => {
+      if (!isLoopbackRequest(request)) {
+        sendJson(response, 403, { error: 'loopback-only' });
+        return;
+      }
+      if (request.method !== 'GET') {
+        sendJson(response, 405, { error: 'method-not-allowed' });
+        return;
+      }
+      if (!host.enabled) {
+        sendJson(response, 409, { error: 'telemetry-disabled', reason: host.reason });
+        return;
+      }
+      sendJson(response, 200, await host.diagnostics(parseLimit(request.url)));
+    },
+  }));
+
+  disposers.push(hostWebServerOf(ctx).register({
+    kind: 'exact',
+    path: STATE_PATH,
+    handler: async (request, response) => {
+      if (!isLoopbackRequest(request)) {
+        sendJson(response, 403, { error: 'loopback-only' });
+        return;
+      }
+      if (request.method !== 'POST') {
+        sendJson(response, 405, { error: 'method-not-allowed' });
+        return;
+      }
+      if (request.headers[CSRF_HEADER] !== '1') {
+        sendJson(response, 403, { error: 'csrf-required' });
+        return;
+      }
+      const payload = JSON.parse(await readBody(request)) as { enabled?: unknown };
+      if (typeof payload.enabled !== 'boolean') {
+        sendJson(response, 400, { error: 'enabled-required' });
+        return;
+      }
+      sendJson(response, 200, await host.setEnabled(payload.enabled));
     },
   }));
 

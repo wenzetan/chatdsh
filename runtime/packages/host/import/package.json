@@ -30,7 +30,8 @@
         "chatdsh.import.seed.failed"
       ],
       "spans": [
-        "chatdsh.import.seed"
+        "chatdsh.import.seed",
+        "chatdsh.sync.import"
       ],
       "metrics": [
         "chatdsh_import_seed_total"

@@ -26,10 +26,12 @@
     "telemetry": {
       "events": [],
       "spans": [
-        "chatdsh.runtime.context.insight"
+        "chatdsh.runtime.context.insight",
+        "chatdsh.runtime.remote.call"
       ],
       "metrics": [
-        "chatdsh_context_usage_ratio"
+        "chatdsh_context_usage_ratio",
+        "chatdsh_remote_calls_total"
       ]
     }
   },

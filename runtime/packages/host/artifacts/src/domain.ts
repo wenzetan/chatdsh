@@ -43,6 +43,12 @@ export interface ArtifactVersionRecord {
   readonly createdAt: number;
   /** 内容在产品数据目录里的相对路径。 */
   readonly storageKey: string;
+  /** 写入该版本的会话；早期记录没有这一项时按制品记录补齐。 */
+  readonly sessionId?: string;
+  /** 产生该版本的回合编号。 */
+  readonly sourceTurn?: number;
+  /** 内容字节的 sha256，用于核对历史版本没有被改写。 */
+  readonly digest?: string;
 }
 
 /** 制品记录 schema。 */
@@ -68,6 +74,9 @@ export const versionSchema = z.object({
   mimeType: z.string(),
   createdAt: z.number().int().nonnegative(),
   storageKey: z.string().min(1),
+  sessionId: z.string().min(1).optional(),
+  sourceTurn: z.number().int().positive().optional(),
+  digest: z.string().min(1).optional(),
 });
 
 /** 存储域声明。域名只允许小写字母、数字与下划线。 */

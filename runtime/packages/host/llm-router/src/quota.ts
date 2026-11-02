@@ -54,6 +54,8 @@ export class LlmQuotaError extends Error {
 export interface QuotaGuard {
   /** 判断能否发起请求；不能时抛 {@link LlmQuotaError}。 */
   check(): QuotaReading;
+  /** 当前读数，不抛异常；供路由清单与额度查询使用。 */
+  reading(): QuotaReading;
   /** 记录一次实际用量。 */
   record(tokens: number): void;
 }
@@ -82,6 +84,9 @@ export function createQuotaGuard(limit: QuotaLimit): QuotaGuard {
         throw new LlmQuotaError({ limit: reading.limit as number, used: reading.used });
       }
       return reading;
+    },
+    reading(): QuotaReading {
+      return readingOf();
     },
     record(tokens: number): void {
       if (!Number.isInteger(tokens) || tokens < 0) throw new Error(`额度用量必须是非负整数：${tokens}`);

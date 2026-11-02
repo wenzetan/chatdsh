@@ -24,6 +24,16 @@
   "engines": {
     "dsh": ">=0.2.1-rc.2 <0.3.0-0"
   },
+  "chatdsh": {
+    "telemetry": {
+      "spans": [
+        "chatdsh.runtime.remote.call"
+      ],
+      "metrics": [
+        "chatdsh_remote_calls_total"
+      ]
+    }
+  },
   "peerDependencies": {
     "@deepseek-ai/dsh-session-projection": "0.2.1-rc.2",
     "zod": "4.4.3"

@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/host-approval",
   "version": "0.1.0",
-  "description": "ChatDSH 宿主平面插件：审批投影（待处理与已决记录）",
+  "description": "ChatDSH 宿主平面插件：审批、提问与计划接管的等待登记、决定受理、统计与失效收尾",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -22,10 +22,24 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-session-projection": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2"
+    "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-user-questions": "0.2.1-rc.2"
   },
   "dependencies": {
     "@chatdsh/adapter": "link:../../../../dsh-adapter",
     "zod": "4.4.3"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.runtime.approval.decided"
+      ],
+      "spans": [
+        "chatdsh.runtime.approval.wait"
+      ],
+      "metrics": [
+        "chatdsh_approvals_total"
+      ]
+    }
   }
 }

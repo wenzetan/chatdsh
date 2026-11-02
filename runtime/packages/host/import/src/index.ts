@@ -1,8 +1,9 @@
 /**
- * 恢复适配：把控制平面的会话副本转成可交给会话创建的种子。
+ * 恢复与分叉适配：把控制平面的会话副本转成可交给会话创建的种子。
  *
  * 这一步只负责形状转换，不创建会话——创建与驱动属于宿主启动流程，插件在这里提供的是
- * 一次远端可调用的转换，便于上层在拿到副本之后立刻验证种子是否合法。
+ * 一次远端可调用的转换，便于上层在拿到副本之后立刻验证种子是否合法。分叉走同一份副本，
+ * 只复制完整回合构成的前缀，并返回不重放工具调用与定时任务的校验记录。
  * @module @chatdsh/host-import
  */
 
@@ -14,10 +15,21 @@ import {
   type SessionEvent,
   type SessionId,
 } from '@chatdsh/adapter';
+import { planFork, type ForkEstimate, type ForkPlanInput, type ForkReplayRecord } from './fork.ts';
 import { buildSeed, type ReplicaRecord, type SessionSeedEvent } from './seed.ts';
 
 export { buildSeed } from './seed.ts';
 export type { ReplicaRecord, SessionSeedEvent } from './seed.ts';
+export { FORK_IMPORT_MODES, planFork } from './fork.ts';
+export type {
+  ForkContentScope,
+  ForkEstimate,
+  ForkImportMode,
+  ForkImportRecord,
+  ForkPlan,
+  ForkPlanInput,
+  ForkReplayRecord,
+} from './fork.ts';
 
 /** 一次恢复所需的全部信息。 */
 export interface RestoreInput {
@@ -29,6 +41,30 @@ export interface RestoreInput {
   readonly cwd: string;
   /** 控制平面的副本记录。 */
   readonly records: ReplicaRecord[];
+}
+
+/** 一次分叉所需的全部信息。 */
+export interface ForkInput extends ForkPlanInput {
+  /** 新会话的标识。 */
+  readonly sessionId: string;
+  /** 新会话的工作目录，取自本机设备。 */
+  readonly cwd: string;
+}
+
+/** 分叉建立结果：新会话与不重放的校验记录。界面只读这些字段。 */
+export interface ForkOutcome {
+  /** 新会话标识。 */
+  readonly sessionId: string;
+  /** 新会话的工作目录。 */
+  readonly cwd: string;
+  /** 分叉来源会话。 */
+  readonly parentSession: string;
+  /** 建立时刻的毫秒时间戳。 */
+  readonly createdAt: number;
+  /** 分叉预估。 */
+  readonly estimate: ForkEstimate;
+  /** 不重放的校验记录。 */
+  readonly replay: ForkReplayRecord;
 }
 
 /** 插件名。 */
@@ -125,6 +161,67 @@ export class ImportService extends TypertRemoteService {
       },
     });
     return session.id;
+  }
+
+  /** 构造一次分叉预估：只算范围、字节与缺失附件，不创建会话。 */
+  @Remote('forkEstimate')
+  async forkEstimate(input: ForkPlanInput): Promise<ForkEstimate> {
+    return this.importSpan(input.importMode, input.records.length, async () => planFork(input).estimate);
+  }
+
+  /**
+   * 按分叉计划在本机建会话。
+   *
+   * 新会话带 `parentSession`，种子只含完整回合构成的前缀。返回值里的校验记录说明工具调用与
+   * 定时任务的重放数都是 0，定时任务留在源会话上。
+   */
+  @Remote('fork')
+  async fork(input: ForkInput): Promise<ForkOutcome> {
+    return this.importSpan(input.importMode, input.records.length, async () => {
+      const plan = planFork(input);
+      const createdAt = Date.now();
+      const session = this.ctx.sessions.create(input.sessionId as SessionId, {
+        seed: plan.seed as unknown as readonly SessionEvent[],
+        meta: {
+          cwd: input.cwd,
+          parentSession: input.sourceSessionId as SessionId,
+          createdAt,
+        },
+      });
+      return {
+        sessionId: session.id,
+        cwd: input.cwd,
+        parentSession: input.sourceSessionId,
+        createdAt,
+        estimate: plan.estimate,
+        replay: plan.replay,
+      };
+    });
+  }
+
+  /**
+   * 在一个导入 span 里执行，失败时补事件与计数。
+   * @param mode - 复制方式。
+   * @param events - 参与复制的副本记录条数。
+   * @param body - 动作主体。
+   * @returns 动作结果。
+   */
+  private async importSpan<T>(mode: string, events: number, body: () => Promise<T>): Promise<T> {
+    const telemetry = this.telemetry();
+    if (telemetry === undefined) return body();
+    const counter = telemetry.counter('chatdsh_import_seed_total', { description: '会话种子构造次数' });
+    try {
+      const value = await telemetry.runSpan('chatdsh.sync.import', { mode, events }, body);
+      counter.add(1, { outcome: 'ok' });
+      return value;
+    } catch (error) {
+      telemetry.event('chatdsh.import.seed.failed', {
+        'error.type': error instanceof Error ? error.name : 'Unknown',
+        'records.count': events,
+      });
+      counter.add(1, { outcome: 'failed' });
+      throw error;
+    }
   }
 }
 

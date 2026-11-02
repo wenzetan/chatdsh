@@ -28,10 +28,12 @@
         "chatdsh.runtime.model.provider.failed"
       ],
       "spans": [
-        "chatdsh.runtime.model.provider.resolve"
+        "chatdsh.runtime.model.provider.resolve",
+        "chatdsh.runtime.remote.call"
       ],
       "metrics": [
-        "chatdsh_model_provider_resolutions_total"
+        "chatdsh_model_provider_resolutions_total",
+        "chatdsh_remote_calls_total"
       ]
     }
   },

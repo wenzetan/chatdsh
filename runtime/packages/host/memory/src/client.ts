@@ -2,8 +2,8 @@
  * 记忆存储层的客户端门面。
  *
  * 真正的 HTTP 细节在 `@chatdsh/hindsight-adapter`，本模块只把适配器包成接入层用到的
- * 形状：按 bank 列表召回、按一条内容写入、探活。接入层不关心适配器内部的错误类型，
- * 因此错误原样抛出，由接入层在失败分支上记录降级事件。
+ * 形状：按 bank 列表召回、按一条内容写入、探活。适配层抛出的异常在这里翻译成带错误码
+ * 的异常，接入层按错误码记录降级事件。
  * @module @chatdsh/host-memory/client
  */
 
@@ -67,10 +67,11 @@ export function createMemoryClient(config: MemoryClientConfig, onFailure?: (oper
   };
   const backend = createHindsightMemoryBackend(adapterConfig);
 
-  /** 适配器的结果没有元数据字段，接入层只需要文本与来源。 */
-  function toHits(bank: string, hits: readonly { readonly text: string; readonly source?: string; readonly score?: number }[]): MemoryHit[] {
+  /** 适配器的结果带 bank 与来源，接入层把它原样带到检索命中里。 */
+  function toHits(bank: string, hits: readonly { readonly bank?: string; readonly text: string; readonly source?: string; readonly score?: number }[]): MemoryHit[] {
     return hits.map((hit) => ({
       id: hit.source ?? bank,
+      bank: hit.bank ?? bank,
       text: hit.text,
       type: 'world',
       ...(hit.score === undefined ? {} : { score: hit.score }),
@@ -107,6 +108,7 @@ export function createMemoryClient(config: MemoryClientConfig, onFailure?: (oper
           bank,
           text: options.content,
           ...(options.context === undefined ? {} : { metadata: { kind: options.context } }),
+          ...(options.async === undefined ? {} : { async: options.async }),
         }, {});
         return written.operationId === undefined ? { items: 1 } : { items: 1, operationId: written.operationId };
       } catch (error) {

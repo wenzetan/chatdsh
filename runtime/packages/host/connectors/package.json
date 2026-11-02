@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/host-connectors",
   "version": "0.1.0",
-  "description": "ChatDSH 宿主平面插件：连接器记录（名称、传输方式、凭据环境变量名）",
+  "description": "ChatDSH 宿主平面插件：连接器的条件校验、凭据环境变量名与加载器同步状态",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -28,13 +28,16 @@
   "chatdsh": {
     "telemetry": {
       "events": [
-        "chatdsh.connectors.sync.failed"
+        "chatdsh.connectors.sync.failed",
+        "chatdsh.connectors.rejected"
       ],
       "spans": [
-        "chatdsh.connectors.sync"
+        "chatdsh.connectors.sync",
+        "chatdsh.connectors.change"
       ],
       "metrics": [
-        "chatdsh_connectors_sync_total"
+        "chatdsh_connectors_sync_total",
+        "chatdsh_connector_changes_total"
       ]
     }
   }

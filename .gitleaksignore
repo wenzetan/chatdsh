@@ -28,8 +28,11 @@ runtime/mobile/base/androidApp/src/main/kotlin/com/clarklevis/dsh/android/ui/Tea
 #
 # 四、本仓库自有代码里的属性访问被私有域名规则命中：settings-sync 把设置合并交给
 #     HomeLayer 实例，`home` 字段指向这个实例，本身不含网络位置。
-runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:150
-runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:299
+runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:161
+runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:167
+runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:370
+runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:471
+runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:602
 #
 # 五、契约里的字段声明被密码赋值规则命中：`password` 是请求体字段的校验声明，
 #     取值为 `z.string().min(1).max(1024)`，不含任何实际密码。

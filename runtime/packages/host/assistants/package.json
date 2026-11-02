@@ -26,5 +26,18 @@
   "dependencies": {
     "@chatdsh/adapter": "link:../../../../dsh-adapter",
     "@chatdsh/core-contracts": "workspace:*"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.runtime.assistant.rejected"
+      ],
+      "spans": [
+        "chatdsh.runtime.assistant.write"
+      ],
+      "metrics": [
+        "chatdsh_runtime_assistant_writes_total"
+      ]
+    }
   }
 }
