@@ -41,13 +41,20 @@ export { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain';
 // 会话标识是品牌类型，会话与事件类型用于签名。
 export type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session';
 export type { SessionHeader } from '@deepseek-ai/dsh-session';
+export type { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence';
 export {
   SessionPersistence,
   SessionAlreadyOwnedError,
+  SessionAlreadyExistsError,
   SessionPersistenceNotFoundError,
+  SessionReadOnlyError,
+  SessionHandleClosedError,
+  SessionOwnershipLostError,
   materializeAppendBatch,
   materializeCreateHeader,
   assertContiguous,
+  assertStoredId,
+  validateStoredEvents,
 } from '@deepseek-ai/dsh-session-persistence';
 
 // ── agent preset ────────────────────────────────────────────────

@@ -38,6 +38,8 @@ export interface MemoryWrite {
   readonly text: string;
   /** 附加元数据。 */
   readonly metadata?: Readonly<Record<string, string>>;
+  /** 是否交给服务端后台整合；缺省为 true。false 表示同步写入，返回时已可召回。 */
+  readonly async?: boolean;
 }
 
 /** 记忆后端。 */

@@ -7,6 +7,9 @@
  */
 
 export { UI_KIT_CSS } from './styles.ts';
+export { Field, ErrorSummary, ScrollRegion, Toast } from './forms.tsx';
+export { Dialog, Tabs, type TabItem } from './navigation.tsx';
+export { Menu, FileTree, ErrorBoundary, type MenuItem, type MenuProps, type FileTreeNode, type FileTreeProps, type ErrorBoundaryProps, type ErrorBoundaryErrorCategory } from './advanced.tsx';
 export {
   Panel,
   StatusLine,
@@ -19,3 +22,4 @@ export {
   ProgressBar,
   ErrorNote,
 } from './components.tsx';
+export { CommandSurface, type CommandItem, type CommandSurfaceProps } from './command.tsx';

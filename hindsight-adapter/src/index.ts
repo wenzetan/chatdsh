@@ -103,7 +103,7 @@ export function createHindsightMemoryBackend(config: HindsightConfig): Hindsight
     if (entry.metadata?.kind !== undefined) item.context = entry.metadata.kind;
     const payload = (await call(`/v1/default/banks/${encodeURIComponent(entry.bank)}/memories`, {
       method: 'POST',
-      body: JSON.stringify({ items: [item], async: true }),
+      body: JSON.stringify({ items: [item], async: entry.async ?? true }),
     })) as { operation_id?: unknown };
     return typeof payload.operation_id === 'string' ? { operationId: payload.operation_id } : {};
   }

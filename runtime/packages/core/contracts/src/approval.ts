@@ -1,19 +1,25 @@
 /**
  * 审批记录与会话事件扩展的契约。
  *
- * 渠道会话（`chatBackend` 为 `hermes`）的审批不在 DSH 的审批服务里，而是写成会话内的
- * 插件记录：类型名匹配 `plugin:<小写段>` 语法，读取路径按 `ignorable: true` 放行。
+ * 渠道会话（`chatBackend` 为 `hermes`）的审批不在 DSH 的审批服务里：它写成会话内的
+ * 插件记录，类型名匹配 `plugin:<小写段>` 语法，读取路径按 `ignorable: true` 放行。
  * @module @chatdsh/core-contracts/approval
  */
 
 /** 审批记录的事件类型名。 */
 export const APPROVAL_RECORD_TYPE = 'plugin:chatdsh-approval';
 
+/** 审批选项的取值。 */
+export const APPROVAL_CHOICES = ['once', 'session', 'always', 'deny'] as const;
+
 /** 审批选项。 */
-export type ApprovalChoice = 'once' | 'session' | 'always' | 'deny';
+export type ApprovalChoice = (typeof APPROVAL_CHOICES)[number];
+
+/** 审批请求的来源执行体取值。 */
+export const APPROVAL_ORIGINS = ['dsh', 'hermes'] as const;
 
 /** 审批请求的来源执行体。 */
-export type ApprovalOrigin = 'dsh' | 'hermes';
+export type ApprovalOrigin = (typeof APPROVAL_ORIGINS)[number];
 
 /** 一条审批请求的写入载荷。 */
 export interface ApprovalRequestRecord {

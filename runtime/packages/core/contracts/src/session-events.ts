@@ -10,8 +10,11 @@
 /** 插件记录类型名。 */
 export type PluginRecordType = `plugin:${string}`;
 
+/** 导入会话时的复制方式。 */
+export const IMPORT_MODES = ['full-prefix', 'compressed'] as const;
+
 /** 导入会话时写入的来源声明种类。 */
-export type ImportMode = 'full-prefix' | 'compressed';
+export type ImportMode = (typeof IMPORT_MODES)[number];
 
 /** 一条导入声明的载荷。 */
 export interface ImportDeclaredRecord {

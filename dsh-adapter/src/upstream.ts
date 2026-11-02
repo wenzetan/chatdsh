@@ -44,6 +44,10 @@ export const UPSTREAM_CLIENT_UI = {
   agentDefaultModel: '@deepseek-ai/dsh-agent-default-model',
   /** 预设注册表，白名单同步同步 selectedDefault。 */
   presetRegistry: '@deepseek-ai/dsh-agent-preset-registry',
+  /** 用户提问，审批与提问宿主通过它的应答器接收卡片应答。 */
+  userQuestions: '@deepseek-ai/dsh-user-questions',
+  /** 工作区工具面板的客户端插件接口。 */
+  workspaceUi: '@deepseek-ai/dsh-client-ui-workspace',
 } as const;
 
 /** 上游的工具行：行 id → 包名。会话预设按行 id 挂载它们。 */
@@ -107,6 +111,9 @@ export const UPSTREAM_PROJECTION_TYPES = '@deepseek-ai/dsh-session-projection';
 
 /** 上游的审批服务包名，业务包对它做类型增强。 */
 export const UPSTREAM_APPROVAL_TYPES = '@deepseek-ai/dsh-user-approval';
+
+/** 上游的会话存储契约包名，替换会话后端时按它的错误类与校验函数对齐语义。 */
+export const UPSTREAM_SESSION_PERSISTENCE = '@deepseek-ai/dsh-session-persistence';
 
 /**
  * 上游的能力包：模型接入与计量、压缩、技能、MCP 资源、子代理、定时、工作树、沙箱与 ACP。
@@ -247,6 +254,7 @@ export const UPSTREAM_PACKAGE_NAMES: readonly string[] = [
   UPSTREAM_MCP_CORE,
   UPSTREAM_PROJECTION_TYPES,
   UPSTREAM_APPROVAL_TYPES,
+  UPSTREAM_SESSION_PERSISTENCE,
   ...Object.values(UPSTREAM_CAPABILITY_PACKAGES),
   ...Object.values(UPSTREAM_ROWS),
 ];

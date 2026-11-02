@@ -25,7 +25,8 @@
     "test": "node --test 'test/*.test.mjs'"
   },
   "dependencies": {
-    "@chatdsh/core-contracts": "link:../runtime/packages/core/contracts"
+    "@chatdsh/core-contracts": "link:../runtime/packages/core/contracts",
+    "eventsource-parser": "^3.1.1"
   },
   "devDependencies": {
     "typescript": "5.9.3",

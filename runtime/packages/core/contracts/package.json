@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/core-contracts",
   "version": "0.1.0",
-  "description": "ChatDSH 的跨组件契约：身份头部、错误码、遥测服务、会话事件扩展、审批记录与制品元数据的类型定义",
+  "description": "ChatDSH 的跨组件契约：身份头部、错误码、遥测服务、会话事件扩展、审批记录、制品元数据以及客户端领域 schema 与校验",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -18,7 +18,8 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.2"
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "zod": "4.4.3"
   },
   "engines": {
     "dsh": ">=0.2.1-rc.2 <0.3.0-0"

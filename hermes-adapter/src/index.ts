@@ -1,9 +1,9 @@
 /**
- * Hermes 聊天后端。
+ * Hermes 聊天后端与完整历史运行桥接。
  *
- * 把 {@link ChatBackend} 的五个动作翻译成 Hermes `api_server` 的接口：发起运行、读取
- * 事件流、回答审批、干预、终止。适配器不判断业务，也不重试；失败一律抛
- * {@link HermesError}，状态码与错误码交给上层决定是否重试。
+ * 旧接口把五个 {@link ChatBackend} 动作翻译成 Hermes `api_server` 的接口。完整历史、
+ * 精确审批、停止确认与确定终态使用 {@link createHermesHistoryRunBridge}；宿主在任何
+ * 执行前先确认能力，缺能力时直接拒绝。
  * @module @chatdsh/hermes-adapter
  */
 
@@ -18,8 +18,34 @@ import type {
 } from '@chatdsh/core-contracts';
 import { createHermesClient, HermesClient, type HermesConfig } from './client.ts';
 
-export { createHermesClient, HermesClient, HermesError } from './client.ts';
-export type { HermesConfig, HermesOperation } from './client.ts';
+export { createHermesClient, HermesClient } from './client.ts';
+export { HermesCapabilityError, HermesError } from './errors.ts';
+export type { HermesConfig, HermesOperation } from './errors.ts';
+export { createHermesHistoryRunBridge, HermesHistoryRunBridge, parseRunStatus, REQUIRED_HISTORY_RUN_FEATURES, RUN_STATES } from './history-run.ts';
+export type {
+  ApprovalAnswer,
+  CancelOutcome,
+  HermesCapabilities,
+  HermesHistoryRunConfig,
+  HermesRunState,
+  HistoryRunAdmission,
+  HistoryRunRequest,
+  RunStatusSnapshot,
+} from './history-run.ts';
+export { historyDigestOf, normalizeHistory, readHistoryPages, DEFAULT_HISTORY_PAGE_SIZE } from './history.ts';
+export type {
+  HistoryEventLike,
+  HistoryLossDeclaration,
+  HistoryMessage,
+  HistoryPage,
+  HistoryProjectedMessage,
+  HistoryProjection,
+  HistoryReadResult,
+  HistoryReadSource,
+  HistorySnapshot,
+} from './history.ts';
+export { readRunFrames, streamRunEvents, translateRunFrame, terminalOf, TERMINAL_RUN_EVENTS } from './run-stream.ts';
+export type { ApprovalEventPayload, HistoryRunEvent, RunFrame, RunTerminalStatus } from './run-stream.ts';
 
 /** 适配器声明的能力。 */
 const CAPABILITIES = ['approval', 'steer', 'events'] as const;
