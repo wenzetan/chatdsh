@@ -2,11 +2,50 @@
   "name": "chatdsh-desktop-shell",
   "version": "0.1.0",
   "private": true,
-  "description": "ChatDSH 的 Windows 桌面壳：单实例、拉起控制平面与运行时、原生窗口与托盘、保活与电源策略",
+  "description": "ChatDSH 的 Windows 桌面壳：单实例、拉起控制平面与运行时、菜单与托盘、窗口恢复、原生桥、更新与启动恢复",
   "type": "module",
   "main": "main.mjs",
   "engines": {
     "node": ">=22"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "spans": [
+        "chatdsh.desktop.startup.instance",
+        "chatdsh.desktop.startup.runtime",
+        "chatdsh.desktop.startup.ui",
+        "chatdsh.desktop.runtime.orchestrate",
+        "chatdsh.desktop.menu.invoke",
+        "chatdsh.desktop.tray.invoke",
+        "chatdsh.desktop.window.restore",
+        "chatdsh.desktop.native.invoke",
+        "chatdsh.desktop.ipc.invoke",
+        "chatdsh.desktop.update.check",
+        "chatdsh.desktop.update.install",
+        "chatdsh.desktop.power.block"
+      ],
+      "events": [
+        "chatdsh.desktop.menu.rejected",
+        "chatdsh.desktop.ipc.rejected",
+        "chatdsh.desktop.native.rejected",
+        "chatdsh.desktop.update.rejected",
+        "chatdsh.desktop.power.failed",
+        "chatdsh.desktop.login.failed",
+        "chatdsh.desktop.startup.failed",
+        "chatdsh.desktop.startup.safe_mode",
+        "chatdsh.desktop.crash.evidence",
+        "chatdsh.desktop.notification"
+      ],
+      "metrics": [
+        "chatdsh_desktop_startup_seconds",
+        "chatdsh_desktop_actions_total",
+        "chatdsh_desktop_ipc_rejections_total",
+        "chatdsh_desktop_update_failures_total",
+        "chatdsh_desktop_safe_mode_starts_total",
+        "chatdsh_desktop_crashes_total",
+        "chatdsh_desktop_power_blockers"
+      ]
+    }
   },
   "devDependencies": {
     "electron": "44.0.0",

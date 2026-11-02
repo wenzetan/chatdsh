@@ -25,6 +25,9 @@ const SERVICE = 'chatdsh-desktop';
 /** 排队上限，避免运行时迟迟不就绪时无限增长。 */
 const QUEUE_LIMIT = 32;
 
+/** 本进程启动时刻，计数器的聚合起点。 */
+const STARTED_AT = Date.now();
+
 let origin;
 const pending = [];
 
@@ -113,6 +116,38 @@ export function startSpan(name) {
       }],
     });
   };
+}
+
+/**
+ * 记录一条指标。
+ * @param name - 指标名，形如 `chatdsh_desktop_actions_total`。
+ * @param value - 数值。
+ * @param source - 属性。
+ * @param kind - `sum` 表示单调累计的计数，`gauge` 表示瞬时值。
+ */
+export function noteMetric(name, value, source, kind = 'sum') {
+  const point = {
+    attributes: attributesOf(source),
+    startTimeUnixNano: String(STARTED_AT * 1_000_000),
+    timeUnixNano: String(Date.now() * 1_000_000),
+  };
+  const metric = kind === 'gauge'
+    ? { name, unit: '1', gauge: { dataPoints: [{ ...point, asDouble: Number(value) }] } }
+    : {
+      name,
+      unit: '1',
+      sum: {
+        dataPoints: [{ ...point, asInt: String(Math.trunc(Number(value))) }],
+        aggregationTemporality: 2,
+        isMonotonic: true,
+      },
+    };
+  post('metrics', {
+    resourceMetrics: [{
+      resource: resource(),
+      scopeMetrics: [{ scope: { name: SCOPE }, metrics: [metric] }],
+    }],
+  });
 }
 
 /**

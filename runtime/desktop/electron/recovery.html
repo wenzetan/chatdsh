@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatDSH 启动恢复</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e0e10;
+    --panel: #17181c;
+    --line: #24262c;
+    --ink: #f3f5f9;
+    --muted: #9aa1ad;
+    --brand: #4d6bfe;
+    --danger: #ff7b7b;
+    --ok: #3fb37f;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 13px;
+    padding: 20px;
+    overflow: auto;
+  }
+  .card {
+    max-width: 680px;
+    margin: 0 auto;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--panel);
+    padding: 24px;
+  }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  h1 span { color: var(--danger); }
+  .lead { color: var(--muted); margin: 0 0 18px; font-size: 12.5px; }
+  dl { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; margin: 0 0 16px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  .notice {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--ok);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin: 0 0 16px;
+    color: var(--ok);
+    display: none;
+  }
+  h2 { font-size: 12.5px; color: var(--muted); margin: 0 0 6px; font-weight: 500; }
+  pre {
+    margin: 0 0 16px;
+    padding: 10px;
+    max-height: 220px;
+    overflow: auto;
+    background: #101114;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #cdd3de;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    font: inherit;
+    padding: 7px 13px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: #202129;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button.danger { border-color: #5a2a2a; color: var(--danger); }
+  button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .foot { color: var(--muted); font-size: 11.5px; margin-top: 14px; }
+  .status { color: var(--muted); font-size: 12px; margin-top: 10px; min-height: 16px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>启动恢复 · <span>上一次启动没有完成</span></h1>
+  <p class="lead">这里给出失败阶段、退出码与脱敏日志。重试、进入安全模式或导出诊断包都不需要先修好配置。</p>
+  <div class="notice" id="safe-mode"></div>
+  <dl>
+    <dt>失败阶段</dt><dd id="stage">—</dd>
+    <dt>错误码</dt><dd id="code">—</dd>
+    <dt>退出码</dt><dd id="exit-code">—</dd>
+    <dt>存活时间</dt><dd id="uptime">—</dd>
+    <dt>尝试次数</dt><dd id="attempt">—</dd>
+    <dt>失败时间</dt><dd id="at">—</dd>
+  </dl>
+  <h2>脱敏日志（最近若干行）</h2>
+  <pre id="log">没有日志行</pre>
+  <div class="row">
+    <button class="primary" id="retry">重试启动</button>
+    <button id="safe">安全模式启动</button>
+    <button id="log-open">打开本次日志</button>
+    <button id="log-dir">打开日志目录</button>
+    <button id="diagnostics">导出诊断包</button>
+  </div>
+  <p class="status" id="status"></p>
+  <p class="foot">日志已脱敏，不含提示词、会话内容、凭据与网络地址。安全模式只加载内置插件，业务区段暂停。</p>
+</div>
+<script>
+  const bridge = window.chatdshRecovery;
+  const text = (id, value) => { document.getElementById(id).textContent = value; };
+  const status = (message) => { document.getElementById('status').textContent = message; };
+
+  bridge.failure().then((snapshot) => {
+    const failure = snapshot.failure;
+    if (failure !== null && failure !== undefined) {
+      text('stage', failure.stage);
+      text('code', failure.code);
+      text('exit-code', failure.exitCode === undefined ? '—' : String(failure.exitCode));
+      text('uptime', `${failure.uptimeSeconds} 秒`);
+      text('attempt', String(failure.attempt));
+      text('at', new Date(failure.at).toLocaleString('zh-CN'));
+      const lines = Array.isArray(failure.logTail) ? failure.logTail : [];
+      text('log', lines.length === 0 ? '没有日志行' : lines.join('\n'));
+    }
+    if (snapshot.safeMode !== undefined && snapshot.safeMode.active === true) {
+      const notice = document.getElementById('safe-mode');
+      notice.textContent = snapshot.safeMode.notice;
+      notice.style.display = 'block';
+    }
+  });
+
+  document.getElementById('retry').addEventListener('click', () => {
+    status('正在重启…');
+    bridge.retry();
+  });
+  document.getElementById('safe').addEventListener('click', () => {
+    status('正在以安全模式重启…');
+    bridge.safeMode('startup-recovery');
+  });
+  document.getElementById('log-open').addEventListener('click', () => { bridge.openLog(); });
+  document.getElementById('log-dir').addEventListener('click', () => { bridge.openLogDir(); });
+  document.getElementById('diagnostics').addEventListener('click', async () => {
+    status('正在导出诊断包…');
+    const result = await bridge.diagnostics();
+    status(result.ok === true ? `诊断包已生成：${result.path}` : '诊断包没有生成');
+  });
+</script>
+</body>
+</html>

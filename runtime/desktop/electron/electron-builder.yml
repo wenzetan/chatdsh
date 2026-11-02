@@ -19,6 +19,22 @@ files:
   - splash.html
   - splash-preload.cjs
   - telemetry.mjs
+  - gateway-launch.mjs
+  - ipc.mjs
+  - login-item.mjs
+  - menu.mjs
+  - native.mjs
+  - notifications.mjs
+  - power.mjs
+  - signals.mjs
+  - startup-recovery.mjs
+  - tray.mjs
+  - updates.mjs
+  - window-state.mjs
+  - recovery.html
+  - recovery-preload.cjs
+  - windows/**/*
+  - control/**/*
   - package.json
 extraResources:
   # 第一项放 DSH 安装本身；electron-builder 会过滤掉源根下的 node_modules，

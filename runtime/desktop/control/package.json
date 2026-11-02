@@ -1,0 +1,25 @@
+{
+  "name": "chatdsh-desktop-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ChatDSH 桌面控制的权限声明、作用范围、租约、中断与审计模块",
+  "type": "module",
+  "main": "index.mjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "spans": [
+        "chatdsh.desktop.computeruse.lease"
+      ],
+      "events": [
+        "chatdsh.desktop.native.rejected"
+      ],
+      "metrics": [
+        "chatdsh_desktop_actions_total"
+      ]
+    }
+  },
+  "author": "ChatDSH"
+}
