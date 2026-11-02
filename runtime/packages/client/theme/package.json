@@ -41,8 +41,12 @@
       "events": [
         "chatdsh.client.ui.action"
       ],
-      "spans": [],
-      "metrics": []
+      "spans": [
+        "chatdsh.theme.switch"
+      ],
+      "metrics": [
+        "chatdsh_theme_switch_total"
+      ]
     }
   },
   "dependencies": {

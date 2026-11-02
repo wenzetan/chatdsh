@@ -47,3 +47,19 @@ runtime/gateway/src/backends/supervisor.ts:chatdsh-private-hostname:321
 #     HKDF 标签常量，不含任何密钥材料。
 runtime/gateway/src/backup/crypto.ts:chatdsh-provider-credential:19
 runtime/gateway/src/backup/crypto.ts:chatdsh-provider-credential:22
+#
+# 八、浏览器侧的本地存储键名被凭据规则命中：这些常量是 localStorage 与 IndexedDB 的
+#     键前缀，取值形如 `chatdsh-pwa.client.v1`，不含任何密钥或密码。
+runtime/packages/client/connectors/src/client/state.ts:chatdsh-provider-credential:39
+runtime/packages/client/multi-window/src/window/identifiers.ts:chatdsh-provider-credential:14
+runtime/packages/client/multi-window/src/window/identifiers.ts:chatdsh-provider-credential:17
+runtime/packages/client/multi-window/src/window/identifiers.ts:chatdsh-provider-credential:23
+runtime/packages/client/multi-window/src/window/identifiers.ts:chatdsh-provider-credential:26
+runtime/packages/client/multi-window/src/window/selection.ts:chatdsh-provider-credential:24
+runtime/packages/client/pwa/src/client/drafts.ts:chatdsh-provider-credential:13
+runtime/packages/client/pwa/src/client/drafts.ts:chatdsh-provider-credential:16
+runtime/packages/client/pwa/src/client/drafts.ts:chatdsh-provider-credential:19
+runtime/packages/client/pwa/src/client/drafts.ts:chatdsh-provider-credential:22
+runtime/packages/client/pwa/src/client/offline.ts:chatdsh-provider-credential:13
+runtime/packages/client/shell/src/client/drafts.ts:chatdsh-provider-credential:108
+runtime/packages/client/shell/src/client/drafts.ts:chatdsh-provider-credential:111

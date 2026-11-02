@@ -33,6 +33,20 @@
       ]
     }
   },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action",
+        "chatdsh.client.error"
+      ],
+      "spans": [
+        "chatdsh.client.remote.call"
+      ],
+      "metrics": [
+        "chatdsh_client_errors_total"
+      ]
+    }
+  },
   "peerDependencies": {
     "react": ">=19"
   },

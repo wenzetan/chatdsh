@@ -90,25 +90,6 @@ body {
   color: #b42318;
 }
 
-.device {
-  margin: 0.25rem 0.5rem;
-}
-
-.device-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.4rem 0.5rem;
-}
-
-.device-name {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .device-state {
   flex: none;
   font-size: 0.75rem;
@@ -129,12 +110,6 @@ body {
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.device-empty {
-  padding: 0.25rem 0.5rem 0.5rem;
-  color: var(--shell-muted);
-  font-size: 0.8125rem;
 }
 
 .session {
@@ -305,102 +280,539 @@ body {
   color: var(--shell-muted);
 }
 
-.shell-offline-overlay {
+/* ── 逻辑路由、历史导航、创建、继续与草稿 ── */
+
+.shell-skip {
   position: absolute;
-  inset: 2.6rem 0 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  background: var(--shell-bg);
-  color: var(--shell-muted);
-}
-
-.shell-offline-overlay[hidden] {
-  display: none;
-}
-
-.shell-offline-text {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--shell-offline);
-}
-
-.shell-offline-input {
-  width: min(28rem, 70%);
-  font: inherit;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--shell-border);
-  border-radius: 8px;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 30;
+  padding: 0.35rem 0.7rem;
   background: var(--shell-panel);
+  border: 1px solid var(--shell-accent);
+  border-radius: 6px;
+  color: var(--shell-accent);
+  transition: top 120ms ease-out;
 }
 
-.shell-offline-input:disabled {
-  background: var(--shell-hover);
-  color: var(--shell-muted);
-  cursor: not-allowed;
+.shell-skip:focus {
+  top: 0.5rem;
 }
 
-.new-session-dialog {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0 0 0 / 32%);
-  z-index: 10;
+.shell-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
-.new-session-box {
-  width: min(24rem, 90vw);
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 1rem 1.1rem;
-  background: var(--shell-panel);
-  border-radius: 10px;
-  border: 1px solid var(--shell-border);
-}
-
-.new-session-box h2 {
-  font-size: 1rem;
-  margin: 0;
-}
-
-.new-session-field {
+.shell-search {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.8125rem;
-  color: var(--shell-muted);
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem 0.35rem;
+  border-bottom: 1px solid var(--shell-border);
 }
 
-.new-session-field select,
-.new-session-field input {
+.shell-search-input {
   font: inherit;
   color: var(--shell-text);
-  padding: 0.4rem 0.5rem;
+  padding: 0.4rem 0.6rem;
   border: 1px solid var(--shell-border);
   border-radius: 6px;
   background: var(--shell-panel);
 }
 
-.new-session-hint {
+.shell-search-input:focus-visible,
+.shell-filter select:focus-visible,
+.shell-draft-input:focus-visible,
+.shell-palette-input:focus-visible,
+.shell-listing-entry:focus-visible,
+.shell-crumb:focus-visible {
+  outline: 2px solid var(--shell-accent);
+  outline-offset: 1px;
+}
+
+.shell-search-note {
   margin: 0;
   font-size: 0.75rem;
   color: var(--shell-muted);
 }
 
-.new-session-error {
-  margin: 0;
-  min-height: 1rem;
-  font-size: 0.75rem;
-  color: #b42318;
+.shell-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--shell-border);
 }
 
-.new-session-buttons {
+.shell-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  color: var(--shell-muted);
+}
+
+.shell-filter select {
+  font: inherit;
+  color: var(--shell-text);
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-panel);
+}
+
+.shell-status,
+.shell-count {
+  margin: 0;
+  padding: 0.25rem 0.85rem;
+  font-size: 0.75rem;
+  color: var(--shell-muted);
+}
+
+.shell-status:empty {
+  display: none;
+}
+
+.shell-more {
+  margin: 0.5rem 0.75rem 1rem;
+}
+
+.workspace-note {
+  margin: 0;
+  padding: 0 0.6rem 0.35rem;
+  font-size: 0.75rem;
+  color: var(--shell-offline);
+}
+
+.session-unread {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  color: var(--shell-panel);
+  background: var(--shell-accent);
+}
+
+.shell-frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.shell-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-frame-note {
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--shell-muted);
+  background: var(--shell-hover);
+}
+
+.shell-frame-note[hidden],
+.shell-retry-navigation[hidden] {
+  display: none;
+}
+
+.shell-retry-navigation {
+  align-self: flex-start;
+  margin: 0.4rem 0.75rem;
+}
+
+.shell-status-panel {
+  padding: 1rem;
+  color: var(--shell-muted);
+}
+
+.shell-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.shell-page[hidden] {
+  display: none;
+}
+
+.shell-page-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.shell-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.shell-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 32%);
+  pointer-events: auto;
+}
+
+.shell-dialog {
+  width: min(44rem, 95vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1rem 1.1rem;
+  background: var(--shell-panel);
+  border: 1px solid var(--shell-border);
+  border-radius: 10px;
+}
+
+.shell-dialog-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.shell-dialog-buttons {
   display: flex;
   justify-content: flex-end;
   gap: 0.4rem;
+}
+
+.shell-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--shell-muted);
+}
+
+.shell-field input,
+.shell-field select,
+.shell-field textarea {
+  font: inherit;
+  color: var(--shell-text);
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+  background: var(--shell-panel);
+}
+
+.shell-field input[aria-invalid="true"],
+.shell-field textarea[aria-invalid="true"] {
+  border-color: #b42318;
+}
+
+.shell-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--shell-muted);
+}
+
+.shell-error {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #b42318;
+}
+
+.shell-listing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.shell-listing-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.shell-listing {
+  max-height: 14rem;
+  overflow-y: auto;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+}
+
+.shell-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--shell-border);
+}
+
+.shell-crumb {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--shell-accent);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.05rem 0.25rem;
+  cursor: pointer;
+}
+
+.shell-crumb:hover {
+  border-color: var(--shell-border);
+}
+
+.shell-listing-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shell-listing-entry {
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  color: var(--shell-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.2rem 0.3rem;
+  cursor: pointer;
+}
+
+.shell-listing-entry:hover {
+  background: var(--shell-hover);
+}
+
+.shell-estimate-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 0.75rem;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.shell-estimate-list dt {
+  color: var(--shell-muted);
+}
+
+.shell-estimate-list dd {
+  margin: 0;
+}
+
+.shell-continue-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--shell-border);
+  border-radius: 8px;
+}
+
+.shell-continue-section h3 {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.shell-readonly {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+}
+
+.shell-readonly[hidden] {
+  display: none;
+}
+
+.shell-readonly-excerpts {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.shell-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--shell-border);
+  background: var(--shell-panel);
+}
+
+.shell-draft[hidden] {
+  display: none;
+}
+
+.shell-draft-input {
+  font: inherit;
+  resize: vertical;
+}
+
+.shell-draft-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.shell-draft-status {
+  font-size: 0.75rem;
+  color: var(--shell-muted);
+}
+
+.shell-draft-status.shell-error {
+  color: #b42318;
+}
+
+.shell-palette-backdrop[hidden] {
+  display: none;
+}
+
+.shell-palette {
+  width: min(34rem, 95vw);
+}
+
+.shell-palette-input {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--shell-border);
+  border-radius: 6px;
+}
+
+.shell-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.shell-palette-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.1rem 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.shell-palette-item-selected {
+  background: var(--shell-hover);
+  outline: 2px solid var(--shell-accent);
+  outline-offset: -2px;
+}
+
+.shell-palette-item[aria-disabled="true"] {
+  color: var(--shell-muted);
+  cursor: not-allowed;
+}
+
+.shell-palette-name {
+  font-size: 0.875rem;
+}
+
+.shell-palette-group,
+.shell-palette-shortcut,
+.shell-palette-reason {
+  font-size: 0.75rem;
+  color: var(--shell-muted);
+}
+
+.shell-palette-reason {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 768px) {
+  .shell {
+    flex-direction: column;
+  }
+
+  .shell-list {
+    width: auto;
+    max-width: none;
+    max-height: 45vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--shell-border);
+    min-width: 0;
+  }
+}
+
+/* 可点区域不小于四十四乘四十四像素：用最小尺寸与内边距实现，保持视觉比例与焦点环。 */
+.shell-refresh,
+.shell-action,
+.shell-dialog-buttons button,
+.shell-palette-item,
+.shell-listing-entry,
+.shell-crumb,
+.shell-search-input,
+.shell-field input,
+.shell-field select,
+.shell-field textarea,
+.device-target {
+  min-height: 44px;
+}
+
+.shell-refresh,
+.shell-action,
+.shell-dialog-buttons button {
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-action[hidden],
+.shell-refresh[hidden],
+.shell-dialog-buttons button[hidden] {
+  display: none;
+}
+
+.session {
+  min-height: 44px;
+}
+
+/* 窄屏加上文字缩放时侧栏按可用宽度收缩，页面因此不产生横向滚动。 */
+@media (max-width: 480px) {
+  .shell-list {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 40vh;
+  }
+
+  .shell-header {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+
+  .shell-header h1 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

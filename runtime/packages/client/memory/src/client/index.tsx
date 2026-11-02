@@ -1,32 +1,28 @@
-import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution } from '@chatdsh/core-remote-client';
+import { Tabs } from '@chatdsh/core-ui-kit';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 /**
- * 记忆面板：展示记忆后端的状态与 bank 规则。
+ * 记忆面板：服务状态、检索与条目管理、记忆组与未确认写入。
  *
- * 状态经 Remote 调用取得（服务名 `chatdshMemory`）。这个形态没有启用记忆时会话里没有该
- * 服务，面板据此显示「未启用」，与宿主侧的降级呈现保持一致。
+ * 数据经 Remote 调用取得（服务名 `chatdshMemory`）。宿主没有注册记忆服务时每个面板都显示
+ * 未启用与明确失败，不伪造成功；检索内容只保留在页面内存里。
  * @module @chatdsh/client-memory
  */
 
-import { useEffect, useState } from 'react';
-import { Badge, EmptyState, List, Panel, Row, Skeleton } from '@chatdsh/core-ui-kit';
-
-/** 后端状态。 */
-interface MemoryStatus {
-  readonly available: boolean;
-  readonly endpoint: string;
-  readonly maxTokens: number;
-  readonly extraBanks: readonly string[];
-}
-
-/** 浏览器侧上下文的可用面。 */
-interface ClientFace {
-  readonly remote?: {
-    readonly chatdshMemory?: {
-      status?: () => Promise<MemoryStatus>;
-    };
-  };
-}
+import {
+  callRemote,
+  failureOf,
+  type Loadable,
+  type MemoryGroupView,
+  type MemoryRemoteFace,
+  type MemorySettingsView,
+  type MemoryWriteQueueView,
+} from './face.ts';
+import { GroupsPanel } from './groups-panel.tsx';
+import { SearchPanel } from './search-panel.tsx';
+import { ServicePanel } from './service-panel.tsx';
+import { WritesPanel } from './writes-panel.tsx';
 
 /** 席位名。 */
 export const SECTION_SLOT = 'settings.section';
@@ -37,55 +33,117 @@ export const SECTION_ID = 'chatdsh-memory';
 /** 浏览器侧依赖：只等席位服务，模块加载顺序由模块图自己保证。 */
 export const inject = ['slots', 'remote'];
 
-let clientFace: ClientFace | undefined;
+/** 浏览器侧上下文的可用面。 */
+interface ClientFace {
+  readonly remote?: { readonly chatdshMemory?: MemoryRemoteFace };
+}
 
-/** 设置页区段：记忆后端状态；未启用时给启用入口说明，可用时给出地址与上限。 */
-export function MemorySection() {
-  const [status, setStatus] = useState<MemoryStatus | undefined>(undefined);
-  const [missing, setMissing] = useState(false);
+/** 页面里的四个分页。 */
+const TABS = [
+  { id: 'service', label: '记忆服务' },
+  { id: 'search', label: '检索与条目' },
+  { id: 'groups', label: '记忆组' },
+  { id: 'writes', label: '未确认写入' },
+] as const;
+
+let clientFace: MemoryRemoteFace | undefined;
+
+/** 面板属性；测试与嵌入场景可以直接传服务面。 */
+export interface MemorySectionProps {
+  readonly remote?: MemoryRemoteFace;
+}
+
+/**
+ * 设置页区段：记忆的完整界面。
+ * @param props - 可选的记忆服务面。
+ * @returns 区段内容。
+ */
+export function MemorySection({ remote }: MemorySectionProps = {}) {
+  const face = remote ?? clientFace;
+  const [tab, setTab] = useState<string>('service');
+  const [settings, setSettings] = useState<Loadable<MemorySettingsView>>({ status: 'loading' });
+  const [groups, setGroups] = useState<Loadable<readonly MemoryGroupView[]>>({ status: 'loading' });
+  const [queue, setQueue] = useState<Loadable<MemoryWriteQueueView>>({ status: 'loading' });
+  const alive = useRef(true);
 
   useEffect(() => {
-    let cancelled = false;
-    const load = clientFace?.remote?.chatdshMemory?.status;
-    if (load === undefined) {
-      setMissing(true);
-      return;
-    }
-    load.call(clientFace?.remote?.chatdshMemory).then(
-      (result) => {
-        if (!cancelled) setStatus(unwrapRemoteResult(result));
-      },
-      () => {
-        if (!cancelled) setMissing(true);
-      },
-    );
+    alive.current = true;
     return () => {
-      cancelled = true;
+      alive.current = false;
     };
   }, []);
 
-  if (missing) {
-    return (
-      <Panel title="记忆">
-        <EmptyState>记忆未启用。把记忆组合包加入 profile 的 bundles 列表，并部署记忆后端。</EmptyState>
-      </Panel>
-    );
-  }
-  if (status === undefined) return <Panel title="记忆"><Skeleton rows={2} /></Panel>;
+  const loadSettings = useCallback(async (): Promise<void> => {
+    if (face?.settings === undefined) {
+      if (alive.current) setSettings({ status: 'unavailable' });
+      return;
+    }
+    try {
+      const value = await callRemote<MemorySettingsView>('读取记忆配置', () => face.settings!());
+      if (alive.current) setSettings({ status: 'ready', value });
+    } catch (error) {
+      if (alive.current) setSettings({ status: 'failed', failure: failureOf(error) });
+    }
+  }, [face]);
+
+  const loadGroups = useCallback(async (): Promise<readonly MemoryGroupView[] | undefined> => {
+    if (face?.listGroups === undefined) {
+      if (alive.current) setGroups({ status: 'unavailable' });
+      return undefined;
+    }
+    try {
+      const value = await callRemote<readonly MemoryGroupView[]>('读取记忆组', () => face.listGroups!());
+      if (alive.current) setGroups({ status: 'ready', value });
+      return value;
+    } catch (error) {
+      if (alive.current) setGroups({ status: 'failed', failure: failureOf(error) });
+      return undefined;
+    }
+  }, [face]);
+
+  const loadQueue = useCallback(async (): Promise<void> => {
+    if (face?.writeQueue === undefined) {
+      if (alive.current) setQueue({ status: 'unavailable' });
+      return;
+    }
+    try {
+      const value = await callRemote<MemoryWriteQueueView>('读取未确认写入', () => face.writeQueue!());
+      if (alive.current) setQueue({ status: 'ready', value });
+    } catch (error) {
+      if (alive.current) setQueue({ status: 'failed', failure: failureOf(error) });
+    }
+  }, [face]);
+
+  useEffect(() => {
+    void loadSettings();
+    void loadGroups();
+    void loadQueue();
+  }, [loadSettings, loadGroups, loadQueue]);
+
+  /** 重新读取全部视图。 */
+  const reloadAll = useCallback((): void => {
+    void loadSettings();
+    void loadGroups();
+    void loadQueue();
+  }, [loadSettings, loadGroups, loadQueue]);
+
   return (
-    <Panel
-      title="记忆"
-      count={status.available ? <Badge tone="ok">可用</Badge> : <Badge tone="danger">不可达</Badge>}
-    >
-      <List>
-        <Row title="后端地址" meta={status.endpoint} dot={status.available ? 'ok' : 'danger'} />
-        <Row title="单次召回上限" meta={`${status.maxTokens} 令牌`} />
-        <Row
-          title="额外召回 bank"
-          meta={status.extraBanks.length === 0 ? '无' : status.extraBanks.join('、')}
-        />
-      </List>
-    </Panel>
+    <Tabs
+      label="记忆"
+      selectedId={tab}
+      onSelect={setTab}
+      items={TABS.map((item) => ({
+        id: item.id,
+        label: item.label,
+        content: item.id === 'service'
+          ? <ServicePanel state={settings} onReload={reloadAll} />
+          : item.id === 'search'
+            ? <SearchPanel face={face} settings={settings} groups={groups} onReload={reloadAll} />
+            : item.id === 'groups'
+              ? <GroupsPanel face={face} state={groups} onReload={loadGroups} />
+              : <WritesPanel face={face} state={queue} onReload={loadQueue} />,
+      }))}
+    />
   );
 }
 
@@ -94,17 +152,43 @@ export function MemorySection() {
  * @param ctx - 客户端根上下文。
  */
 export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<void> {
-  clientFace = ctx;
+  clientFace = ctx.remote?.chatdshMemory;
   const remoteHost = ctx as unknown as {
     remote: { $mount(contribution: unknown): Promise<unknown> };
     inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
   };
   await remoteHost.remote.$mount(buildRemoteContribution('chatdshMemory', {
-    'chatdshMemory/status': { parameters: [] },
+    'chatdshMemory/settings': { parameters: [] },
+    'chatdshMemory/search': { parameters: [{ name: 'request', kind: 'json' }] },
+    'chatdshMemory/listGroups': { parameters: [] },
+    'chatdshMemory/saveGroup': { parameters: [{ name: 'input', kind: 'json' }] },
+    'chatdshMemory/detachWorkspace': {
+      parameters: [
+        { name: 'memoryGroupId', kind: 'string' },
+        { name: 'workspace', kind: 'json' },
+        { name: 'revision', kind: 'number' },
+      ],
+    },
+    'chatdshMemory/removeGroup': {
+      parameters: [{ name: 'memoryGroupId', kind: 'string' }, { name: 'revision', kind: 'number' }],
+    },
+    'chatdshMemory/writeQueue': { parameters: [] },
+    'chatdshMemory/discardWrite': { parameters: [{ name: 'id', kind: 'string' }] },
+    'chatdshMemory/updateEntry': {
+      parameters: [
+        { name: 'bank', kind: 'string' },
+        { name: 'source', kind: 'string' },
+        { name: 'text', kind: 'string' },
+      ],
+    },
+    'chatdshMemory/deleteEntry': {
+      parameters: [{ name: 'bank', kind: 'string' }, { name: 'source', kind: 'string' }],
+    },
+    'chatdshMemory/deleteEntries': { parameters: [{ name: 'targets', kind: 'json' }] },
   }, z));
   await new Promise<void>((resolve) => {
     remoteHost.inject(['remote.chatdshMemory'], (scope) => {
-      clientFace = scope;
+      clientFace = scope.remote?.chatdshMemory;
       resolve();
     });
   });

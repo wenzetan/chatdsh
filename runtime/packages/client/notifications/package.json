@@ -1,0 +1,59 @@
+{
+  "name": "@chatdsh/client-notifications",
+  "version": "0.1.0",
+  "description": "ChatDSH 客户端插件：通知中心、系统通知、权限与投递设置",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action",
+        "chatdsh.client.error",
+        "chatdsh.client.navigate.rejected"
+      ],
+      "spans": [
+        "chatdsh.client.remote.call",
+        "chatdsh.client.navigate"
+      ],
+      "metrics": [
+        "chatdsh_client_navigations_total",
+        "chatdsh_client_errors_total"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "dependencies": {
+    "@chatdsh/core-ui-kit": "workspace:*"
+  }
+}

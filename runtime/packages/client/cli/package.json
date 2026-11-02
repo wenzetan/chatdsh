@@ -1,0 +1,51 @@
+{
+  "name": "@chatdsh/client-cli",
+  "version": "0.1.0",
+  "description": "ChatDSH 本机命令行插件：本机 Channel、命令树、非交互 JSON 行协议、审批应答、断线去重与状态栏",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "bin": {
+    "chatdsh-cli": "./lib/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./bin": {
+      "types": "./lib/bin.d.ts",
+      "default": "./lib/bin.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "docs/**/*.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "dependencies": {
+    "@chatdsh/core-contracts": "workspace:*",
+    "@chatdsh/core-diagnostics": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.cli.noninteractive.exit"
+      ],
+      "spans": [
+        "chatdsh.cli.channel.open",
+        "chatdsh.cli.command",
+        "chatdsh.cli.scene.open"
+      ],
+      "metrics": [
+        "chatdsh_cli_commands_total"
+      ]
+    }
+  }
+}

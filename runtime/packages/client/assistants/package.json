@@ -36,6 +36,27 @@
   "peerDependencies": {
     "react": ">=19"
   },
+  "chatdsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    },
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action",
+        "chatdsh.client.error"
+      ],
+      "spans": [
+        "chatdsh.client.remote.call"
+      ],
+      "metrics": [
+        "chatdsh_client_errors_total"
+      ]
+    }
+  },
   "dependencies": {
     "@chatdsh/core-remote-client": "workspace:*",
     "zod": "4.4.3",

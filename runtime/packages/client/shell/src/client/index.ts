@@ -1,97 +1,129 @@
 /**
- * 客户端外壳：左栏按工作区聚合全部设备的会话，右栏是一个 iframe。
+ * 客户端外壳：聚合会话、逻辑路由、创建、继续与草稿。
  *
- * 页面由控制平面托管（根路径，脚本在 `/shell/shell.js`）。左栏读两个端点：
- * `GET /chatdsh/gateway/devices` 给出设备与在线状态，`GET /chatdsh/gateway/sessions`
- * 给出按设备分组、带工作区显示名的会话。左栏按工作区显示名跨设备合并同一个仓库的多份
- * 检出；选中会话时右栏 iframe 的 `src` 指向 `/d/<deviceId>/`，设备离线时改为离线遮罩并
- * 禁用输入。新建会话先选设备再填目录，由控制平面登记归属并在该设备上创建会话。
+ * 页面由控制平面托管，脚本是单文件产物。数据来自三个真实入口：控制平面的私有客户端读取
+ * 入口（分页会话摘要、标题、未读、归属设备）、控制平面的设备与本机端点、以及经
+ * `/d/<deviceId>/` 前缀转发到目标设备运行时的 Remote 一元调用。界面内的导航全部写进浏览器
+ * 历史，深链接、刷新、前进后退都还原到同一个路由对象；目标设备离线时只保留本地草稿与只读
+ * 副本入口，写操作立即失败，不进入待发队列。
  * @module @chatdsh/client-shell
  */
 
 import styles from './shell.css';
-
-/** 设备列表端点。 */
-const DEVICES_PATH = '/chatdsh/gateway/devices';
-
-/** 聚合会话列表端点。 */
-const SESSIONS_PATH = '/chatdsh/gateway/sessions';
-
-/** 归属写入端点。 */
-const OWNERSHIP_PATH = '/chatdsh/gateway/ownership';
-
-/** 本机可用性端点。 */
-const LOCAL_PATH = '/chatdsh/gateway/local';
-
-/** 导入端点，供「在本机继续」使用。 */
-const IMPORT_PATH = '/chatdsh/gateway/import';
-
-/** 左栏自动刷新的间隔，单位毫秒。 */
-const REFRESH_INTERVAL_MS = 10_000;
+import { createShellApi, describeFailure, type DeviceInfo, type DirectoryListing, type LocalRuntime } from './api.ts';
+import { createShellTelemetry, randomHex } from './telemetry.ts';
+import { RouteNavigator, type RouteChangeReason } from './history.ts';
+import {
+  continueRoute,
+  isSettingsSection,
+  routePath,
+  sameRoute,
+  sessionRoute,
+  type Route,
+} from './route.ts';
+import { ALL_DEVICES, normalizeFilters, readFilters, writeFilters, type SessionFilters } from './filters.ts';
+import { findSession, groupByDevice, groupByWorkspace, type SessionItem } from './sessions.ts';
+import { ReadGeneration, SessionPages } from './pages.ts';
+import { OperationGate } from './idempotency.ts';
+import { estimateFork, textOfEvent, type ForkEstimate, type ImportMode, type ReplicaEvent } from './estimate.ts';
+import {
+  clientIdentity,
+  draftStorageAvailable,
+  offlineSendOutcome,
+  readDraft,
+  windowIdentity,
+  writeDraft,
+  type DraftFailureReason,
+  type DraftIdentity,
+} from './drafts.ts';
+import { ShellListView, type Selection } from './list-view.ts';
+import {
+  ShellMainView,
+  type ContinueDialogInput,
+  type ContinueSubmit,
+  type CreateSubmit,
+  type CreateWizardInput,
+  type ReadonlyPaneInput,
+  type SessionPaneInput,
+} from './main-view.ts';
+import {
+  buildShellCommands,
+  isPaletteShortcut,
+  orderByRecent,
+  readRecentCommands,
+  recordRecentCommand,
+  SETTINGS_SECTION_TITLES,
+  type CommandDescriptor,
+} from './commands.ts';
 
 /** 外壳容器的标识。 */
 const ROOT_ID = 'chatdsh-shell';
 
-/** 一条会话。 */
-interface SessionSummary {
+/** 每页读取的会话条数。 */
+const PAGE_SIZE = 50;
+/** 左栏自动刷新的间隔，单位毫秒。 */
+const REFRESH_INTERVAL_MS = 10_000;
+
+/** 草稿写入的等待时间，单位毫秒。 */
+const DRAFT_DEBOUNCE_MS = 300;
+
+/** 只读副本里显示的最近片段数量。 */
+const READONLY_EXCERPTS = 20;
+
+/** 单条只读片段的字符上限。 */
+const EXCERPT_MAX = 240;
+
+/** 草稿写入失败原因的说明。 */
+const DRAFT_FAILURE_TEXT: Readonly<Record<DraftFailureReason, string>> = {
+  'storage-full': '本地存储空间不足',
+  'storage-unavailable': '本地存储不可用',
+  'privacy-mode': '浏览器隐私模式禁止本地存储',
+  'cleared-by-browser': '浏览器已清理本地存储',
+};
+
+/** 创建向导的状态。 */
+interface WizardState {
+  devices: readonly DeviceInfo[];
+  deviceId: string | undefined;
+  listing: DirectoryListing | undefined;
+  listingError: string | undefined;
+  listingBusy: boolean;
+  busy: boolean;
+  error: string | undefined;
+  /** 已经创建但归属未登记成功的会话：再次提交只重试归属。 */
+  created: { readonly sessionId: string; readonly deviceId: string; readonly cwd: string } | undefined;
+}
+
+/** 继续确认的状态。 */
+interface ContinueState {
   readonly sessionId: string;
-  readonly title: string;
-  readonly updatedAt: number;
-  readonly cwd: string;
-  readonly workspaceName: string;
-  readonly kind: string;
+  readonly deviceId: string | undefined;
+  readonly item: SessionItem | undefined;
+  events: readonly ReplicaEvent[] | undefined;
+  estimate: ForkEstimate | undefined;
+  estimateError: string | undefined;
+  importMode: ImportMode;
+  listing: DirectoryListing | undefined;
+  listingError: string | undefined;
+  listingBusy: boolean;
+  busy: boolean;
+  error: string | undefined;
 }
 
-/** 一台设备及其会话。 */
-interface DeviceSessions {
-  readonly deviceId: string;
-  readonly name: string;
-  readonly platform: string;
-  readonly online: boolean;
-  readonly lastSeenAt: number;
-  readonly sessions: readonly SessionSummary[];
+/**
+ * 安全地取一个存储。
+ * @param getter - 取存储的函数；隐私模式下访问本身就会抛出。
+ * @returns 存储；不可用时返回 `undefined`。
+ */
+function safeStorage(getter: () => Storage): Storage | undefined {
+  try {
+    return getter();
+  } catch {
+    return undefined;
+  }
 }
 
-/** 设备列表端点的响应。 */
-interface DevicesResponse {
-  readonly devices: readonly { readonly id: string; readonly name: string; readonly online: boolean }[];
-}
-
-/** 聚合会话列表端点的响应。 */
-interface SessionsResponse {
-  readonly devices: readonly DeviceSessions[];
-}
-
-/** 本机可用性端点的响应。 */
-interface LocalResponse {
-  readonly available: boolean;
-  readonly deviceId: string;
-  readonly reason?: string;
-}
-
-/** 当前选中的会话。 */
-interface Selection {
-  readonly deviceId: string;
-  readonly sessionId: string;
-}
-
-/** 一个工作区节点：同一显示名下的全部条目。 */
-interface WorkspaceView {
-  readonly workspaceName: string;
-  /** 条目：一台设备上的一个目录。 */
-  readonly entries: readonly WorkspaceEntry[];
-}
-
-/** 工作区里的一个条目。 */
-interface WorkspaceEntry {
-  readonly deviceId: string;
-  readonly deviceName: string;
-  readonly online: boolean;
-  readonly cwd: string;
-  readonly sessions: readonly SessionSummary[];
-}
-
-/** 把样式挂到文档上，重复挂载只保留一份。 */
+/** 应用样式：重复挂载只保留一份。 */
 function applyStyles(): void {
   const style = document.createElement('style');
   style.textContent = styles;
@@ -99,481 +131,1078 @@ function applyStyles(): void {
 }
 
 /**
- * 取一个端点的 JSON。
- * @param path - 同源路径。
- * @returns 响应体。
+ * 把副本事件压成可读片段。
+ * @param events - 副本事件。
+ * @returns 最近的内容片段。
  */
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`${path} 返回 ${response.status}`);
-  return await response.json() as T;
-}
-
-/**
- * 把设备与会话按工作区显示名合并。
- *
- * 同一个显示名在不同设备、不同路径下的会话合成一个工作区节点；每个「设备 + 目录」是一条
- * 条目。这条合并只影响呈现。
- * @param devices - 设备列表端点。
- * @param sessions - 聚合会话列表端点。
- * @returns 工作区节点，按最近活动倒序。
- */
-function composeWorkspaces(devices: DevicesResponse, sessions: SessionsResponse): WorkspaceView[] {
-  const onlineById = new Map(devices.devices.map((device) => [device.id, device.online] as const));
-  const nameById = new Map(devices.devices.map((device) => [device.id, device.name] as const));
-  const workspaces = new Map<string, { workspaceName: string; entries: Map<string, WorkspaceEntry>; latest: number }>();
-  for (const device of sessions.devices) {
-    const online = onlineById.get(device.deviceId) ?? device.online;
-    const deviceName = nameById.get(device.deviceId) ?? device.name;
-    for (const session of device.sessions) {
-      const workspaceName = session.workspaceName || deviceName;
-      let workspace = workspaces.get(workspaceName);
-      if (workspace === undefined) {
-        workspace = { workspaceName, entries: new Map(), latest: 0 };
-        workspaces.set(workspaceName, workspace);
-      }
-      const entryKey = `${device.deviceId}\u0000${session.cwd}`;
-      let entry = workspace.entries.get(entryKey);
-      if (entry === undefined) {
-        entry = { deviceId: device.deviceId, deviceName, online, cwd: session.cwd, sessions: [] };
-        workspace.entries.set(entryKey, entry);
-      }
-      (entry.sessions as SessionSummary[]).push(session);
-      workspace.latest = Math.max(workspace.latest, session.updatedAt);
-    }
+function excerptsOf(events: readonly ReplicaEvent[]): string[] {
+  const excerpts: string[] = [];
+  for (const event of events) {
+    if (!event.kind.endsWith('/message') && event.kind !== 'tool/result') continue;
+    const text = textOfEvent(event.payload).replace(/\s+/gu, ' ').trim();
+    if (text === '') continue;
+    excerpts.push(`${event.kind}：${text.length > EXCERPT_MAX ? `${text.slice(0, EXCERPT_MAX)}…` : text}`);
   }
-  return [...workspaces.values()]
-    .sort((left, right) => right.latest - left.latest)
-    .map((workspace) => ({
-      workspaceName: workspace.workspaceName,
-      entries: [...workspace.entries.values()]
-        .map((entry) => ({ ...entry, sessions: [...entry.sessions].sort((a, b) => b.updatedAt - a.updatedAt) }))
-        .sort((a, b) => (a.deviceName < b.deviceName ? -1 : a.deviceName > b.deviceName ? 1 : 0)),
-    }));
-}
-
-/** 时间的短写法：当天只写时分，更早的写月日，再早写年月日。 */
-function timeText(time: number): string {
-  const at = new Date(time);
-  const now = new Date();
-  const two = (value: number): string => String(value).padStart(2, '0');
-  if (at.toDateString() === now.toDateString()) return `${two(at.getHours())}:${two(at.getMinutes())}`;
-  if (at.getFullYear() === now.getFullYear()) return `${at.getMonth() + 1}-${at.getDate()}`;
-  return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}`;
-}
-
-/** 外壳的界面与刷新循环。 */
-interface ShellView {
-  /** 立即刷新一次。 */
-  refresh(): Promise<void>;
+  return excerpts.slice(-READONLY_EXCERPTS);
 }
 
 /**
- * 创建外壳界面。
+ * 启动外壳。
  * @param root - 容器元素。
- * @returns 界面句柄。
  */
-function createShell(root: HTMLElement): ShellView {
+function startShell(root: HTMLElement): void {
   root.classList.add('shell');
+  const localStore = safeStorage(() => window.localStorage);
+  const sessionStore = safeStorage(() => window.sessionStorage);
+  const clientId = clientIdentity(localStore, () => crypto.randomUUID());
+  const windowId = windowIdentity(sessionStore, () => crypto.randomUUID());
 
-  // ── 左栏 ────────────────────────────────────────────────
-  const list = document.createElement('aside');
-  list.className = 'shell-list';
-  const header = document.createElement('header');
-  header.className = 'shell-header';
-  const heading = document.createElement('h1');
-  heading.textContent = 'ChatDSH';
-  const actions = document.createElement('div');
-  actions.className = 'shell-header-actions';
-  const newButton = document.createElement('button');
-  newButton.type = 'button';
-  newButton.className = 'shell-action shell-new';
-  newButton.textContent = '新建会话';
-  const refreshButton = document.createElement('button');
-  refreshButton.type = 'button';
-  refreshButton.className = 'shell-action shell-refresh';
-  refreshButton.textContent = '刷新';
-  actions.append(newButton, refreshButton);
-  header.append(heading, actions);
-  const devicesBox = document.createElement('div');
-  devicesBox.className = 'shell-devices';
-  list.append(header, devicesBox);
-
-  // ── 右栏 ────────────────────────────────────────────────
-  const frame = document.createElement('main');
-  frame.className = 'shell-frame';
-  const actionBar = document.createElement('div');
-  actionBar.className = 'shell-actions';
-  const remoteBtn = document.createElement('button');
-  remoteBtn.type = 'button';
-  remoteBtn.className = 'shell-action shell-continue-remote';
-  remoteBtn.textContent = '在远程继续';
-  const localBtn = document.createElement('button');
-  localBtn.type = 'button';
-  localBtn.className = 'shell-action shell-continue-local';
-  localBtn.textContent = '在本机继续';
-  const actionNote = document.createElement('span');
-  actionNote.className = 'shell-action-note';
-  actionBar.append(remoteBtn, localBtn, actionNote);
-
-  const iframe = document.createElement('iframe');
-  iframe.className = 'shell-iframe';
-  iframe.title = '会话';
-  const placeholder = document.createElement('p');
-  placeholder.className = 'shell-placeholder';
-  placeholder.textContent = '从左边选一条会话';
-
-  const overlay = document.createElement('div');
-  overlay.className = 'shell-offline-overlay';
-  overlay.hidden = true;
-  const overlayText = document.createElement('p');
-  overlayText.className = 'shell-offline-text';
-  const overlayInput = document.createElement('input');
-  overlayInput.type = 'text';
-  overlayInput.className = 'shell-offline-input';
-  overlayInput.placeholder = '设备离线，无法发送消息';
-  overlayInput.disabled = true;
-  overlay.append(overlayText, overlayInput);
-
-  frame.append(actionBar, iframe, placeholder, overlay);
-  root.append(list, frame);
-
-  let selection: Selection | undefined;
-  let currentSessions: SessionsResponse = { devices: [] };
-  let localInfo: LocalResponse = { available: false, deviceId: 'local', reason: '尚未查询' };
-
-  const showNotice = (text: string, error: boolean): void => {
-    devicesBox.replaceChildren();
-    const notice = document.createElement('p');
-    notice.className = error ? 'shell-notice shell-notice-error' : 'shell-notice';
-    notice.textContent = text;
-    devicesBox.append(notice);
-  };
-
-  /** 按设备在线状态刷新右栏的遮罩与动作可用性；不重设 iframe 的 `src`，避免轮询把页面重载。 */
-  const syncRightPane = (): void => {
-    if (selection === undefined) {
-      overlay.hidden = true;
-      placeholder.hidden = false;
-      actionBar.hidden = true;
-      return;
-    }
-    const device = currentSessions.devices.find((entry) => entry.deviceId === selection?.deviceId);
-    const online = device?.online ?? false;
-    placeholder.hidden = true;
-    actionBar.hidden = false;
-    if (online) {
-      overlay.hidden = true;
-    } else {
-      // 离线时不加载 iframe，改为遮罩，遮罩里的输入框带 disabled。
-      iframe.removeAttribute('src');
-      overlay.hidden = false;
-      overlayText.textContent = `${device?.name ?? selection.deviceId}：设备离线`;
-      overlayInput.disabled = true;
-    }
-    // 「在本机继续」只在有本机运行时登记时可用。
-    localBtn.disabled = !localInfo.available;
-    localBtn.title = localInfo.available ? '在本机新开一条会话' : (localInfo.reason ?? '本机运行时未登记为设备');
-  };
-
-  /** 用户选中某条会话：立即加载右栏（在线时设 iframe 的 src，离线时显示遮罩）。 */
-  const applySelection = (): void => {
-    if (selection === undefined) {
-      iframe.removeAttribute('src');
-      syncRightPane();
-      return;
-    }
-    const device = currentSessions.devices.find((entry) => entry.deviceId === selection?.deviceId);
-    const online = device?.online ?? false;
-    actionNote.textContent = '';
-    if (online) {
-      overlay.hidden = true;
-      iframe.src = `/d/${encodeURIComponent(selection.deviceId)}/`;
-    }
-    syncRightPane();
-  };
-
-  /** 渲染一条会话按钮。 */
-  const renderSession = (session: SessionSummary, deviceId: string): HTMLElement => {
-    const item = document.createElement('li');
-    const button = document.createElement('button');
-    const chosen = selection?.deviceId === deviceId && selection.sessionId === session.sessionId;
-    button.type = 'button';
-    button.className = chosen ? 'session session-selected' : 'session';
-    button.dataset['deviceId'] = deviceId;
-    button.dataset['sessionId'] = session.sessionId;
-    const title = document.createElement('span');
-    title.className = 'session-title';
-    title.textContent = session.title;
-    const meta = document.createElement('span');
-    meta.className = 'session-meta';
-    const cwd = document.createElement('span');
-    cwd.className = 'session-cwd';
-    cwd.textContent = session.cwd;
-    const time = document.createElement('span');
-    time.textContent = timeText(session.updatedAt);
-    meta.append(cwd, time);
-    button.append(title, meta);
-    button.addEventListener('click', () => {
-      selection = { deviceId, sessionId: session.sessionId };
-      applySelection();
-      void guardedRefresh();
-    });
-    item.append(button);
-    return item;
-  };
-
-  /** 渲染一个工作区节点。 */
-  const renderWorkspace = (workspace: WorkspaceView): HTMLElement => {
-    const section = document.createElement('section');
-    section.className = 'workspace';
-    section.dataset['workspaceName'] = workspace.workspaceName;
-    const head = document.createElement('header');
-    head.className = 'workspace-header';
-    const name = document.createElement('span');
-    name.className = 'workspace-name';
-    name.textContent = workspace.workspaceName;
-    const count = document.createElement('span');
-    count.className = 'workspace-count';
-    const sessionCount = workspace.entries.reduce((total, entry) => total + entry.sessions.length, 0);
-    count.textContent = `${String(workspace.entries.length)} 个位置 · ${String(sessionCount)} 条会话`;
-    head.append(name, count);
-    section.append(head);
-    for (const entry of workspace.entries) {
-      const entryBox = document.createElement('div');
-      entryBox.className = 'workspace-entry';
-      entryBox.dataset['deviceId'] = entry.deviceId;
-      const entryHead = document.createElement('header');
-      entryHead.className = 'entry-header';
-      const deviceName = document.createElement('span');
-      deviceName.className = 'entry-device';
-      deviceName.textContent = entry.deviceName;
-      const state = document.createElement('span');
-      state.className = entry.online ? 'device-state device-state-online' : 'device-state device-state-offline';
-      state.textContent = entry.online ? '在线' : '离线';
-      const path = document.createElement('span');
-      path.className = 'entry-path';
-      path.textContent = entry.cwd;
-      entryHead.append(deviceName, state, path);
-      entryBox.append(entryHead);
-      const ul = document.createElement('ul');
-      ul.className = 'device-sessions';
-      for (const session of entry.sessions) ul.append(renderSession(session, entry.deviceId));
-      entryBox.append(ul);
-      section.append(entryBox);
-    }
-    return section;
-  };
-
-  const refresh = async (): Promise<void> => {
-    const [deviceList, sessionList, local] = await Promise.all([
-      getJson<DevicesResponse>(DEVICES_PATH),
-      getJson<SessionsResponse>(SESSIONS_PATH),
-      getJson<LocalResponse>(LOCAL_PATH).catch((): LocalResponse => ({ available: false, deviceId: 'local', reason: '本机状态不可用' })),
-    ]);
-    localInfo = local;
-    currentSessions = sessionList;
-    const workspaces = composeWorkspaces(deviceList, sessionList);
-    if (workspaces.length === 0) {
-      showNotice('还没有设备与会话', false);
-      syncRightPane();
-      return;
-    }
-    devicesBox.replaceChildren(...workspaces.map(renderWorkspace));
-    // 轮询刷新只更新遮罩与动作可用性，不重设 iframe 的 src（否则每十秒重载一次）。
-    syncRightPane();
-  };
-
-  const guardedRefresh = async (): Promise<void> => {
-    try {
-      await refresh();
-    } catch (error) {
-      showNotice(error instanceof Error ? error.message : String(error), true);
-    }
-  };
-
-  // ── 「在远程继续」：右栏已按选中会话指向 /d/<deviceId>/，这里只是显式重载。 ──
-  remoteBtn.addEventListener('click', () => {
-    if (selection === undefined) return;
-    const device = currentSessions.devices.find((entry) => entry.deviceId === selection?.deviceId);
-    if (device?.online !== true) {
-      actionNote.textContent = '设备离线，无法继续';
-      return;
-    }
-    iframe.src = `/d/${encodeURIComponent(selection.deviceId)}/`;
-    actionNote.textContent = '已在远程继续：同一条会话，deviceId 不变';
+  const telemetry = createShellTelemetry({
+    fetchImpl: (input, init) => fetch(input, init),
+    randomHex,
+    now: () => Date.now(),
+  });
+  const api = createShellApi({
+    fetchImpl: (input, init) => fetch(input, init),
+    newRequestId: () => crypto.randomUUID(),
+    telemetry,
   });
 
-  // ── 「在本机继续」：fork 到本机运行时，产生新会话。 ──
-  localBtn.addEventListener('click', () => {
-    if (selection === undefined || !localInfo.available) return;
-    void (async () => {
-      actionNote.textContent = '正在本机继续…';
+  let filters: SessionFilters = readFilters(localStore, clientId);
+  const pages = new SessionPages();
+  const generation = new ReadGeneration();
+  const gate = new OperationGate();
+  const routeItems = new Map<string, SessionItem>();
+  const readonlyCache = new Map<string, ReadonlyPaneInput>();
+  const readonlyLoading = new Set<string>();
+
+  let devices: readonly DeviceInfo[] = [];
+  let deviceError: string | undefined;
+  let localRuntime: LocalRuntime | undefined;
+  let selection: Selection | undefined;
+  let route: Route = { kind: 'sessions' };
+  let loading = false;
+  let loadingMore = false;
+  let listError: string | undefined;
+  let wizard: WizardState | undefined;
+  let continueState: ContinueState | undefined;
+  let draftIdentity: DraftIdentity | undefined;
+  let draftTimer: number | undefined;
+  let lastSelectionKey: string | undefined;
+
+  const listView = new ShellListView({
+    onSelect: (item) => router.push(sessionRoute(item.sessionId, item.deviceId)),
+    onFiltersChange: (next) => applyFilters(next),
+    onQueryCommit: (query) => applyFilters({ ...filters, query }),
+    onLoadMore: () => void loadMore(),
+    onRefresh: () => void refreshAll(),
+    onNewSession: () => router.push({ kind: 'new-session' }),
+    onOpenPalette: () => openPalette(),
+  });
+
+  const mainView = new ShellMainView({
+    onContinueRemote: () => runRemoteContinue(),
+    onContinueLocal: () => {
+      if (selection === undefined) {
+        listView.setStatus('先选择一条会话，再选择继续方式。');
+        return;
+      }
+      router.push(continueRoute(selection.sessionId, selection.deviceId));
+    },
+    onDraftInput: (text) => queueDraftSave(text),
+    onDraftSend: () => sendOfflineDraft(),
+    onRetryNavigation: () => {
+      const item = currentSelectionItem();
+      if (item !== undefined) void requestSelection(item, true);
+    },
+    onReturnList: () => router.push({ kind: 'sessions' }),
+    onCreateDeviceChange: (deviceId) => void changeWizardDevice(deviceId),
+    onCreateDirectoryOpen: (path) => void loadWizardDirectory(path),
+    onCreateDirectoryRefresh: () => void loadWizardDirectory(wizard?.listing?.path),
+    onCreateSubmit: (input) => submitCreate(input),
+    onCreateCancel: () => closeWizard(true),
+    onContinueModeChange: (mode) => changeContinueMode(mode),
+    onContinueDirectoryOpen: (path) => void loadContinueDirectory(path),
+    onContinueSubmit: (input) => submitContinue(input),
+    onContinueCancel: () => closeContinue(),
+    onPaletteRun: (command) => runCommand(command),
+    onPaletteClose: () => mainView.closePalette(),
+  });
+
+  const router = new RouteNavigator(window, (next: Route, reason: RouteChangeReason) => {
+    route = next;
+    telemetry.action('route', 'ok');
+    handleRoute(reason);
+  });
+
+  root.replaceChildren(listView.element, mainView.element);
+
+  /** 当前选中的会话。 */
+  function currentSelectionItem(): SessionItem | undefined {
+    if (selection === undefined) return undefined;
+    return findSession(pages.items, selection.sessionId, selection.deviceId) ?? routeItems.get(`${selection.deviceId}\u0000${selection.sessionId}`);
+  }
+
+  /** 渲染左栏。 */
+  function renderList(): void {
+    listView.render({
+      workspaces: groupByWorkspace(pages.items),
+      deviceGroups: groupByDevice(pages.items),
+      filters,
+      devices,
+      selection,
+      loading,
+      error: listError,
+      hasMore: pages.hasMore,
+      total: pages.items.length,
+      pendingQuery: filters.query,
+    });
+    const note = deviceError;
+    if (note !== undefined) listView.setStatus(note);
+    else listView.setStatus(loading ? '正在读取会话列表…' : '');
+  }
+
+  /**
+   * 读设备列表。
+   */
+  async function refreshDevices(): Promise<void> {
+    try {
+      devices = await api.listDevices();
+      deviceError = undefined;
+    } catch (error) {
+      deviceError = describeFailure(error, '读取设备列表');
+    }
+  }
+
+  /** 读本机运行时的可用性。 */
+  async function refreshLocalRuntime(): Promise<void> {
+    try {
+      localRuntime = await api.localRuntime();
+    } catch (error) {
+      localRuntime = { available: false, deviceId: 'local', reason: describeFailure(error, '读取本机状态') };
+    }
+  }
+
+  /**
+   * 读一页会话列表并替换累积。
+   * @param quiet - 静默刷新时不显示读取中状态。
+   */
+  async function refreshList(quiet = false): Promise<void> {
+    const ticket = generation.next();
+    if (!quiet) {
+      loading = true;
+      renderList();
+    }
+    try {
+      const page = await api.listSessions({
+        limit: PAGE_SIZE,
+        query: filters.query,
+        ...(filters.deviceId === ALL_DEVICES ? {} : { deviceId: filters.deviceId }),
+      });
+      if (!generation.isCurrent(ticket)) return;
+      pages.reset(page);
+      routeItems.clear();
+      listError = undefined;
+    } catch (error) {
+      if (!generation.isCurrent(ticket)) return;
+      listError = describeFailure(error, '读取会话列表');
+      pages.reset({ items: [], page: { hasMore: false } });
+    } finally {
+      if (generation.isCurrent(ticket)) {
+        loading = false;
+        renderList();
+        restoreRoute();
+      }
+    }
+  }
+
+  /** 刷新全部状态。 */
+  async function refreshAll(): Promise<void> {
+    await refreshDevices();
+    await refreshLocalRuntime();
+    await refreshList();
+  }
+
+  /** 加载下一页。 */
+  async function loadMore(): Promise<void> {
+    const cursor = pages.nextCursor;
+    if (loadingMore || !pages.hasMore || cursor === undefined) return;
+    loadingMore = true;
+    const ticket = generation.current;
+    try {
+      const page = await api.listSessions({
+        limit: PAGE_SIZE,
+        query: filters.query,
+        cursor,
+        ...(filters.deviceId === ALL_DEVICES ? {} : { deviceId: filters.deviceId }),
+      });
+      if (!generation.isCurrent(ticket)) return;
+      pages.append(page);
+      renderList();
+    } catch (error) {
+      if (!generation.isCurrent(ticket)) return;
+      listError = describeFailure(error, '加载更多会话');
+      renderList();
+    } finally {
+      loadingMore = false;
+    }
+  }
+
+  /**
+   * 应用筛选并重新读取。
+   * @param next - 新筛选。
+   */
+  function applyFilters(next: SessionFilters): void {
+    filters = normalizeFilters(next);
+    writeFilters(localStore, clientId, filters);
+    listError = undefined;
+    void refreshList();
+  }
+
+  /**
+   * 处理一次路由变化。
+   * @param reason - 变化原因；后退与前进时把焦点放回选中的会话。
+   */
+  function handleRoute(reason: RouteChangeReason): void {
+    if (route.kind !== 'new-session') closeWizard(false);
+    if (route.kind !== 'continue') closeContinueDialogOnly();
+    if (route.kind === 'sessions') {
+      loading = true;
+      void openRouteSession().finally(() => {
+        if (reason === 'pop') listView.focusSelection();
+      });
+      return;
+    }
+    selection = undefined;
+    if (route.kind === 'new-session') {
+      renderList();
+      void openWizard();
+      return;
+    }
+    if (route.kind === 'continue') {
+      renderList();
+      void openContinue(route.sessionId, route.deviceId);
+      return;
+    }
+    if (route.kind === 'settings') {
+      renderList();
+      mainView.renderSettings(route.section, SETTINGS_SECTION_TITLES[route.section]);
+      return;
+    }
+    if (route.kind === 'share') {
+      renderList();
+      mainView.renderShare(route.token);
+      return;
+    }
+    if (route.kind === 'diagnostics') {
+      renderList();
+      renderDiagnostics();
+      return;
+    }
+    renderList();
+    mainView.renderRouteError(`无法识别的地址：${route.path}`);
+  }
+
+  /**
+   * 在列表刷新后重建当前路由的右栏。
+   */
+  function restoreRoute(): void {
+    if (route.kind === 'sessions') {
+      void openRouteSession();
+      return;
+    }
+    if (route.kind === 'continue' && continueState !== undefined) {
+      pushContinue();
+    }
+  }
+
+  /**
+   * 解析会话路由并渲染右栏。
+   */
+  async function openRouteSession(): Promise<void> {
+    if (route.kind !== 'sessions') return;
+    const sessionId = route.sessionId;
+    if (sessionId === undefined) {
+      selection = undefined;
+      loading = false;
+      renderList();
+      mainView.renderPending('从左边选一条会话；也可以按 Ctrl/Cmd+K 搜索命令。');
+      return;
+    }
+    selection = { deviceId: route.deviceId ?? '', sessionId };
+    renderList();
+    const known =
+      findSession(pages.items, sessionId, route.deviceId) ??
+      routeItems.get(`${route.deviceId ?? ''}\u0000${sessionId}`);
+    if (known !== undefined) {
+      loading = false;
+      renderSessionPane(known);
+      return;
+    }
+    mainView.renderPending('正在读取会话…');
+    try {
+      const page = await api.listSessions({
+        limit: 200,
+        query: '',
+        ...(route.deviceId === undefined ? {} : { deviceId: route.deviceId }),
+      });
+      const found = findSession(page.items, sessionId, route.deviceId);
+      if (route.kind !== 'sessions' || route.sessionId !== sessionId) return;
+      loading = false;
+      if (found === undefined) {
+        selection = { deviceId: route.deviceId ?? '', sessionId };
+        renderList();
+        mainView.renderRouteError(
+          route.deviceId === undefined ? '该会话不存在或已被删除。' : `该设备上不存在会话 ${sessionId}。`
+        );
+        return;
+      }
+      routeItems.set(`${found.deviceId}\u0000${found.sessionId}`, found);
+      selection = { deviceId: found.deviceId, sessionId: found.sessionId };
+      renderList();
+      renderSessionPane(found);
+    } catch (error) {
+      if (route.kind !== 'sessions' || route.sessionId !== sessionId) return;
+      loading = false;
+      renderList();
+      mainView.renderRouteError(describeFailure(error, '读取会话'));
+    }
+  }
+
+  /**
+   * 渲染会话右栏。
+   * @param item - 会话。
+   */
+  function renderSessionPane(item: SessionItem): void {
+    const pane: SessionPaneInput = {
+      title: item.title,
+      kind: item.kind,
+      deviceLabel: item.deviceName,
+      deviceId: item.deviceId,
+      cwd: item.cwd,
+      online: item.online,
+      sessionId: item.sessionId,
+      note: item.online ? '' : '目标设备离线：只读副本与本地草稿可用，写操作立即失败。',
+    };
+    mainView.renderSession(pane);
+    mainView.setRemoteContinue(item.online, item.online ? '在源设备上打开原会话，编号不变' : '源设备离线，远程继续不可用');
+    const localAvailable = localRuntime?.available === true;
+    mainView.setLocalContinue(localAvailable, localAvailable ? '在本机新建带血缘的会话' : (localRuntime?.reason ?? '本机运行时未登记为设备'));
+    if (item.online) {
+      closeDraft();
+      void requestSelection(item, false);
+      return;
+    }
+    openDraft(item);
+    const readonly = readonlyCache.get(`${item.deviceId}\u0000${item.sessionId}`);
+    if (readonly !== undefined) mainView.renderReadonly(readonly);
+    void loadReadonly(item);
+  }
+
+  /**
+   * 请求内容端打开指定会话。
+   * @param item - 会话。
+   * @param force - 跳过同会话的重复请求。
+   */
+  async function requestSelection(item: SessionItem, force: boolean): Promise<void> {
+    const key = `${item.deviceId}\u0000${item.sessionId}`;
+    if (!force && key === lastSelectionKey) return;
+    lastSelectionKey = key;
+    await mainView.requestSessionSelection(item.deviceId, item.sessionId);
+  }
+
+  /**
+   * 读离线会话的只读副本。
+   * @param item - 会话。
+   */
+  async function loadReadonly(item: SessionItem): Promise<void> {
+    const key = `${item.deviceId}\u0000${item.sessionId}`;
+    if (readonlyLoading.has(key)) return;
+    readonlyLoading.add(key);
+    mainView.renderReadonly({
+      readAt: Date.now(),
+      eventCount: 0,
+      excerpts: [],
+      missing: false,
+      reason: '正在读取控制平面副本…',
+    });
+    try {
+      const events = await api.readReplica(item.sessionId);
+      const pane: ReadonlyPaneInput = {
+        readAt: Date.now(),
+        eventCount: events.length,
+        excerpts: excerptsOf(events),
+        missing: events.length === 0,
+        reason: '目标设备离线，读取控制平面副本',
+      };
+      readonlyCache.set(key, pane);
+      if (selection?.deviceId === item.deviceId && selection.sessionId === item.sessionId && !item.online) {
+        mainView.renderReadonly(pane);
+      }
+      if (events.length === 0) {
+        readonlyCache.delete(key);
+      }
+    } catch (error) {
+      const pane: ReadonlyPaneInput = {
+        readAt: Date.now(),
+        eventCount: 0,
+        excerpts: [],
+        missing: true,
+        reason: describeFailure(error, '读取副本'),
+      };
+      if (selection?.deviceId === item.deviceId && selection.sessionId === item.sessionId && !item.online) {
+        mainView.renderReadonly(pane);
+      }
+    } finally {
+      readonlyLoading.delete(key);
+    }
+  }
+
+  /** 渲染诊断页面。 */
+  function renderDiagnostics(): void {
+    const onlineCount = devices.filter((device) => device.online).length;
+    const rows: [string, string][] = [
+      ['当前路由', routePath(route)],
+      ['已加载会话', `${String(pages.items.length)} 条`],
+      ['已知设备', `${String(onlineCount)} 台在线 / ${String(devices.length)} 台登记`],
+      ['本机运行时', localRuntime === undefined ? '状态未知' : localRuntime.available ? `可用（${localRuntime.deviceId}）` : `不可用：${localRuntime.reason ?? '原因未知'}`],
+      ['本地草稿存储', draftStorageAvailable(localStore) ? '可读写' : '不可用'],
+      ['遥测上报', '同源中继 /chatdsh/telemetry/browser'],
+      ['客户端标识', `${clientId.slice(0, 8)}…`],
+      ['窗口标识', `${windowId.slice(0, 8)}…`],
+    ];
+    mainView.renderDiagnostics(rows);
+  }
+
+  /** 打开创建向导。 */
+  async function openWizard(): Promise<void> {
+    if (wizard !== undefined) {
+      pushWizard();
+      return;
+    }
+    wizard = {
+      devices: [],
+      deviceId: undefined,
+      listing: undefined,
+      listingError: undefined,
+      listingBusy: false,
+      busy: false,
+      error: undefined,
+      created: undefined,
+    };
+    mainView.openCreateWizard(wizardInput());
+    await refreshDevices();
+    if (wizard === undefined) return;
+    wizard.devices = devices;
+    const firstOnline = devices.find((device) => device.online);
+    wizard.deviceId = firstOnline?.id;
+    if (wizard.deviceId === undefined) {
+      wizard.listingError = '没有在线设备：先让目标设备上线，再创建会话。';
+      wizard.error = '没有在线设备，无法创建会话。';
+      pushWizard();
+      return;
+    }
+    pushWizard();
+    await loadWizardDirectory(undefined);
+  }
+
+  /** 向导的渲染数据。 */
+  function wizardInput(): CreateWizardInput {
+    const state = wizard;
+    if (state === undefined) throw new Error('创建向导未打开');
+    return {
+      devices: state.devices,
+      deviceId: state.deviceId,
+      listing: state.listing,
+      listingError: state.listingError,
+      listingBusy: state.listingBusy,
+      busy: state.busy,
+      error: state.error,
+      ...(state.created === undefined ? {} : { createdSessionId: state.created.sessionId }),
+    };
+  }
+
+  /** 重绘向导。 */
+  function pushWizard(): void {
+    if (wizard === undefined) return;
+    mainView.updateCreateWizard(wizardInput());
+  }
+
+  /**
+   * 更换创建向导的目标设备。
+   * @param deviceId - 设备标识。
+   */
+  async function changeWizardDevice(deviceId: string): Promise<void> {
+    if (wizard === undefined) return;
+    wizard.deviceId = deviceId;
+    wizard.listing = undefined;
+    wizard.listingError = undefined;
+    wizard.error = undefined;
+    pushWizard();
+    await loadWizardDirectory(undefined);
+  }
+
+  /**
+   * 读创建向导里目标设备的目录。
+   * @param path - 目录路径；省略时读默认入口。
+   */
+  async function loadWizardDirectory(path: string | undefined): Promise<void> {
+    const state = wizard;
+    if (state === undefined) return;
+    const deviceId = state.deviceId;
+    if (deviceId === undefined) {
+      state.listingError = '请先选择在线设备。';
+      pushWizard();
+      return;
+    }
+    const device = devices.find((entry) => entry.id === deviceId);
+    if (device?.online !== true) {
+      state.listingError = `${device?.name ?? deviceId} 离线，无法读取目录。`;
+      state.listing = undefined;
+      pushWizard();
+      return;
+    }
+    state.listingBusy = true;
+    state.listingError = undefined;
+    pushWizard();
+    try {
+      const listing = await api.listDirectory(deviceId, path);
+      if (wizard !== state || state.deviceId !== deviceId) return;
+      state.listing = listing;
+      mainView.setCreateCwd(listing.path);
+    } catch (error) {
+      if (wizard !== state || state.deviceId !== deviceId) return;
+      state.listing = undefined;
+      state.listingError = describeFailure(error, '读取设备目录');
+    } finally {
+      if (wizard === state) {
+        state.listingBusy = false;
+        pushWizard();
+      }
+    }
+  }
+
+  /**
+   * 提交创建。
+   * @param input - 表单内容。
+   */
+  function submitCreate(input: CreateSubmit): void {
+    const state = wizard;
+    if (state === undefined) return;
+    if (state.created !== undefined) {
+      repairOwnership(state);
+      return;
+    }
+    const device = devices.find((entry) => entry.id === input.deviceId);
+    if (device === undefined || !device.online) {
+      state.error = `${device?.name ?? input.deviceId} 离线，创建失败：请先让设备上线。`;
+      telemetry.action('session-create', 'rejected');
+      pushWizard();
+      return;
+    }
+    state.busy = true;
+    state.error = undefined;
+    pushWizard();
+    const key = `create\u0000${input.deviceId}\u0000${input.cwd}`;
+    void gate.run(key, async () => {
       try {
-        const response = await fetch(IMPORT_PATH, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ sourceSessionId: selection?.sessionId, deviceId: localInfo.deviceId }),
+        const created = await api.createSession({
+          deviceId: input.deviceId,
+          cwd: input.cwd,
+          ...(input.title === '' ? {} : { title: input.title }),
         });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          actionNote.textContent = `在本机继续失败：${String(body.error ?? response.status)}`;
+        if (created.ownershipWarning !== undefined) {
+          // 部分成功：会话已经存在，按钮改成重新登记归属，绝不再建一条。
+          telemetry.action('session-create', 'failed');
+          if (wizard === state) {
+            state.created = { sessionId: created.sessionId, deviceId: input.deviceId, cwd: input.cwd };
+            state.error = created.ownershipWarning;
+            state.busy = false;
+            pushWizard();
+          }
           return;
         }
-        selection = { deviceId: localInfo.deviceId, sessionId: String(body.sessionId) };
-        actionNote.textContent = `已在本机新开会话：${String(body.sessionId).slice(0, 12)}…（cwd 与 deviceId 是本机，parentSession 指向源会话）`;
-        await guardedRefresh();
+        telemetry.action('session-create', 'ok');
+        closeWizard(false);
+        router.push(sessionRoute(created.sessionId, input.deviceId));
+        await refreshList();
+        if (created.titleWarning !== undefined) listView.setStatus(created.titleWarning);
       } catch (error) {
-        actionNote.textContent = `在本机继续失败：${error instanceof Error ? error.message : String(error)}`;
+        telemetry.action('session-create', 'failed');
+        if (wizard === state) {
+          state.error = describeFailure(error, '创建会话');
+          state.busy = false;
+          pushWizard();
+        }
       }
-    })();
-  });
-
-  // ── 新建会话：先选设备，再填目录，由控制平面登记归属并在设备上创建。 ──
-  newButton.addEventListener('click', () => {
-    const devices = currentSessions.devices;
-    if (devices.length === 0) {
-      showNotice('还没有可用设备', true);
-      return;
-    }
-    const dialog = buildNewSessionDialog(devices, {
-      onCreate: async (deviceId, cwd) => {
-        const created = await createSessionOnDevice(deviceId, cwd);
-        selection = { deviceId, sessionId: created };
-        dialog.remove();
-        await guardedRefresh();
-      },
-      onCancel: () => dialog.remove(),
     });
-    root.append(dialog);
-  });
-
-  refreshButton.addEventListener('click', () => void guardedRefresh());
-  window.addEventListener('focus', () => void guardedRefresh());
-  window.setInterval(() => void guardedRefresh(), REFRESH_INTERVAL_MS);
-
-  return { refresh: guardedRefresh };
-}
-
-/**
- * 在设备上创建一条真实会话，并在控制平面登记归属。
- * @param deviceId - 目标设备。
- * @param cwd - 目标目录。
- * @returns 新会话标识。
- */
-async function createSessionOnDevice(deviceId: string, cwd: string): Promise<string> {
-  const rpcId = (globalThis.crypto as { randomUUID(): string }).randomUUID();
-  const response = await fetch(`/d/${encodeURIComponent(deviceId)}/api/session/create`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ type: 'client-request', rpcId, method: 'session/create', payload: { args: { request: { cwd } } } }),
-  });
-  if (!response.ok) throw new Error(`在设备上创建会话失败：${response.status}`);
-  const envelope = await response.json();
-  const sessionId = envelope?.result?.ok === true ? envelope.result.value?.sessionId : undefined;
-  if (typeof sessionId !== 'string' || sessionId === '') throw new Error('设备没有返回会话标识');
-  const owned = await fetch(OWNERSHIP_PATH, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId, deviceId, cwd, kind: 'work' }),
-  });
-  if (!owned.ok) throw new Error(`登记会话归属失败：${owned.status}`);
-  return sessionId;
-}
-
-/** 新建会话对话框的回调。 */
-interface NewSessionHandlers {
-  onCreate(deviceId: string, cwd: string): Promise<void>;
-  onCancel(): void;
-}
-
-/**
- * 构造新建会话的对话框。
- *
- * 设备用下拉框选择，离线设备不可选；目录用手动输入，界面里说明该形态下未启用远程目录列举。
- * @param devices - 当前设备。
- * @param handlers - 创建与取消回调。
- * @returns 对话框元素。
- */
-function buildNewSessionDialog(devices: readonly DeviceSessions[], handlers: NewSessionHandlers): HTMLElement {
-  const dialog = document.createElement('div');
-  dialog.className = 'new-session-dialog';
-  const box = document.createElement('div');
-  box.className = 'new-session-box';
-  const title = document.createElement('h2');
-  title.textContent = '新建会话';
-
-  const deviceLabel = document.createElement('label');
-  deviceLabel.className = 'new-session-field';
-  deviceLabel.textContent = '设备';
-  const deviceSelect = document.createElement('select');
-  deviceSelect.className = 'new-session-device';
-  for (const device of devices) {
-    const option = document.createElement('option');
-    option.value = device.deviceId;
-    option.textContent = device.online ? device.name : `${device.name}（离线）`;
-    option.disabled = !device.online;
-    deviceSelect.append(option);
   }
-  const firstOnline = devices.find((device) => device.online);
-  if (firstOnline !== undefined) deviceSelect.value = firstOnline.deviceId;
-  deviceLabel.append(deviceSelect);
 
-  const cwdLabel = document.createElement('label');
-  cwdLabel.className = 'new-session-field';
-  cwdLabel.textContent = '目录';
-  const cwdInput = document.createElement('input');
-  cwdInput.type = 'text';
-  cwdInput.className = 'new-session-cwd';
-  cwdInput.placeholder = '/绝对路径';
-  cwdLabel.append(cwdInput);
-  const hint = document.createElement('p');
-  hint.className = 'new-session-hint';
-  hint.textContent = '目录需手动输入：该形态下未启用远程目录列举。';
-
-  const error = document.createElement('p');
-  error.className = 'new-session-error';
-  const buttons = document.createElement('div');
-  buttons.className = 'new-session-buttons';
-  const cancel = document.createElement('button');
-  cancel.type = 'button';
-  cancel.className = 'shell-action new-session-cancel';
-  cancel.textContent = '取消';
-  const create = document.createElement('button');
-  create.type = 'button';
-  create.className = 'shell-action new-session-create';
-  create.textContent = '创建';
-  buttons.append(cancel, create);
-
-  box.append(title, deviceLabel, cwdLabel, hint, error, buttons);
-  dialog.append(box);
-
-  cancel.addEventListener('click', () => handlers.onCancel());
-  create.addEventListener('click', () => {
-    const deviceId = deviceSelect.value;
-    const cwd = cwdInput.value.trim();
-    if (cwd === '') {
-      error.textContent = '请填写目录';
-      return;
-    }
-    const device = devices.find((entry) => entry.deviceId === deviceId);
-    if (device === undefined || !device.online) {
-      error.textContent = '目标设备离线，无法创建';
-      return;
-    }
-    create.disabled = true;
-    handlers.onCreate(deviceId, cwd).catch((cause: unknown) => {
-      create.disabled = false;
-      error.textContent = cause instanceof Error ? cause.message : String(cause);
+  /**
+   * 重新登记一条已经创建好的会话的归属。
+   * @param state - 创建向导状态。
+   */
+  function repairOwnership(state: WizardState): void {
+    const created = state.created;
+    if (created === undefined) return;
+    state.busy = true;
+    state.error = undefined;
+    pushWizard();
+    void gate.run(`repair\u0000${created.sessionId}`, async () => {
+      try {
+        await api.registerOwnership(created);
+        telemetry.action('session-create', 'ok');
+        if (wizard === state) {
+          state.created = undefined;
+          closeWizard(false);
+        }
+        router.push(sessionRoute(created.sessionId, created.deviceId));
+        await refreshList();
+      } catch (error) {
+        telemetry.action('session-create', 'failed');
+        if (wizard === state) {
+          state.error = describeFailure(error, '登记会话归属');
+          state.busy = false;
+          pushWizard();
+        }
+      }
     });
+  }
+
+  /**
+   * 关闭创建向导。
+   * @param backToList - 是否回到列表路由。
+   */
+  function closeWizard(backToList: boolean): void {
+    if (wizard !== undefined) {
+      wizard = undefined;
+      mainView.closeCreateWizard();
+    }
+    if (!backToList) return;
+    const target: Route = { kind: 'sessions' };
+    if (sameRoute(target, route)) handleRoute('replace');
+    else router.push(target);
+  }
+
+  /**
+   * 打开继续确认。
+   * @param sessionId - 源会话。
+   * @param deviceId - 源设备。
+   */
+  async function openContinue(sessionId: string, deviceId: string | undefined): Promise<void> {
+    const known = findSession(pages.items, sessionId, deviceId) ?? routeItems.get(`${deviceId ?? ''}\u0000${sessionId}`);
+    if (continueState !== undefined && continueState.sessionId === sessionId && continueState.deviceId === deviceId) {
+      pushContinue();
+      return;
+    }
+    continueState = {
+      sessionId,
+      deviceId,
+      item: known,
+      events: undefined,
+      estimate: undefined,
+      estimateError: undefined,
+      importMode: 'full-prefix',
+      listing: undefined,
+      listingError: undefined,
+      listingBusy: false,
+      busy: false,
+      error: undefined,
+    };
+    await refreshLocalRuntime();
+    if (continueState !== undefined) {
+      mainView.openContinueDialog(continueInput());
+      void loadEstimate();
+      void loadContinueDirectory(undefined);
+    }
+  }
+
+  /** 继续确认的渲染数据。 */
+  function continueInput(): ContinueDialogInput {
+    const state = continueState;
+    if (state === undefined) throw new Error('继续确认未打开');
+    return {
+      sourceTitle: state.item?.title ?? state.sessionId,
+      sourceDeviceLabel: state.item?.deviceName ?? state.deviceId ?? '未知设备',
+      sourceDeviceId: state.item?.deviceId ?? state.deviceId ?? '',
+      sourceOnline: state.item?.online === true,
+      sourceSessionId: state.sessionId,
+      estimate:
+        state.estimate === undefined
+          ? undefined
+          : {
+              eventCount: state.estimate.eventCount,
+              charCount: state.estimate.charCount,
+              missingAttachmentIds: state.estimate.missingAttachmentIds,
+              compressionLoss: state.estimate.compressionLoss,
+              sourceState: state.estimate.source.state === 'complete' ? 'complete' : 'partial',
+            },
+      estimateError: state.estimateError,
+      importMode: state.importMode,
+      localAvailable: localRuntime?.available === true,
+      localReason: localRuntime?.reason,
+      listing: state.listing,
+      listingError: state.listingError,
+      listingBusy: state.listingBusy,
+      busy: state.busy,
+      error: state.error,
+    };
+  }
+
+  /** 重绘继续确认。 */
+  function pushContinue(): void {
+    if (continueState === undefined) return;
+    mainView.updateContinueDialog(continueInput());
+  }
+
+  /** 读源会话副本并计算预估。 */
+  async function loadEstimate(): Promise<void> {
+    const state = continueState;
+    if (state === undefined) return;
+    try {
+      const events = await api.readReplica(state.sessionId);
+      if (continueState !== state) return;
+      state.events = events;
+      applyEstimate();
+    } catch (error) {
+      if (continueState !== state) return;
+      state.events = undefined;
+      state.estimate = undefined;
+      state.estimateError = describeFailure(error, '读取副本');
+      pushContinue();
+    }
+  }
+
+  /** 按当前复制方式重算预估。 */
+  function applyEstimate(): void {
+    const state = continueState;
+    if (state === undefined) return;
+    if (state.events === undefined) {
+      state.estimate = undefined;
+      pushContinue();
+      return;
+    }
+    const result = estimateFork(state.events, {
+      importMode: state.importMode,
+      sourceOnline: state.item?.online === true,
+      readAt: Date.now(),
+    });
+    if (result.ok) {
+      state.estimate = result.estimate;
+      state.estimateError = undefined;
+    } else {
+      state.estimate = undefined;
+      state.estimateError = '该会话没有可读副本，无法在本机继续。';
+    }
+    pushContinue();
+  }
+
+  /**
+   * 更换复制方式。
+   * @param mode - 复制方式。
+   */
+  function changeContinueMode(mode: ImportMode): void {
+    const state = continueState;
+    if (state === undefined) return;
+    state.importMode = mode;
+    applyEstimate();
+  }
+
+  /**
+   * 读本机目录。
+   * @param path - 目录路径。
+   */
+  async function loadContinueDirectory(path: string | undefined): Promise<void> {
+    const state = continueState;
+    if (state === undefined) return;
+    state.listingBusy = true;
+    state.listingError = undefined;
+    pushContinue();
+    try {
+      const listing = await api.listDirectory(undefined, path);
+      if (continueState !== state) return;
+      state.listing = listing;
+      mainView.setContinueCwd(listing.path);
+    } catch (error) {
+      if (continueState !== state) return;
+      state.listing = undefined;
+      state.listingError = describeFailure(error, '读取本机目录');
+    } finally {
+      if (continueState === state) {
+        state.listingBusy = false;
+        pushContinue();
+      }
+    }
+  }
+
+  /**
+   * 提交本机继续。
+   * @param input - 表单内容。
+   */
+  function submitContinue(input: ContinueSubmit): void {
+    const state = continueState;
+    if (state === undefined) return;
+    if (localRuntime?.available !== true) {
+      state.error = localRuntime?.reason ?? '本机运行时不可用：在 Web 上需要已登记且已启动的本机运行时。';
+      pushContinue();
+      return;
+    }
+    if (state.estimate === undefined) {
+      state.error = '副本不可用，无法在本机继续。';
+      pushContinue();
+      return;
+    }
+    const targetDeviceId = localRuntime.deviceId;
+    state.busy = true;
+    state.error = undefined;
+    pushContinue();
+    const key = `local-continue\u0000${state.sessionId}\u0000${input.cwd}`;
+    void gate.run(key, async () => {
+      try {
+        const result = await api.importSession({
+          sourceSessionId: state.sessionId,
+          deviceId: targetDeviceId,
+          cwd: input.cwd,
+        });
+        telemetry.action('continue-local', 'ok');
+        if (continueState === state) {
+          continueState = undefined;
+          mainView.closeContinueDialog();
+        }
+        router.push(sessionRoute(result.sessionId, targetDeviceId));
+        await refreshList();
+        listView.setStatus(`已在本机新开会话，来源会话：${result.parentSession}`);
+      } catch (error) {
+        telemetry.action('continue-local', 'failed');
+        if (continueState === state) {
+          state.error = describeFailure(error, '在本机继续');
+          state.busy = false;
+          pushContinue();
+        }
+      }
+    });
+  }
+
+  /** 关闭继续确认并回到源会话。 */
+  function closeContinue(): void {
+    const state = continueState;
+    continueState = undefined;
+    mainView.closeContinueDialog();
+    const target: Route =
+      state === undefined ? { kind: 'sessions' } : sessionRoute(state.sessionId, state.deviceId ?? (state.item?.deviceId ?? ''));
+    const normalized: Route =
+      target.kind === 'sessions' && target.deviceId === '' ? { kind: 'sessions', sessionId: target.sessionId } : target;
+    if (sameRoute(normalized, route)) handleRoute('replace');
+    else router.push(normalized);
+  }
+
+  /** 关闭继续确认的界面，不改路由。 */
+  function closeContinueDialogOnly(): void {
+    if (continueState === undefined) return;
+    continueState = undefined;
+    mainView.closeContinueDialog();
+  }
+
+  /** 在远程继续：使用源会话与源设备。 */
+  function runRemoteContinue(): void {
+    const item = currentSelectionItem();
+    if (item === undefined) return;
+    if (!item.online) {
+      telemetry.action('continue-remote', 'rejected');
+      listView.setStatus('源设备离线，无法在远程继续；可以从副本在本机新建分支。');
+      return;
+    }
+    telemetry.action('continue-remote', 'ok');
+    const target = sessionRoute(item.sessionId, item.deviceId);
+    if (sameRoute(target, route)) {
+      void requestSelection(item, true);
+      return;
+    }
+    router.push(target);
+  }
+
+  /**
+   * 记一次草稿输入。
+   * @param text - 输入文本。
+   */
+  function queueDraftSave(text: string): void {
+    const identity = draftIdentity;
+    if (identity === undefined) return;
+    if (draftTimer !== undefined) window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(() => {
+      draftTimer = undefined;
+      saveDraft(identity, text);
+    }, DRAFT_DEBOUNCE_MS);
+  }
+
+  /**
+   * 写一次草稿。
+   * @param identity - 草稿键。
+   * @param text - 输入文本。
+   */
+  function saveDraft(identity: DraftIdentity, text: string): void {
+    const result = writeDraft(localStore, identity, { text });
+    if (result.outcome === 'saved') {
+      mainView.setDraftMessage('草稿已保存在本机。', 'ok');
+      return;
+    }
+    telemetry.action('draft-save', 'failed');
+    mainView.setDraftMessage(`草稿保存失败：${DRAFT_FAILURE_TEXT[result.reason ?? 'storage-unavailable']}，输入已保留。`, 'error');
+  }
+
+  /** 立即落盘当前的草稿。 */
+  function flushDraft(): void {
+    if (draftTimer !== undefined) {
+      window.clearTimeout(draftTimer);
+      draftTimer = undefined;
+    }
+    if (draftIdentity === undefined) return;
+    writeDraft(localStore, draftIdentity, { text: mainView.getDraftText() });
+  }
+
+  /**
+   * 打开一条会话的草稿。
+   * @param item - 会话。
+   */
+  function openDraft(item: SessionItem): void {
+    const next: DraftIdentity = { clientId, windowId, deviceId: item.deviceId, sessionId: item.sessionId };
+    const current = draftIdentity;
+    // 轮询刷新会重复走到这里：同一条会话的草稿只装载一次，避免覆盖正在输入的状态提示。
+    if (
+      current !== undefined &&
+      current.clientId === next.clientId &&
+      current.windowId === next.windowId &&
+      current.deviceId === next.deviceId &&
+      current.sessionId === next.sessionId
+    ) {
+      return;
+    }
+    flushDraft();
+    draftIdentity = next;
+    const record = readDraft(localStore, next);
+    const available = draftStorageAvailable(localStore);
+    if (!available) {
+      mainView.setDraft(record?.text ?? '', '本地存储不可用：草稿只在本次页面有效。');
+      return;
+    }
+    mainView.setDraft(
+      record?.text ?? '',
+      record === undefined ? '尚未保存草稿。' : `草稿已从本机恢复：${new Date(record.updatedAt).toLocaleTimeString()}`
+    );
+  }
+
+  /** 关闭当前草稿。 */
+  function closeDraft(): void {
+    flushDraft();
+    draftIdentity = undefined;
+    mainView.setDraft('', '');
+  }
+
+  /** 离线发送：立即失败，草稿保留，不进入待发队列。 */
+  function sendOfflineDraft(): void {
+    if (draftIdentity === undefined) return;
+    const result = offlineSendOutcome(mainView.getDraftText());
+    if (result.outcome === 'empty') {
+      mainView.setDraftMessage('输入为空，没有发送。', 'error');
+      return;
+    }
+    flushDraft();
+    telemetry.action('offline-send', 'rejected');
+    mainView.setDraftMessage(result.message, 'error');
+  }
+
+  /** 打开命令面板。 */
+  function openPalette(): void {
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    const recent = readRecentCommands(localStore, clientId);
+    mainView.openPalette({ commands: orderByRecent(paletteCommands(), recent), recent, trigger });
+  }
+
+  /** 命令面板里的命令。 */
+  function paletteCommands(): CommandDescriptor[] {
+    return buildShellCommands({
+      hasSelection: currentSelectionItem() !== undefined,
+      localAvailable: localRuntime?.available === true,
+      localReason: localRuntime?.reason,
+    });
+  }
+
+  /**
+   * 执行一条命令。
+   * @param command - 命令。
+   */
+  function runCommand(command: CommandDescriptor): void {
+    if (!command.enabled) return;
+    recordRecentCommand(localStore, clientId, command.id);
+    mainView.closePalette();
+    if (command.id === 'go-list') {
+      router.push({ kind: 'sessions' });
+      return;
+    }
+    if (command.id === 'new-session') {
+      router.push({ kind: 'new-session' });
+      return;
+    }
+    if (command.id === 'refresh') {
+      void refreshAll();
+      return;
+    }
+    if (command.id === 'diagnostics') {
+      router.push({ kind: 'diagnostics' });
+      return;
+    }
+    if (command.id === 'continue-local') {
+      if (selection === undefined) return;
+      router.push(continueRoute(selection.sessionId, selection.deviceId));
+      return;
+    }
+    if (command.id.startsWith('settings:')) {
+      const section = command.id.slice('settings:'.length);
+      if (isSettingsSection(section)) router.push({ kind: 'settings', section });
+    }
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (isPaletteShortcut(event)) {
+      event.preventDefault();
+      openPalette();
+      return;
+    }
+    if (event.key === 'Escape' && mainView.paletteOpen) {
+      event.preventDefault();
+      mainView.closePalette();
+    }
   });
-  return dialog;
+
+  window.addEventListener('focus', () => void refreshList(true));
+  window.setInterval(() => void refreshList(true), REFRESH_INTERVAL_MS);
+  // 页面隐藏或卸载前把草稿立刻落盘：等待中的防抖写入不会因此丢失输入。
+  window.addEventListener('pagehide', () => flushDraft());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushDraft();
+  });
+
+  /** 启动：先取数据再应用路由，深链接因此能立即还原。 */
+  async function boot(): Promise<void> {
+    loading = true;
+    renderList();
+    await refreshDevices();
+    await refreshLocalRuntime();
+    await refreshList();
+    router.start();
+  }
+
+  void boot().catch((error: unknown) => {
+    root.replaceChildren();
+    const failure = document.createElement('p');
+    failure.className = 'shell-notice shell-notice-error';
+    failure.textContent = `外壳启动失败：${error instanceof Error ? error.message : String(error)}`;
+    root.append(failure);
+  });
 }
 
 applyStyles();
 
 const root = document.getElementById(ROOT_ID);
 if (root === null) throw new Error(`外壳页面缺少 #${ROOT_ID} 容器`);
-createShell(root).refresh().catch((error: unknown) => {
-  root.textContent = `外壳加载失败：${error instanceof Error ? error.message : String(error)}`;
-});
+startShell(root);

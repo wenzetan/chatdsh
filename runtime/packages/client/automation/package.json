@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/client-automation",
   "version": "0.1.0",
-  "description": "ChatDSH 客户端插件：设置页里的自动化列表与启停",
+  "description": "ChatDSH 客户端插件：自动化的列表、条件表单、CRUD、投递记录与原会话定时任务",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

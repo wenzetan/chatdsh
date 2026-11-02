@@ -1,0 +1,58 @@
+{
+  "name": "@chatdsh/client-pwa",
+  "version": "0.1.0",
+  "description": "ChatDSH 客户端插件：可安装壳、静态资源缓存、受控更新、浏览器权限、安全凭据、离线草稿与移动布局",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./manifest": {
+      "types": "./lib/client/manifest.d.ts",
+      "default": "./lib/client/manifest.js"
+    },
+    "./service-worker": {
+      "types": "./lib/client/service-worker.d.ts",
+      "default": "./lib/client/service-worker.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "assets/**/*"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [],
+      "immediately": true
+    }
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.error",
+        "chatdsh.client.ui.action"
+      ],
+      "spans": [
+        "chatdsh.client.boot",
+        "chatdsh.client.module.load"
+      ],
+      "metrics": [
+        "chatdsh_client_errors_total"
+      ]
+    }
+  }
+}

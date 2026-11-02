@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/client-memory",
   "version": "0.1.0",
-  "description": "ChatDSH 客户端插件：设置页里的记忆状态",
+  "description": "ChatDSH 客户端插件：设置页里的记忆检索、记忆组与写入视图",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -31,6 +31,15 @@
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-settings"
       ]
+    }
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action"
+      ],
+      "spans": [],
+      "metrics": []
     }
   },
   "peerDependencies": {

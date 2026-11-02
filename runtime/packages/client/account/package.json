@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/client-account",
   "version": "0.1.0",
-  "description": "ChatDSH 客户端插件：设置页里的账号与设备",
+  "description": "ChatDSH 客户端插件：设置页里的设备列表、配对与撤销",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -30,6 +30,20 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action",
+        "chatdsh.client.error"
+      ],
+      "spans": [
+        "chatdsh.client.remote.call"
+      ],
+      "metrics": [
+        "chatdsh_client_errors_total"
       ]
     }
   },

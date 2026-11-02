@@ -1,34 +1,25 @@
-import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
- * 制品面板：把宿主平面记录的制品列在设置页里。
+ * 制品面板的浏览器入口：把制品的列表、版本、读取与删除接到设置页席位。
  *
- * 数据经 Remote 调用取得（服务名 `chatdshArtifacts`），面板只读；写入走会话里的
- * `artifact_write` 工具。
+ * 数据经 Remote 调用取得（服务名 `chatdshArtifacts`），面板只读展示内容；写入走会话里的
+ * `artifact_write` 工具。删除只在这里发起，并且必须先看到删除范围再确认。
  * @module @chatdsh/client-artifacts
  */
 
-import { useEffect, useState } from 'react';
-import { Badge, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
+import { createArtifactsGateway, createRemoteTransport, type RemoteNamespace } from './gateway.ts';
+import { ArtifactsPanel } from './panel.tsx';
+import { createPanelTelemetry } from './telemetry.ts';
+import type { ArtifactsGateway } from './types.ts';
 
-/** 一条制品记录。 */
-interface ArtifactRecord {
-  readonly id: string;
-  readonly title: string;
-  readonly kind: string;
-  readonly mimeType: string;
-  readonly size: number;
-  readonly version: number;
-  readonly updatedAt: number;
-}
+export { ArtifactsPanel } from './panel.tsx';
+export { ArtifactPreview, ImageViewer, PreviewNotice, SandboxHtmlPreview, SvgPreview, TextPreview } from './viewers.tsx';
+export type { ArtifactRecord, ArtifactVersionList, ArtifactsGateway } from './types.ts';
 
 /** 浏览器侧上下文的可用面。 */
 interface ClientFace {
-  readonly remote?: {
-    readonly chatdshArtifacts?: {
-      list?: () => Promise<ArtifactRecord[]>;
-    };
-  };
+  readonly remote?: Readonly<Record<string, RemoteNamespace | undefined>>;
 }
 
 /** 席位名。 */
@@ -41,55 +32,19 @@ export const SECTION_ID = 'chatdsh-artifacts';
 export const inject = ['slots', 'remote'];
 
 let clientFace: ClientFace | undefined;
+let gateway: ArtifactsGateway | undefined;
 
-/** 设置页区段：制品列表，覆盖加载、空、失败三类状态。 */
+/**
+ * 设置页区段：制品面板。
+ *
+ * 装配之前打开时停在加载状态；`apply` 完成后面板拿到数据入口。
+ */
 export function ArtifactsSection() {
-  const [artifacts, setArtifacts] = useState<ArtifactRecord[] | undefined>(undefined);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = clientFace?.remote?.chatdshArtifacts?.list;
-    if (load === undefined) {
-      setFailed(true);
-      return;
-    }
-    load.call(clientFace?.remote?.chatdshArtifacts).then(
-      (result) => {
-        if (!cancelled) setArtifacts(unwrapRemoteResult(result));
-      },
-      () => {
-        if (!cancelled) setFailed(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (failed) return <Panel title="制品"><StatusLine tone="danger">制品列表暂不可用。</StatusLine></Panel>;
-  if (artifacts === undefined) return <Panel title="制品"><Skeleton rows={3} /></Panel>;
-  if (artifacts.length === 0) {
-    return <Panel title="制品"><EmptyState>还没有制品。让会话里的工具写一个。</EmptyState></Panel>;
-  }
-  return (
-    <Panel title="制品" count={`${artifacts.length}`}>
-      <List>
-        {artifacts.map((record) => (
-          <Row
-            key={record.id}
-            title={record.title}
-            badge={<Badge tone="neutral">{record.kind}</Badge>}
-            meta={`${record.mimeType} · 第 ${record.version} 版 · ${record.size} 字节`}
-          />
-        ))}
-      </List>
-    </Panel>
-  );
+  return <ArtifactsPanel gateway={gateway} />;
 }
 
 /**
- * 注册设置页区段。
+ * 注册设置页区段并挂载 Remote 方法。
  * @param ctx - 客户端根上下文。
  */
 export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<void> {
@@ -99,10 +54,10 @@ export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<v
     inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
   };
   await remoteHost.remote.$mount(buildRemoteContribution('chatdshArtifacts', {
-    'chatdshArtifacts/put': { parameters: [{ name: 'input', kind: 'json' }] },
-    'chatdshArtifacts/read': { parameters: [{ name: 'id', kind: 'string' }, { name: 'version', kind: 'number' }] },
     'chatdshArtifacts/list': { parameters: [{ name: 'sessionId', kind: 'string' }] },
-    'chatdshArtifacts/versions': { parameters: [{ name: 'id', kind: 'string' }] },
+    'chatdshArtifacts/read': { parameters: [{ name: 'id', kind: 'string' }, { name: 'version', kind: 'number' }] },
+    'chatdshArtifacts/versionList': { parameters: [{ name: 'id', kind: 'string' }] },
+    'chatdshArtifacts/deleteScope': { parameters: [{ name: 'id', kind: 'string' }] },
     'chatdshArtifacts/delete': { parameters: [{ name: 'id', kind: 'string' }] },
   }, z));
   await new Promise<void>((resolve) => {
@@ -110,6 +65,11 @@ export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<v
       clientFace = scope;
       resolve();
     });
+  });
+
+  gateway = createArtifactsGateway({
+    transport: createRemoteTransport((name) => clientFace?.remote?.[name]),
+    telemetry: createPanelTelemetry(),
   });
 
   ctx.slots.inject(SECTION_SLOT, () => ctx.slots.register({

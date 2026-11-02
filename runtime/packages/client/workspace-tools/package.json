@@ -1,0 +1,63 @@
+{
+  "name": "@chatdsh/client-workspace-tools",
+  "version": "0.1.0",
+  "description": "ChatDSH 工作区工具客户端：文件浏览与预览、终端展示、附件上传与录音",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client/index.js"
+    },
+    "./panel": {
+      "types": "./lib/panel.d.ts",
+      "default": "./lib/panel.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action",
+        "chatdsh.client.error"
+      ],
+      "spans": [
+        "chatdsh.client.remote.call"
+      ],
+      "metrics": [
+        "chatdsh_client_errors_total"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/core-remote-client": "workspace:*",
+    "@chatdsh/core-ui-kit": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19"
+  }
+}

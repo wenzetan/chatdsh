@@ -35,15 +35,32 @@ function composeStyles(): string {
  * @param body - 文档 body 元素。
  */
 function syncScheme(body: HTMLElement): void {
-  const dark = body.hasAttribute(DARK_ATTRIBUTE);
-  body.setAttribute(SCHEME_ATTRIBUTE, dark ? 'dark' : 'light');
+  const preference = body.getAttribute('data-chatdsh-color-preference')
+    ?? (body.getAttribute(SCHEME_ATTRIBUTE) === 'contrast' ? 'contrast' : undefined);
+  const scheme = preference === 'contrast' || preference === 'light' || preference === 'dark'
+    ? preference
+    : preference === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : (body.hasAttribute(DARK_ATTRIBUTE) ? 'dark' : 'light');
+  if (body.getAttribute(SCHEME_ATTRIBUTE) !== scheme) body.setAttribute(SCHEME_ATTRIBUTE, scheme);
 }
 
 /**
  * 挂载主题样式并持续同步配色属性。
  * @returns 卸载函数：移除样式节点与观察器。
  */
+let mountCount = 0;
+let sharedCleanup: (() => void) | undefined;
+
 export function installThemeStyles(): () => void {
+  mountCount += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    releaseStyles();
+  };
+  if (sharedCleanup !== undefined) return release;
   const head = document.head;
   let node = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
   if (node === null) {
@@ -53,11 +70,26 @@ export function installThemeStyles(): () => void {
     head.appendChild(node);
   }
   const body = document.body;
+  const previousScheme = body.getAttribute(SCHEME_ATTRIBUTE);
   syncScheme(body);
   const observer = new MutationObserver(() => syncScheme(body));
-  observer.observe(body, { attributes: true, attributeFilter: [DARK_ATTRIBUTE] });
-  return () => {
+  observer.observe(body, { attributes: true, attributeFilter: [DARK_ATTRIBUTE, 'data-chatdsh-color-preference'] });
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  const sync = () => syncScheme(body);
+  media.addEventListener('change', sync);
+  sharedCleanup = () => {
     observer.disconnect();
+    media.removeEventListener('change', sync);
     node?.remove();
+    if (previousScheme === null) body.removeAttribute(SCHEME_ATTRIBUTE);
+    else body.setAttribute(SCHEME_ATTRIBUTE, previousScheme);
+    sharedCleanup = undefined;
   };
+  return release;
+}
+
+function releaseStyles(): void {
+  if (mountCount === 0) return;
+  mountCount -= 1;
+  if (mountCount === 0) sharedCleanup?.();
 }

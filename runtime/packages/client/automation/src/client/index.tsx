@@ -1,29 +1,28 @@
 /**
- * 自动化面板：列出自动化并给出启停入口。
+ * 自动化面板：列表、新建与编辑、投递记录、原会话定时任务。
  *
- * 数据经控制平面的 `/chatdsh/gateway/automations` 取得。启停失败只显示提示，不改本地
- * 列表；用户操作补一条 `chatdsh.client.ui.action` 事件到浏览器侧遥测队列。
+ * 全部数据来自控制平面的真实接口与执行设备上的真实运行时：自动化记录、投递记录、执行节点、
+ * 按设备分组的会话，以及经 `/d/<deviceId>/` 前缀送到原会话运行时的定时任务。控制平面没有
+ * 提供的操作按失败显示原因，不渲染成空列表，也不在页面里假装成功。
+ *
+ * 面板落在设置页席位 `settings.section` 上，与其它业务面板共用同一套槽位约定。
  * @module @chatdsh/client-automation
  */
 
-import { useEffect, useState } from 'react';
-import { formatAutomationSummary } from '../index.ts';
-import { Badge, Button, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
+import { StatusLine, Tabs } from '@chatdsh/core-ui-kit';
+import { useCallback, useEffect, useState } from 'react';
+import { DeliveryPanel } from './deliveries.tsx';
+import { AutomationEditor } from './editor.tsx';
+import { createAutomationGateway } from './gateway.ts';
+import { AutomationListPanel } from './list.tsx';
+import { SchedulePanel } from './schedules.tsx';
+import { browserTelemetry } from './telemetry.ts';
+import type { Loadable } from './loadable.ts';
+import type { AutomationGateway, AutomationRecord, DeviceSummary, SessionsSnapshot } from './types.ts';
 
-/** 一条自动化记录。 */
-interface AutomationRecord {
-  readonly id: string;
-  readonly name: string;
-  readonly enabled: boolean;
-}
+export { AUTOMATIONS_PATH, CSRF_HEADER, DELIVERIES_PATH, DEVICES_PATH, SESSIONS_PATH } from './gateway.ts';
 
-/** 控制平面的自动化接口。 */
-export const AUTOMATIONS_PATH = '/chatdsh/gateway/automations';
-
-/** 写操作要求的请求头，与分享、遥测端点一致，跨站表单无法携带。 */
-export const CSRF_HEADER = 'x-chatdsh-csrf';
-
-/** 席位名。 */
+/** 席位名，与宿主侧入口共用同一个约定。 */
 export const SECTION_SLOT = 'settings.section';
 
 /** 区段标识。 */
@@ -32,57 +31,147 @@ export const SECTION_ID = 'chatdsh-automation';
 /** 浏览器侧依赖：只等席位服务。 */
 export const inject = ['slots'];
 
-/** 记录一次界面动作，失败不打断界面。 */
-function noteAction(outcome: 'ok' | 'failed'): void {
-  // 浏览器侧不持有 OpenObserve 凭据，直接编成 OTLP 日志载荷交给同源中继；
-  // 中继只转发不解析，形状必须与 client-telemetry 生成的一致。
-  void fetch('/chatdsh/telemetry/browser', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-chatdsh-signal': 'logs', [CSRF_HEADER]: '1' },
-    body: JSON.stringify({
-      resourceLogs: [{
-        resource: {
-          attributes: [
-            { key: 'service.name', value: { stringValue: 'chatdsh-browser' } },
-            { key: 'chatdsh.surface', value: { stringValue: 'browser' } },
-          ],
-        },
-        scopeLogs: [{
-          scope: { name: '@chatdsh/client-automation' },
-          logRecords: [{
-            timeUnixNano: String(Date.now() * 1_000_000),
-            severityNumber: 9,
-            severityText: 'INFO',
-            body: { stringValue: 'chatdsh.client.ui.action' },
-            attributes: [
-              { key: 'action', value: { stringValue: 'automation-toggle' } },
-              { key: 'outcome', value: { stringValue: outcome } },
-            ],
-          }],
-        }],
-      }],
-    }),
-    keepalive: true,
-  }).catch(() => undefined);
+/** 分区。 */
+const TABS = [
+  { id: 'list', label: '自动化列表' },
+  { id: 'editor', label: '新建与编辑' },
+  { id: 'deliveries', label: '投递记录' },
+  { id: 'schedules', label: '原会话定时任务' },
+] as const;
+
+/** 面板属性；测试与嵌入场景可以直接传数据入口。 */
+export interface AutomationSectionProps {
+  /** 数据入口。 */
+  readonly gateway?: AutomationGateway;
+  /** 打开时选中的分区。 */
+  readonly initialTab?: string;
 }
 
-/** 读取自动化列表。 */
-async function loadAutomations(): Promise<AutomationRecord[]> {
-  const response = await fetch(AUTOMATIONS_PATH);
-  if (!response.ok) throw new Error(`自动化列表返回 ${response.status}`);
-  const payload = (await response.json()) as { automations?: AutomationRecord[] };
-  return payload.automations ?? [];
+let sharedGateway: AutomationGateway | undefined;
+
+/**
+ * 取数据入口。
+ * @param provided - 调用方传入的入口。
+ * @returns 数据入口。
+ */
+function gatewayOf(provided?: AutomationGateway): AutomationGateway {
+  if (provided !== undefined) return provided;
+  sharedGateway ??= createAutomationGateway({ telemetry: browserTelemetry });
+  return sharedGateway;
 }
 
-/** 切换一条自动化的启用状态。 */
-async function toggleAutomation(id: string, enabled: boolean): Promise<AutomationRecord> {
-  const response = await fetch(AUTOMATIONS_PATH, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', [CSRF_HEADER]: '1' },
-    body: JSON.stringify({ id, enabled }),
-  });
-  if (!response.ok) throw new Error(`自动化切换返回 ${response.status}`);
-  return response.json() as Promise<AutomationRecord>;
+/**
+ * 设置页区段：自动化的完整界面。
+ * @param props - 可选的数据入口与初始分区。
+ * @returns 区段内容。
+ */
+export function AutomationSection({ gateway, initialTab = 'list' }: AutomationSectionProps = {}) {
+  const face = gatewayOf(gateway);
+  const [tab, setTab] = useState<string>(initialTab);
+  const [automations, setAutomations] = useState<Loadable<readonly AutomationRecord[]>>({ status: 'loading' });
+  const [devices, setDevices] = useState<Loadable<readonly DeviceSummary[]>>({ status: 'loading' });
+  const [sessions, setSessions] = useState<Loadable<SessionsSnapshot>>({ status: 'loading' });
+  const [editing, setEditing] = useState<AutomationRecord | undefined>(undefined);
+  const [editorKey, setEditorKey] = useState(0);
+  const [notice, setNotice] = useState<string | undefined>(undefined);
+
+  const loadAutomations = useCallback((): void => {
+    setAutomations({ status: 'loading' });
+    face.automations().then(
+      (value) => {
+        setAutomations({ status: 'ready', value });
+        face.noteAction('automation-reload', 'ok');
+      },
+      (error: unknown) => {
+        setAutomations({ status: 'failed', error });
+        face.noteAction('automation-reload', 'failed');
+      },
+    );
+  }, [face]);
+
+  const loadDevices = useCallback((): void => {
+    setDevices({ status: 'loading' });
+    face.devices().then(
+      (value) => setDevices({ status: 'ready', value }),
+      (error: unknown) => setDevices({ status: 'failed', error }),
+    );
+  }, [face]);
+
+  const loadSessions = useCallback((): void => {
+    setSessions({ status: 'loading' });
+    face.sessions().then(
+      (value) => setSessions({ status: 'ready', value }),
+      (error: unknown) => setSessions({ status: 'failed', error }),
+    );
+  }, [face]);
+
+  useEffect(() => {
+    loadAutomations();
+    loadDevices();
+    loadSessions();
+  }, [loadAutomations, loadDevices, loadSessions]);
+
+  const openEditor = (record?: AutomationRecord): void => {
+    setEditing(record);
+    setEditorKey((current) => current + 1);
+    setNotice(undefined);
+    setTab('editor');
+  };
+
+  const listRecords = automations.status === 'ready' ? automations.value : [];
+
+  return (
+    <div data-automation-section>
+      <Tabs
+        label="自动化面板分区"
+        selectedId={tab}
+        onSelect={setTab}
+        items={TABS.map((item) => ({
+          id: item.id,
+          label: item.label,
+          content: item.id === 'list' ? (
+            <AutomationListPanel
+              gateway={face}
+              automations={automations}
+              onReload={loadAutomations}
+              onCreate={() => openEditor(undefined)}
+              onEdit={(record) => openEditor(record)}
+              onChanged={(record) => {
+                setAutomations((current) => current.status === 'ready'
+                  ? { status: 'ready', value: current.value.map((entry) => (entry.id === record.id ? record : entry)) }
+                  : current);
+              }}
+            />
+          ) : item.id === 'editor' ? (
+            <AutomationEditor
+              key={editorKey}
+              gateway={face}
+              editing={editing}
+              devices={devices}
+              onDevicesReload={loadDevices}
+              onCancel={() => setTab('list')}
+              onSaved={(record, created) => {
+                setNotice(created ? `已创建自动化「${record.name}」。` : `已保存自动化「${record.name}」。`);
+                setTab('list');
+                loadAutomations();
+              }}
+            />
+          ) : item.id === 'deliveries' ? (
+            <DeliveryPanel gateway={face} automations={listRecords} active={tab === 'deliveries'} />
+          ) : (
+            <SchedulePanel
+              gateway={face}
+              devices={devices}
+              sessions={sessions}
+              onDevicesReload={loadDevices}
+              onSessionsReload={loadSessions}
+            />
+          ),
+        }))}
+      />
+      {notice === undefined ? null : <StatusLine>{notice}</StatusLine>}
+    </div>
+  );
 }
 
 /**
@@ -97,64 +186,6 @@ export function apply(ctx: { slots: ClientSlots }): void {
     label: () => '自动化',
     locale: 'chatdsh.automation',
   }, AutomationSection));
-}
-
-/** 设置页区段。 */
-export function AutomationSection() {
-  const [records, setRecords] = useState<AutomationRecord[] | undefined>(undefined);
-  const [failed, setFailed] = useState(false);
-  const [busy, setBusy] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadAutomations().then(
-      (items) => {
-        if (!cancelled) setRecords(items);
-      },
-      () => {
-        if (!cancelled) setFailed(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  function toggle(record: AutomationRecord): void {
-    setBusy(record.id);
-    toggleAutomation(record.id, !record.enabled).then(
-      (result) => {
-        noteAction('ok');
-        setBusy(undefined);
-        setRecords((current) => (current ?? []).map((item) => (item.id === result.id ? { ...item, enabled: result.enabled } : item)));
-      },
-      () => {
-        noteAction('failed');
-        setBusy(undefined);
-        setFailed(true);
-      },
-    );
-  }
-
-  if (failed) return <Panel title="自动化"><StatusLine tone="danger">自动化列表暂不可用。</StatusLine></Panel>;
-  if (records === undefined) return <Panel title="自动化"><Skeleton rows={3} /></Panel>;
-  if (records.length === 0) return <Panel title="自动化"><EmptyState>{formatAutomationSummary(records)}</EmptyState></Panel>;
-
-  return (
-    <Panel title="自动化" subtitle={formatAutomationSummary(records)} count={`${records.length}`}>
-      <List>
-        {records.map((record) => (
-          <Row
-            key={record.id}
-            dot={record.enabled ? 'ok' : 'idle'}
-            title={record.name}
-            badge={<Badge tone={record.enabled ? 'ok' : 'neutral'}>{record.enabled ? '启用' : '已停用'}</Badge>}
-            actions={<Button disabled={busy === record.id} onClick={() => toggle(record)}>{record.enabled ? '停用' : '启用'}</Button>}
-          />
-        ))}
-      </List>
-    </Panel>
-  );
 }
 
 /** 席位服务的最小形状。 */

@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/client-approval",
   "version": "0.1.0",
-  "description": "ChatDSH 客户端插件：设置页里的审批状态",
+  "description": "ChatDSH 客户端插件：审批、提问与计划接管界面",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -40,5 +40,12 @@
     "@chatdsh/core-remote-client": "workspace:*",
     "zod": "4.4.3",
     "@chatdsh/core-ui-kit": "workspace:*"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action"
+      ]
+    }
   }
 }

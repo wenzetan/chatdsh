@@ -1,7 +1,7 @@
 {
   "name": "@chatdsh/client-connectors",
   "version": "0.1.0",
-  "description": "ChatDSH 客户端插件：设置页里的外部连接器",
+  "description": "ChatDSH 客户端插件：设置页里的连接器与 MCP 面板",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -46,10 +46,15 @@
     },
     "telemetry": {
       "events": [
-        "chatdsh.client.ui.action"
+        "chatdsh.client.ui.action",
+        "chatdsh.client.error"
       ],
-      "spans": [],
-      "metrics": []
+      "spans": [
+        "chatdsh.client.remote.call"
+      ],
+      "metrics": [
+        "chatdsh_client_errors_total"
+      ]
     }
   },
   "dependencies": {

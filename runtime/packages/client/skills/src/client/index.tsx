@@ -1,67 +1,60 @@
-import { buildRemoteContribution, unwrapRemoteResult } from '@chatdsh/core-remote-client';
+import { buildRemoteContribution } from '@chatdsh/core-remote-client';
 import { z } from 'zod';
 /**
- * 技能面板：把技能目录与启用状态列在设置页里。
+ * 技能面板的浏览器侧入口。
  *
- * 数据经 Remote 调用取得（服务名 `chatdshSkills`）。停用动作走同一个服务的 `toggle`，
- * 失败时就地给出提示，不改本地列表。
+ * 数据经 Remote 命名空间 `chatdshSkills` 取得：目录、数量统计、检索与启停都来自该服务。
+ * 助手名单 `chatdshAssistants` 由助手插件提供，按名读取，缺失时引用一栏显示能力不可用。
  * @module @chatdsh/client-skills
  */
 
-import { useEffect, useState } from 'react';
-import { Badge, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
+import { Panel, Skeleton } from '@chatdsh/core-ui-kit';
 
-/** 一条技能。 */
-interface SkillRecord {
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  readonly source: 'builtin' | 'workspace' | 'user';
-}
+import { createRemoteTransport, createSkillsGateway, type RemoteNamespace } from './gateway.ts';
+import { SkillsPanel } from './panel.tsx';
+import { createPanelTelemetry } from './telemetry.ts';
+import type { SkillsGateway } from './types.ts';
 
-/** 数量统计。 */
-interface SkillCatalogState {
-  readonly total: number;
-  readonly enabled: number;
-}
-
-/** 浏览器侧上下文的可用面。 */
-interface ClientFace {
-  readonly remote?: {
-    readonly chatdshSkills?: {
-      list?: () => Promise<SkillRecord[]>;
-      catalog?: () => Promise<SkillCatalogState>;
-      toggle?: (id: string, enabled: boolean) => Promise<{ id: string; enabled: boolean }>;
-    };
-  };
-}
-
-/** 席位名。 */
+/** 设置页区段席位名。 */
 export const SECTION_SLOT = 'settings.section';
 
 /** 区段标识。 */
 export const SECTION_ID = 'chatdsh-skills';
 
-/** 浏览器侧依赖：只等席位服务。 */
+/** 浏览器侧依赖：只等席位服务与 Remote 服务。 */
 export const inject = ['slots', 'remote'];
 
-/** 来源的中文名。 */
-const SOURCE_LABEL: Readonly<Record<SkillRecord['source'], string>> = {
-  builtin: '内置',
-  workspace: '工作区',
-  user: '用户',
-};
+/** 浏览器侧上下文的可用面。 */
+interface ClientFace {
+  readonly remote: { $mount(contribution: unknown): Promise<unknown> } & Record<string, unknown>;
+  inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
+}
 
-let clientFace: ClientFace | undefined;
+/** 席位服务的最小形状。 */
+interface ClientSlots {
+  inject(key: string, callback: () => () => void): () => void;
+  register(spec: { name: string; id?: string; order?: number; label?: () => string; locale?: string }, Component: () => unknown): () => void;
+}
+
+/** 由 `apply` 装好的数据入口；席位组件在挂载时取用。 */
+let panelGateway: SkillsGateway | undefined;
+
+/** 按名读取一个 Remote 命名空间；组合里没有它时返回 `undefined`。 */
+function namespaceOf(remote: Record<string, unknown>, name: string): RemoteNamespace | undefined {
+  const value = remote[name];
+  if (typeof value !== 'object' || value === null) return undefined;
+  return value as RemoteNamespace;
+}
 
 /**
- * 面板上的一行统计。
- * @param state - 数量统计。
- * @returns 面向用户的一句话。
+ * 设置页区段：装载完成前显示等高的骨架，装载后是完整技能面板。
+ * @param props - 可选的测试与嵌入用数据入口。
+ * @returns 区段内容。
  */
-export function formatSkillSummary(state: SkillCatalogState): string {
-  if (state.total === 0) return '还没有技能';
-  return `${state.total} 个技能，已启用 ${state.enabled} 个`;
+export function SkillsSection({ gateway }: { readonly gateway?: SkillsGateway } = {}) {
+  const active = gateway ?? panelGateway;
+  if (active === undefined) return <Panel title="技能"><Skeleton rows={3} /></Panel>;
+  return <SkillsPanel gateway={active} />;
 }
 
 /**
@@ -69,19 +62,20 @@ export function formatSkillSummary(state: SkillCatalogState): string {
  * @param ctx - 客户端根上下文。
  */
 export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<void> {
-  clientFace = ctx;
-  const remoteHost = ctx as unknown as {
-    remote: { $mount(contribution: unknown): Promise<unknown> };
-    inject(keys: string[], callback: (scope: ClientFace) => void): unknown;
-  };
-  await remoteHost.remote.$mount(buildRemoteContribution('chatdshSkills', {
+  await ctx.remote.$mount(buildRemoteContribution('chatdshSkills', {
     'chatdshSkills/list': { parameters: [] },
     'chatdshSkills/catalog': { parameters: [] },
+    'chatdshSkills/search': { parameters: [{ name: 'request', kind: 'json' }] },
     'chatdshSkills/toggle': { parameters: [{ name: 'id', kind: 'string' }, { name: 'enabled', kind: 'boolean' }] },
   }, z));
+
+  panelGateway = createSkillsGateway({
+    transport: createRemoteTransport((name) => namespaceOf(ctx.remote, name)),
+    telemetry: createPanelTelemetry(),
+  });
+
   await new Promise<void>((resolve) => {
-    remoteHost.inject(['remote.chatdshSkills'], (scope) => {
-      clientFace = scope;
+    ctx.inject(['remote.chatdshSkills'], () => {
       resolve();
     });
   });
@@ -93,53 +87,4 @@ export async function apply(ctx: ClientFace & { slots: ClientSlots }): Promise<v
     label: () => '技能',
     locale: 'chatdsh.skills',
   }, SkillsSection));
-}
-
-/** 设置页区段：技能列表，覆盖加载、空、失败三类状态。 */
-export function SkillsSection() {
-  const [skills, setSkills] = useState<SkillRecord[] | undefined>(undefined);
-  const [state, setState] = useState<SkillCatalogState | undefined>(undefined);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const list = clientFace?.remote?.chatdshSkills?.list;
-    const catalog = clientFace?.remote?.chatdshSkills?.catalog;
-    if (list === undefined || catalog === undefined) {
-      setError(true);
-      return;
-    }
-    Promise.all([list.call(clientFace?.remote?.chatdshSkills), catalog.call(clientFace?.remote?.chatdshSkills)]).then(
-      ([recordsResult, sizeResult]) => {
-        if (cancelled) return;
-        setSkills(unwrapRemoteResult(recordsResult));
-        setState(unwrapRemoteResult(sizeResult));
-      },
-      () => {
-        if (!cancelled) setError(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (error) return <Panel title="技能"><StatusLine tone="danger">技能目录暂不可用。</StatusLine></Panel>;
-  if (skills === undefined || state === undefined) return <Panel title="技能"><Skeleton rows={3} /></Panel>;
-  if (skills.length === 0) return <Panel title="技能"><EmptyState>{formatSkillSummary(state)}</EmptyState></Panel>;
-  return (
-    <Panel title="技能" subtitle={formatSkillSummary(state)} count={`${skills.length}`}>
-      <List>
-        {skills.map((record) => (
-          <Row key={record.id} title={record.name} badge={<Badge tone="neutral">{SOURCE_LABEL[record.source]}</Badge>} meta={record.description} />
-        ))}
-      </List>
-    </Panel>
-  );
-}
-
-/** 席位服务的最小形状。 */
-interface ClientSlots {
-  inject(key: string, callback: () => () => void): () => void;
-  register(spec: { name: string; id?: string; order?: number; label?: () => string; locale?: string }, Component: () => unknown): () => void;
 }

@@ -132,6 +132,62 @@ body[data-color-scheme="light"] {
   color-scheme: light;
 }
 
+/* 完整客户端使用的可访问配色覆盖；基础样张取值保留在前面的令牌块。 */
+body {
+  --chatdsh-line-2: #747b89;
+  --chatdsh-focus: #9bb7ff;
+  --cdh-tap: 44px;
+}
+body[data-color-scheme="light"] {
+  --chatdsh-line-2: #737c8c;
+  --chatdsh-ok: #147345;
+  --chatdsh-warn: #825600;
+  --chatdsh-danger: #b52632;
+  --chatdsh-faint: #595f6b;
+  --chatdsh-focus: #3549c9;
+}
+body[data-color-scheme="contrast"] {
+  color-scheme: dark;
+  --chatdsh-bg: #000000;
+  --chatdsh-panel: #000000;
+  --chatdsh-panel-2: #101010;
+  --chatdsh-code-bg: #080808;
+  --chatdsh-line: #8a8a8a;
+  --chatdsh-line-2: #b8b8b8;
+  --chatdsh-ink: #ffffff;
+  --chatdsh-ink-2: #ffffff;
+  --chatdsh-muted: #e0e0e0;
+  --chatdsh-faint: #d8d8d8;
+  --chatdsh-brand: #9bb7ff;
+  --chatdsh-brand-text: #b8ccff;
+  --chatdsh-focus: #9bb7ff;
+  --chatdsh-ok: #8aefbb;
+  --chatdsh-warn: #ffe082;
+  --chatdsh-danger: #ffb1b1;
+  --chatdsh-bubble: #233b8a;
+  --chatdsh-bubble-ink: #ffffff;
+}
+@media (forced-colors: active) {
+  body {
+    --chatdsh-bg: Canvas;
+    --chatdsh-panel: Canvas;
+    --chatdsh-panel-2: Canvas;
+    --chatdsh-code-bg: Canvas;
+    --chatdsh-ink: CanvasText;
+    --chatdsh-ink-2: CanvasText;
+    --chatdsh-muted: CanvasText;
+    --chatdsh-faint: CanvasText;
+    --chatdsh-line: CanvasText;
+    --chatdsh-line-2: ButtonText;
+    --chatdsh-brand: Highlight;
+    --chatdsh-brand-text: LinkText;
+    --chatdsh-focus: Highlight;
+    --chatdsh-danger: CanvasText;
+    --chatdsh-ok: CanvasText;
+    --chatdsh-warn: CanvasText;
+  }
+}
+
 /* ---------- 基础重置 ---------- */
 * {
   box-sizing: border-box;
@@ -159,7 +215,7 @@ body {
 }
 
 *:focus-visible {
-  outline: 2px solid var(--chatdsh-brand);
+  outline: 2px solid var(--chatdsh-focus);
   outline-offset: 1px;
   border-radius: var(--cdh-r1);
 }

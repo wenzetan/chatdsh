@@ -30,5 +30,20 @@
       "inject": [],
       "immediately": true
     }
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.error"
+      ],
+      "spans": [],
+      "metrics": [
+        "chatdsh_client_errors_total"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/core-contracts": "workspace:*",
+    "@chatdsh/core-diagnostics": "workspace:*"
   }
 }

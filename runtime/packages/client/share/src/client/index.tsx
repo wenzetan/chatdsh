@@ -1,31 +1,21 @@
 /**
- * 分享面板：管理当前账号名下的快照链接。
+ * 分享面板：创建分享、管理分享记录与导入会话副本。
  *
- * 分享记录属于控制平面，面板按同源相对路径访问它的接口：经控制平面访问页面时可用，
- * 直连运行时的那条路径上没有这些记录，面板会说明当前形态不支持。
+ * 全部数据来自控制平面的真实接口：会话聚合、副本读取、分享预览、分享记录、建立与撤销、
+ * 公开页探测与导入。面板在控制平面入口不可达时显示明确失败，不渲染成空列表。分享区段落
+ * 在设置页席位 `settings.section` 上，与其它业务面板共用同一套槽位约定。
  * @module @chatdsh/client-share
  */
 
-import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, EmptyState, List, Panel, Row, Skeleton, StatusLine } from '@chatdsh/core-ui-kit';
-
-/** 一条分享记录。 */
-interface ShareRecord {
-  readonly token: string;
-  readonly sessionId: string;
-  readonly upToSeq: number;
-  readonly createdAt: number;
-  readonly expiresAt?: number;
-  readonly revokedAt?: number;
-  readonly visits: number;
-}
-
-/** 控制平面的接口路径。 */
-export const SHARES_PATH = '/chatdsh/gateway/shares';
-export const SHARE_PATH = '/chatdsh/gateway/share';
-
-/** 写操作要求的请求头，与遥测端点一致，跨站表单无法携带。 */
-export const CSRF_HEADER = 'x-chatdsh-csrf';
+import { Tabs } from '@chatdsh/core-ui-kit';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { CreateSharePanel } from './create.tsx';
+import { createShareGateway } from './gateway.ts';
+import { ImportPanel } from './imports.tsx';
+import type { Loadable } from './loadable.ts';
+import { ShareRecordsPanel } from './records.tsx';
+import { browserTelemetry } from './telemetry.ts';
+import type { SessionsSnapshot, ShareGateway, ShareList } from './types.ts';
 
 /** 席位名。 */
 export const SECTION_SLOT = 'settings.section';
@@ -36,83 +26,101 @@ export const SECTION_ID = 'chatdsh-share';
 /** 浏览器侧依赖：只等席位服务，模块加载顺序由模块图自己保证。 */
 export const inject = ['slots'];
 
-/** 读取分享记录。 */
-async function loadShares(): Promise<ShareRecord[]> {
-  const response = await fetch(SHARES_PATH, { headers: { 'x-chatdsh-share': 'list' } });
-  if (!response.ok) throw new Error(`列表返回 ${response.status}`);
-  const payload = (await response.json()) as { shares?: ShareRecord[] };
-  return payload.shares ?? [];
+/** 分区。 */
+const TABS = [
+  { id: 'create', label: '创建分享' },
+  { id: 'records', label: '分享记录' },
+  { id: 'import', label: '导入会话' },
+] as const;
+
+/** 面板属性；测试与嵌入场景可以直接传数据入口。 */
+export interface ShareSectionProps {
+  readonly gateway?: ShareGateway;
 }
 
-/** 撤销一条分享。 */
-async function revokeShare(token: string): Promise<void> {
-  const response = await fetch(`${SHARE_PATH}?token=${encodeURIComponent(token)}`, {
-    method: 'DELETE',
-    headers: { [CSRF_HEADER]: '1' },
-  });
-  if (!response.ok) throw new Error(`撤销返回 ${response.status}`);
+let sharedGateway: ShareGateway | undefined;
+
+/**
+ * 取数据入口。
+ * @param provided - 调用方传入的入口。
+ * @returns 数据入口。
+ */
+function gatewayOf(provided?: ShareGateway): ShareGateway {
+  if (provided !== undefined) return provided;
+  sharedGateway ??= createShareGateway({ telemetry: browserTelemetry });
+  return sharedGateway;
 }
 
-/** 设置页区段。 */
-export function ShareSection() {
-  const [shares, setShares] = useState<ShareRecord[] | undefined>(undefined);
-  const [failed, setFailed] = useState(false);
-  const [busy, setBusy] = useState<string | undefined>(undefined);
+/**
+ * 设置页区段：分享的完整界面。
+ * @param props - 可选的数据入口。
+ * @returns 区段内容。
+ */
+export function ShareSection({ gateway }: ShareSectionProps = {}) {
+  const face = gatewayOf(gateway);
+  const [tab, setTab] = useState<string>('create');
+  const [sessions, setSessions] = useState<Loadable<SessionsSnapshot>>({ status: 'loading' });
+  const [shares, setShares] = useState<Loadable<ShareList>>({ status: 'loading' });
+  const alive = useRef(true);
 
-  const refresh = useCallback(() => {
-    loadShares().then(
-      (records) => {
-        setShares(records);
-        setFailed(false);
-      },
-      () => setFailed(true),
-    );
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
   }, []);
 
-  useEffect(refresh, [refresh]);
+  const loadSessions = useCallback((): void => {
+    setSessions({ status: 'loading' });
+    face.sessions().then(
+      (value) => {
+        if (alive.current) setSessions({ status: 'ready', value });
+      },
+      (error: unknown) => {
+        if (alive.current) setSessions({ status: 'failed', error });
+      },
+    );
+  }, [face]);
 
-  if (failed) return <Panel title="分享与快照"><StatusLine tone="danger">分享记录暂不可用：这条页面没有经过控制平面。</StatusLine></Panel>;
-  if (shares === undefined) return <Panel title="分享与快照"><Skeleton rows={3} /></Panel>;
-  if (shares.length === 0) return <Panel title="分享与快照"><EmptyState>还没有分享链接。</EmptyState></Panel>;
+  const loadShares = useCallback((): void => {
+    setShares({ status: 'loading' });
+    face.shares().then(
+      (value) => {
+        if (!alive.current) return;
+        setShares({ status: 'ready', value });
+        face.noteAction('share-reload', 'ok');
+      },
+      (error: unknown) => {
+        if (alive.current) setShares({ status: 'failed', error });
+        face.noteAction('share-reload', 'failed');
+      },
+    );
+  }, [face]);
+
+  useEffect(() => {
+    loadSessions();
+    loadShares();
+  }, [loadSessions, loadShares]);
 
   return (
-    <Panel title="分享与快照" count={`${shares.length}`}>
-      <List>
-        {shares.map((record) => {
-          const revoked = record.revokedAt !== undefined;
-          return (
-            <Row
-              key={record.token}
-              dot={revoked ? 'idle' : 'ok'}
-              title={`${record.sessionId} · 截至序号 ${record.upToSeq}`}
-              badge={<Badge tone={revoked ? 'neutral' : 'ok'}>{revoked ? '已撤销' : '有效'}</Badge>}
-              meta={`访问 ${record.visits} 次 · 建立于 ${new Date(record.createdAt).toISOString()}`}
-              actions={revoked ? undefined : (
-                <Button
-                  tone="danger"
-                  disabled={busy === record.token}
-                  onClick={() => {
-                    setBusy(record.token);
-                    revokeShare(record.token).then(
-                      () => {
-                        setBusy(undefined);
-                        refresh();
-                      },
-                      () => {
-                        setBusy(undefined);
-                        setFailed(true);
-                      },
-                    );
-                  }}
-                >
-                  {busy === record.token ? '撤销中…' : '撤销'}
-                </Button>
-              )}
-            />
-          );
-        })}
-      </List>
-    </Panel>
+    <Tabs
+      label="分享"
+      selectedId={tab}
+      onSelect={(next) => {
+        setTab(next);
+        // 打开记录时重新读取：访问次数与状态在建立、撤销与访问之后都会变。
+        if (next === 'records') loadShares();
+      }}
+      items={TABS.map((item) => ({
+        id: item.id,
+        label: item.label,
+        content: item.id === 'create'
+          ? <CreateSharePanel gateway={face} sessions={sessions} onCreated={loadShares} />
+          : item.id === 'records'
+            ? <ShareRecordsPanel gateway={face} shares={shares} onReload={loadShares} />
+            : <ImportPanel gateway={face} sessions={sessions} />,
+      }))}
+    />
   );
 }
 

@@ -24,6 +24,15 @@
     "shell": {
       "entry": "src/client/index.ts",
       "asset": "gateway/lib/shell/shell.js"
+    },
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action"
+      ],
+      "spans": [
+        "chatdsh.client.remote.call"
+      ],
+      "metrics": []
     }
   }
 }
