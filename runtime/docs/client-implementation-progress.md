@@ -459,9 +459,9 @@ node scripts/check-telemetry.mjs
 
 [验收测试](<../e2e/unit/client-complete-wp38-shell.test.mjs>)18 项通过：真实外壳与真实宿主服务与真实设备长连接，断言可访问名称与角色（可访问树与审计工具全页检查）、键盘路径完整可达与焦点恢复、逐元素横向溢出、触控目标、两百百分文字缩放、状态播报与只读校验。
 
-实测发现并记录三处界面缺陷：外壳触控目标低于四十四像素设计要求、三百二十像素宽度叠加两百百分文字缩放时侧栏最小宽度造成横向滚动、制品面板空状态缺少状态播报区域。
+实测发现并修复四处界面缺陷：外壳可交互元素统一到四十四像素最小尺寸（`shell.css` 的按钮、输入、跳转与命令面板项加最小高度，按钮另加最小宽度与居中）、三百二十像素宽度叠加两百百分文字缩放时侧栏改为按可用宽度收缩（窄屏媒体查询取消最小宽度限制，页面不再横向滚动）、制品面板空状态由 [界面组件库](<../packages/core/ui-kit/src/components.tsx>) 的 `EmptyState` 统一加上 `role="status"` 与 `aria-live="polite"`、连接器面板在宿主拒绝时渲染可见失败说明与重试入口。
 
-未完成项：NVDA 与 TalkBack 与 VoiceOver 真机不可用，替代测量已记录；权限拒绝与修订冲突与内容超限与进程级服务终止的真实触发待补齐。
+未完成项：NVDA 与 TalkBack 与 VoiceOver 真机不可用，替代测量已记录；权限拒绝与修订冲突与内容超限与进程级服务终止的真实触发待补齐；真实设备的安装与系统权限与朗读结果留到真机测试阶段。
 
 ### WP39 公共入口集成（第一批）
 
@@ -469,7 +469,37 @@ node scripts/check-telemetry.mjs
 
 [验收测试](<../e2e/unit/client-complete-wp39-entry.test.mjs>)5 项通过：真实控制平面进程与真实设备长连接，四条路径全部真实 HTTP（客户端读取返回真实会话且形状无内部水位、分享预览与公开页与打印与撤销、自动化建立到设备收到派发请求到投递完成到删除、导出预估到生成到下载含中文正文）。
 
-未完成项：设备、通知、访问、备份、副本连续、数据管理、迁移、客户端插件与 profile 注册、桌面进程接入、静态资源路由属后续集成批次；访问会话校验与分页游标签名与导出本机标识的刷新待接入。
+未完成项：客户端插件与 profile 注册与桌面进程接入属第三批；导出本机标识的刷新待接入。
+
+### WP39 公共入口集成（第二批）
+
+[控制平面](<../gateway/src/server.ts>)在第一批四条路径之外再挂载八类入口，工序沿用同一委派约定（处理器接管返回真值、未接管返回假值继续既有分支与默认反代）：设备配对与撤销与链路检查与长连接、通知列表与设置与订阅与聚焦、访问状态与登录与通行密钥与双因素与恢复码与会话、备份建立与校验与恢复与切换、副本保留策略、数据管理用量与保留与清理与删除与血缘、SYS01 迁移预检查与分批复制与切换、PWA 清单与 Service Worker 与离线页与图标。
+
+访问会话校验接到写动作：请求携带访问会话时按令牌摘要与撤销状态与有效期校验并要求该会话派生的跨站请求令牌；未启用访问时保持单账号边界；访问模式为必需且没有会话时拒绝（`401 auth-required`）。分页游标签名密钥由 `<DSH_HOME>/access/master.key` 经 HMAC-SHA256 派生，重启后同一密钥仍可校验。生命周期在 [进程入口](<../gateway/src/main.ts>)里启停后端运行期分支与备份调度，关闭顺序为备份调度、推送、设备长连接、监听、后端运行期分支、运行时、遥测刷新与关库。
+
+[验收测试](<../e2e/unit/client-complete-wp39-surfaces.test.mjs>)12 项通过：真实控制平面进程，八类入口全部真实 HTTP（设备配对与列表与配对码与链路检查与撤销、通知列表与设置读写、访问状态与错误密码与正确密码与会话与跨站请求令牌、备份建立与校验与集合、副本上报与游标与保留策略清理、分享写动作按会话校验、数据管理用量与保留与清理、迁移预检查与分批复制与切换门禁、PWA 清单与 Service Worker 与离线页与图标字节一致）。
+
+未完成项：分叉端点因工作区没有按回合建立子会话的复制入队实现而按 404 返回；通行密钥与双因素按明确缺失条件拒绝（`passkey-verifier-missing`、`totp-library-missing`）；备份主密钥需部署提供（`<DSH_HOME>/backup-master.key`）；`/chatdsh/gateway/devices/ws` 的升级仍走既有反代路径。
+
+### WP39 公共入口集成（第三批）
+
+四个 profile 的客户端插件行补齐到全部浏览器侧包（自动化、工作区工具、通知、数据管理、导出、PWA、桌面控制、访问、对话、会话桥、第二窗口），宿主包补齐到附件、录音、定时任务界面、设置增强与备份；每个 profile 的 `package.json` 依赖同步声明，[依赖覆盖检查](<../scripts/check-profile-deps.mjs>)8 个 profile 全部通过。桌面打包清单 [electron-builder.yml](<../desktop/electron/electron-builder.yml>) 补齐主进程新增模块与恢复页面。
+
+[控制平面出口](<../gateway/src/index.ts>)按命名空间导出 Postgres 与数据维护与备份与副本连续与导出与资源限制与后端运行期分支与部署八个模块。
+
+桌面主进程接入第二窗口：[ipc.mjs](<../desktop/electron/ipc.mjs>) 的通道表可并入第二窗口的五个通道，[main.mjs](<../desktop/electron/main.mjs>) 装配窗口登记表与打开与聚焦与关闭与恢复四个动作以及窗口会话存盘与恢复，[preload.cjs](<../desktop/electron/preload.cjs>) 暴露对应方法。
+
+未完成项：`pnpm-lock.yaml` 缺少 `@chatdsh/core-deployment` 与 `@chatdsh/core-limits` 的导入条目（沙箱内安装受限，工作区链接已按安装结果补齐）。
+
+### SYS07 部署传输安全与能力拆包
+
+新增[部署核心包](<../packages/core/deployment/src/policy.ts>)与[部署入口](<../gateway/src/deploy/listener.ts>)：地址分类与绑定校验（通配与公网与不属本机的地址在启动前失败）、运行时只允许本机可达、TLS 与双向 TLS 的材料校验（私钥 0600、证书与私钥配对、有效期、签发机构、三十天到期告警、`setSecureContext` 轮换）、精确 Host 与 Origin 与 `Sec-Fetch-Site` 校验、代理链解析与跳数上限、身份头未经验证即拒绝并在移交业务前剥离、静态资源与事件流与 WebSocket 升级的同源校验。
+
+能力拆包由 [组合包装卸](<../packages/core/deployment/src/bundles.ts>)承担：记忆包装载时建立真实后端连接并探活、按间隔扫描，卸载时停扫描并销毁连接；PWA 包装载时提供清单与 Service Worker 与离线页与订阅登记与真实推送投递，卸载后端点撤下且推送报 `bundle-push-unavailable`；默认最轻组合不构造后端连接与扫描与订阅与推送资源；平台能力按真实模块加加载与文件与全局检查声明。
+
+[验收测试](<../e2e/unit/client-complete-sys07-security.test.mjs>)12 项通过：真实 openssl 证书（自建签发机构、服务端、客户端、非本机构签发的错误客户端证书、十天短证书、按明确起止日期签发的过期证书），无证书与错误证书在握手阶段失败、正确证书放行；绑定拒绝七种错误码；跨来源的静态资源与事件流与写请求与升级全部 403，Host 不符 403、缺 Host 400；伪造转发头与身份头 403 且可信代理下身份头在移交前剥离；记忆与 PWA 装卸的资源与端点随装载与卸载出现与消失。
+
+未完成项：组合包与 profile 接入属 WP39；真实部署的证书签发与轮换由部署方提供。
 
 ### SYS08 全链路资源限制与性能验收
 
@@ -488,9 +518,16 @@ node scripts/check-telemetry.mjs
 node --test --test-concurrency=1 <全部非浏览器测试文件>
 node --test --test-concurrency=1 <浏览器测试文件>
 node scripts/check-telemetry.mjs
+node scripts/check-plugin-contract.mjs
+node scripts/check-layering.mjs
+node scripts/check-upstream-names.mjs
+node scripts/check-ui-kit-tokens.mjs
+node scripts/check-capabilities.mjs
+node scripts/check-composition.mjs
+node scripts/check-profile-deps.mjs
 ```
 
-最近一次执行：非浏览器组 1019 项，通过 1015 项、跳过 3 项（缺 `HERMES_API_KEY`、`CHATDSH_TEST_PG_URL`、`otplib`）、超时 1 项（`client-complete-wp16-search` 的真实检索用例在整轮负载下超过等待上限，单独运行时通过并耗时五十二秒）、失败 0 项；浏览器组 133 项全部通过；真实 Electron 入口 1 项通过。类型检查与遥测声明检查退出码为 `0`，遥测一致性核对 146 个 span、93 个 event，50 个包声明遥测面。
+最近一次执行：非浏览器组 1025 项，通过 1022 项、跳过 3 项（缺 `HERMES_API_KEY`、`CHATDSH_TEST_PG_URL`、`otplib`）、失败 0 项；浏览器组 155 项全部通过；真实 Electron 入口 1 项通过。类型检查与八项静态检查退出码均为 `0`，遥测一致性核对 152 个 span、97 个 event，77 个包中 51 个声明遥测面。
 
 真实 Hindsight 的召回与检索子测试在高负载下会出现慢响应与整合改写，测试按后端可达时有限重试、并把命中判定放宽到写入内容的核心事实（隔离 bank 只写一条，事实保留即视为召回成功）；后端真正不可达仍然失败。浏览器测试必须串行运行，各文件独立占用一个 Chrome 调试端点。
 
@@ -508,6 +545,6 @@ node scripts/check-telemetry.mjs
 - WP04 的前缀白名单 WebSocket 升级、WP25 的访问路由与 WebAuthn 库接入、SYS01-A 的存储接口接入 `gateway/src/store.ts` 均属 WP39 的公共入口集成。
 - WP25 的通行密钥签名校验缺成熟 WebAuthn 库，TOTP 完整校验缺 `otplib`；两项以明确缺失条件保留。
 - WP05（聚合外壳）、WP06（导航桥）、WP07（会话呈现、输入、命令、引用与队列）、WP08（审批、提问与计划接管）、WP09-A（项目、助手、制品、连接器、技能宿主）、WP09-B（模型提供方、模型路由与上下文占用宿主）、WP10（项目界面）、WP11（助手与技能界面）、WP12（制品查看器）、WP13（连接器界面）、WP14（工作区文件、终端、附件与录音）、WP16（记忆界面）、WP17（自动化与设备定时任务宿主）、WP18（自动化界面）、WP19（分享过滤与生命周期宿主）、WP20（分享、导入与二维码界面）、WP21（通知与 Web Push 宿主）、WP22（通知中心）、WP23（设备配对与撤销宿主）、WP24（设备界面）、WP26（访问与双因素界面）、WP27（用量与数据维护宿主）、WP28（数据管理界面）、WP29（设置同步与冲突）、WP30（通用与模型与插件与运行设置界面）、WP31（PWA 与移动布局）、WP32（桌面生命周期与原生桥与更新）、WP33（桌面控制授权）、WP34（第二窗口与分屏）、WP35（打印与导出）、WP36（本机 CLI 与非交互协议）、WP37（诊断与遥测集成）、WP38（全场景非视觉验证）、SYS02（连续副本与已提交事件）、SYS03（备份与隔离恢复）、SYS04（Postgres 持久化与跨进程写所有权）、SYS05（Hermes 全历史与实时审批）、SYS06（聊天与记忆后端运行期分支）与 SYS08（全链路资源限制与性能验收）已交付并通过验收，接入公共入口仍属 WP39。
-- 尚未实施：WP40（最终验收），以及 SYS01-B、SYS07；WP38（全场景非视觉验证）已交付自动断言与覆盖矩阵、辅助技术真机项待人工补齐；WP39（公共入口集成）第一批已接入客户端读取与分享与自动化与导出四条路径，其余模块与 profile 注册与桌面接入属后续批次。
+- 尚未实施：WP40（最终验收）与 SYS01-B（迁移执行与切换的真实运行）；WP38（全场景非视觉验证）已交付自动断言与覆盖矩阵、界面缺陷已修复、辅助技术真机项按执行方安排留到真机测试；WP39（公共入口集成）三批全部接入（十二条入口与访问会话校验与生命周期装配与四个 profile 注册与桌面第二窗口接入），剩余分叉端点与通行密钥与双因素与备份主密钥属外部条件缺项。
 - WP02 的真实辅助技术人工验收、WP15 的 bank 条目数统计、待写入记录人工处理仍待完成。
 - 后续工作包按[实施依赖](<implementation-work-packages.md>)继续执行。
