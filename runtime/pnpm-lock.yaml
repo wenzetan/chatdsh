@@ -47,9 +47,15 @@ importers:
       '@chatdsh/core-contracts':
         specifier: workspace:*
         version: link:../packages/core/contracts
+      '@chatdsh/core-deployment':
+        specifier: workspace:*
+        version: link:../packages/core/deployment
       '@chatdsh/core-diagnostics':
         specifier: workspace:*
         version: link:../packages/core/diagnostics
+      '@chatdsh/core-limits':
+        specifier: workspace:*
+        version: link:../packages/core/limits
       '@chatdsh/forge-bridge':
         specifier: workspace:*
         version: link:../../forge-bridge
@@ -298,6 +304,12 @@ importers:
         version: link:../contracts
 
   packages/core/contracts: {}
+
+  packages/core/deployment:
+    dependencies:
+      '@chatdsh/core-contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/core/diagnostics:
     dependencies:
