@@ -64,12 +64,28 @@ export interface TelemetryConfig {
   selfMonitorIntervalMs: number;
 }
 
+/** 全部关闭来源的判定结果，任一为真即关闭。 */
+export interface SwitchSources {
+  /** 环境变量 `CHATDSH_TELEMETRY=off`。 */
+  readonly env: boolean;
+  /** 上游开关 `DSH_TELEMETRY_DISABLED` 取非空值。 */
+  readonly upstream: boolean;
+  /** 设置文件、设置页与命令写入的 `telemetry.enabled`。 */
+  readonly settings: boolean;
+  /** 启动参数 `--no-telemetry`。 */
+  readonly flag: boolean;
+  /** 当前平台不支持遥测。 */
+  readonly platform: boolean;
+}
+
 /** 开关判定结果。 */
 export interface SwitchState {
   /** 是否开启。 */
   enabled: boolean;
   /** 关闭原因；开启时为 `undefined`。 */
   reason: TelemetryOffReason | undefined;
+  /** 各来源的关闭事实，供状态端点报告实际生效的来源。 */
+  sources: SwitchSources;
 }
 
 /** 运行期从环境变量读到的覆盖项。 */
@@ -145,22 +161,32 @@ export function defaultTelemetryConfig(overrides: Partial<TelemetryConfig> = {})
 /**
  * 判定开关状态。
  *
- * 顺序即优先级：上游开关与显式关闭优先于设置文件，设置文件优先于启动参数。
- * 平台判定在最后，因为它是能力缺失而不是用户选择。
+ * 顺序即优先级：环境变量与上游开关优先于设置文件，设置文件优先于启动参数，
+ * 平台判定在最后，因为它是能力缺失而不是用户选择。每个来源都给出独立结果，
+ * 状态端点据此报告全部生效来源。
  * @param config - 插件配置。
  * @param env - 进程环境变量。
  * @param platformSupported - 当前平台是否支持遥测。
- * @returns 开关状态与关闭原因。
+ * @returns 开关状态、关闭原因与各来源的判定结果。
  */
 export function resolveSwitch(
   config: TelemetryConfig,
   env: NodeJS.ProcessEnv = process.env,
   platformSupported = true,
 ): SwitchState {
-  if ((env.CHATDSH_TELEMETRY ?? '').toLowerCase() === 'off') return { enabled: false, reason: 'env' };
-  if ((env.DSH_TELEMETRY_DISABLED ?? '') !== '') return { enabled: false, reason: 'env' };
-  if (!config.enabled) return { enabled: false, reason: 'settings' };
-  if (config.noTelemetry) return { enabled: false, reason: 'flag' };
-  if (!platformSupported) return { enabled: false, reason: 'platform' };
-  return { enabled: true, reason: undefined };
+  const sources: SwitchSources = {
+    env: (env.CHATDSH_TELEMETRY ?? '').toLowerCase() === 'off',
+    upstream: (env.DSH_TELEMETRY_DISABLED ?? '') !== '',
+    settings: !config.enabled,
+    flag: config.noTelemetry,
+    platform: !platformSupported,
+  };
+  if (sources.env || sources.upstream) return { enabled: false, reason: 'env', sources };
+  if (sources.settings) return { enabled: false, reason: 'settings', sources };
+  if (sources.flag) return { enabled: false, reason: 'flag', sources };
+  if (sources.platform) return { enabled: false, reason: 'platform', sources };
+  return { enabled: true, reason: undefined, sources };
 }
+
+/** 热切换时等待在途记录导出的上限，超过后放弃剩余记录并计数。 */
+export const SWITCH_FLUSH_MS = 3000;

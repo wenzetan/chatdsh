@@ -11,8 +11,11 @@ export {
   createTelemetryClient,
   TelemetryClient,
   type TelemetryClientOptions,
+  type TelemetryDiagnosticEvent,
   type TelemetryDiagnosticRecord,
+  type TelemetryDiagnosticsExport,
   type TelemetrySelfTest,
+  type TelemetrySwitchTrigger,
 } from './client.ts';
 export {
   DEFAULT_ENDPOINT,
@@ -22,6 +25,8 @@ export {
   defaultTelemetryConfig,
   readOverrides,
   resolveSwitch,
+  SWITCH_FLUSH_MS,
+  type SwitchSources,
   type SwitchState,
   type TelemetryConfig,
   type TelemetryOverrides,
@@ -37,6 +42,7 @@ export {
 } from './redact.ts';
 export {
   createPipelines,
+  type DroppedCounts,
   type ExportFailure,
   type Pipelines,
   type PipelineOptions,

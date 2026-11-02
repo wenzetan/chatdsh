@@ -22,6 +22,18 @@ export function backendKey(kind: BackendKind, id: string): string {
   return `${kind}:${id}`;
 }
 
+/** 一个已注册实现的摘要，供后端选择与依赖诊断使用。 */
+export interface BackendSummary {
+  /** 后端种类。 */
+  readonly kind: BackendKind;
+  /** 实现在种类内的标识。 */
+  readonly id: string;
+  /** 实现版本。 */
+  readonly version: string;
+  /** 支持的能力名。 */
+  readonly capabilities: readonly string[];
+}
+
 /** 解析结果。 */
 export interface ResolvedBackend<TService = unknown> {
   /** 命中的描述符。 */
@@ -54,6 +66,40 @@ export class BackendRegistry {
       .filter(([key]) => key.startsWith(`${kind}:`))
       .map(([key]) => key.slice(kind.length + 1))
       .sort();
+  }
+
+  /** 某个实现是否已经注册。选择前用它判断，不必依赖抛异常。 */
+  has(kind: BackendKind, id: string): boolean {
+    return this.descriptors.has(backendKey(kind, id));
+  }
+
+  /**
+   * 按种类列出实现摘要。
+   *
+   * 后端选择与依赖诊断按它报告当前装配了哪些实现、版本与能力；顺序按标识稳定，
+   * 诊断输出因此可比较。
+   */
+  describe(kind: BackendKind): readonly BackendSummary[] {
+    const prefix = `${kind}:`;
+    return [...this.descriptors.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, descriptor]) => ({
+        kind: descriptor.kind,
+        id: key.slice(prefix.length),
+        version: descriptor.version,
+        capabilities: [...descriptor.capabilities],
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  /**
+   * 选择要使用的实现。
+   *
+   * 配置里写的是字符串，选中前必须确认该种类下确实注册了这个标识；缺失时就地抛出，
+   * 错误信息带上可选取值，装配与保存阶段都能直接看到该怎么改。
+   */
+  select(kind: BackendKind, id: string): BackendDescriptor<unknown, unknown> {
+    return this.descriptorOf(kind, id);
   }
 
   /** 取一个描述符。未注册时抛出，并列出该种类下可用的标识。 */

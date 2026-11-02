@@ -53,6 +53,16 @@ export interface ExportResultLike {
   error?: Error;
 }
 
+/** 丢弃计数的汇总，按信号与原因归类。 */
+export interface DroppedCounts {
+  /** 全部丢弃条数。 */
+  readonly total: number;
+  /** 按信号归类。 */
+  readonly bySignal: Readonly<Record<TelemetrySignal, number>>;
+  /** 按原因归类。 */
+  readonly byReason: Readonly<Record<string, number>>;
+}
+
 /** 一次导出失败的元数据；不包含任何载荷内容。 */
 export interface ExportFailure {
   /** 信号类别。 */
@@ -106,6 +116,10 @@ class SelfMonitor {
   private failuresCounter: Counter | undefined;
   private durationHistogram: Histogram | undefined;
   private exportedAt: number | undefined;
+  /** 按信号累计的丢弃条数。 */
+  private readonly droppedBySignal: Record<TelemetrySignal, number> = { logs: 0, traces: 0, metrics: 0 };
+  /** 按原因累计的丢弃条数。 */
+  private readonly droppedByReason: Record<string, number> = {};
 
   constructor(
     private readonly depth: DepthCounter,
@@ -136,7 +150,16 @@ class SelfMonitor {
 
   /** 计入一次丢弃。 */
   drop(signal: TelemetrySignal, reason: string): void {
+    this.droppedBySignal[signal] += 1;
+    this.droppedByReason[reason] = (this.droppedByReason[reason] ?? 0) + 1;
     this.droppedCounter?.add(1, { signal, reason });
+  }
+
+  /** 丢弃计数的有界汇总。 */
+  droppedCounts(): DroppedCounts {
+    const byReason: Record<string, number> = { ...this.droppedByReason };
+    const total = Object.values(byReason).reduce((sum, value) => sum + value, 0);
+    return { total, bySignal: { ...this.droppedBySignal }, byReason };
   }
 
   /** 计入一次导出结果；失败时只把元数据写入有界环形缓冲。 */
@@ -282,6 +305,8 @@ export interface Pipelines {
   recentExportFailures(): readonly ExportFailure[];
   /** 计入一次丢弃，出现在丢弃计数指标上。 */
   recordDropped(signal: TelemetrySignal, reason: string): void;
+  /** 丢弃计数的汇总，供状态端点报告。 */
+  droppedCounts(): DroppedCounts;
   /** 有界刷新，超时后返回，不抛出。 */
   flush(deadlineMs: number): Promise<void>;
   /** 释放 exporter 与 HTTP 代理。 */
@@ -428,6 +453,9 @@ export function createPipelines(options: PipelineOptions): Pipelines {
     },
     recordDropped(signal: TelemetrySignal, reason: string): void {
       monitor.drop(signal, reason);
+    },
+    droppedCounts(): DroppedCounts {
+      return monitor.droppedCounts();
     },
     async flush(deadlineMs: number): Promise<void> {
       await withDeadline(deadlineMs, async () => {

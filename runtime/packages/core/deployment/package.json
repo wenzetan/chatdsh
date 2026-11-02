@@ -1,0 +1,52 @@
+{
+  "name": "@chatdsh/core-deployment",
+  "version": "0.1.0",
+  "description": "ChatDSH 部署核心：监听绑定与传输安全策略、证书与密钥生命周期、请求来源与代理链校验、能力组合包装卸与平台能力声明",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "dependencies": {
+    "@chatdsh/core-contracts": "workspace:*"
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.gateway.deploy.rejected",
+        "chatdsh.gateway.deploy.tls.expiring",
+        "chatdsh.gateway.deploy.bundle.rejected",
+        "chatdsh.gateway.deploy.capability.failed"
+      ],
+      "spans": [
+        "chatdsh.gateway.deploy.listener.start",
+        "chatdsh.gateway.deploy.tls.material",
+        "chatdsh.gateway.deploy.request",
+        "chatdsh.gateway.deploy.upgrade",
+        "chatdsh.gateway.deploy.bundle",
+        "chatdsh.gateway.deploy.capability"
+      ],
+      "metrics": [
+        "chatdsh_gateway_deploy_listener_starts_total",
+        "chatdsh_gateway_deploy_rejections_total",
+        "chatdsh_gateway_deploy_bundle_mounts_total",
+        "chatdsh_gateway_deploy_capabilities_total",
+        "chatdsh_gateway_deploy_resources"
+      ]
+    }
+  }
+}

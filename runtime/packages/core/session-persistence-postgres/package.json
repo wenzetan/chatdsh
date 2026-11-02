@@ -15,6 +15,20 @@
   "files": ["lib/**/*.js", "lib/**/*.d.ts"],
   "license": "MIT",
   "engines": { "dsh": ">=0.2.1-rc.2 <0.3.0-0" },
+  "chatdsh": {
+    "telemetry": {
+      "events": ["chatdsh.session.persist.ownership.lost"],
+      "spans": [
+        "chatdsh.session.persist.open",
+        "chatdsh.session.persist.append",
+        "chatdsh.session.persist.flush"
+      ],
+      "metrics": [
+        "chatdsh_session_persist_appends_total",
+        "chatdsh_session_persist_ownership_losses_total"
+      ]
+    }
+  },
   "dependencies": {
     "@chatdsh/adapter": "link:../../../../dsh-adapter",
     "pg": "8.16.3"

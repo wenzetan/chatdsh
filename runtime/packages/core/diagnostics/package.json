@@ -22,6 +22,10 @@
       "types": "./lib/pipelines.d.ts",
       "default": "./lib/pipelines.js"
     },
+    "./relay": {
+      "types": "./lib/relay.d.ts",
+      "default": "./lib/relay.js"
+    },
     "./redact": {
       "types": "./lib/redact.d.ts",
       "default": "./lib/redact.js"
@@ -47,6 +51,7 @@
   "chatdsh": {
     "telemetry": {
       "events": [
+        "chatdsh.telemetry.disabled",
         "chatdsh.telemetry.dropped",
         "chatdsh.telemetry.enabled",
         "chatdsh.telemetry.invalid"
