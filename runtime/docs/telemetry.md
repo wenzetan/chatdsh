@@ -100,6 +100,10 @@ flowchart TB
 | `currentTraceId()` | 当前 span 的 `trace_id`，没有活动 span 时返回 `undefined` |
 | `flush(deadlineMs)` | 有界刷新，超时后返回，不抛出 |
 | `shutdown()` | 释放 exporter 与 HTTP 代理，由所属 fiber 的销毁路径调用 |
+| `status()` | 状态快照：开关、全部关闭来源、端点、队列深度、丢弃计数与最近导出时刻 |
+| `diagnostics(limit?)` | 诊断导出：脱敏后的最近事件与丢弃汇总，条数有界 |
+| `reload(config)` | 重载配置并按新的开关状态热切换，不重启进程 |
+| `setEnabled(enabled)` | 运行期切换开关，供设置页与命令调用 |
 
 三个约束在实现里固定。入队不等待网络，业务路径不 `await` 导出。关闭状态下全部方法退化为空操作，不构造 SDK 对象，不创建 socket。入队失败与导出失败只在 `@chatdsh/core-diagnostics` 内部计数，业务代码不捕获遥测异常。
 
@@ -117,7 +121,7 @@ flowchart TB
 | 桌面主进程 | `chatdsh-desktop` | `@chatdsh/desktop` |
 | 命令行 | `chatdsh-cli` | 全局 `dsh-tui`，不另设包 |
 
-名称形状统一为三段式：日志事件 `chatdsh.<domain>.<fact>`，span `chatdsh.<domain>.<operation>`，指标 `chatdsh_<domain>_<measure><后缀>`。`domain` 取 `gateway`、`runtime`、`session`、`tool`、`llm`、`memory`、`mcp`、`client`、`desktop`、`mobile`、`cli`、`sync`、`share`、`push`、`telemetry`。
+名称形状统一为三段式：日志事件 `chatdsh.<domain>.<fact>`，span `chatdsh.<domain>.<operation>`，指标 `chatdsh_<domain>_<measure><后缀>`。`domain` 取 `gateway`、`runtime`、`session`、`tool`、`llm`、`memory`、`mcp`、`client`、`theme`、`desktop`、`mobile`、`cli`、`sync`、`share`、`push`、`telemetry`。
 
 指标后缀按类型固定：计数器加 `_total`，直方图用 `_seconds` 或 `_bytes`，当前量用裸名并带单位后缀。单位遵循 OpenTelemetry 约定：时间用秒，尺寸用字节，比例用 0 到 1 的小数。
 
@@ -144,16 +148,53 @@ flowchart TB
 | 信号 | 名称 | 触发点 | 必需属性 |
 |---|---|---|---|
 | span | `chatdsh.gateway.http` | 每个入站 HTTP 请求 | `http.route`、`http.method`、`http.status_code` |
-| span | `chatdsh.gateway.proxy` | 反代到运行时的转发 | `runtime.id`、`http.status_code` |
+| span | `chatdsh.gateway.proxy` | 反代到运行时的转发 | `runtime.id`、`http.status_code`、`outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.access` | 会话归属判定 | `session.id`、`workspace.id`、`outcome` |
 | span | `chatdsh.gateway.runtime.lifecycle` | 运行时启动、就绪、停止、回收 | `action`、`runtime.id`、`outcome` |
 | span | `chatdsh.gateway.replica.append` | 会话副本追加 | `session.id`、`seq`、`bytes`、`outcome` |
-| span | `chatdsh.gateway.share.render` | 分享快照渲染 | `share.id`、`up_to_seq` |
+| span | `chatdsh.gateway.share.render` | 分享快照渲染 | `share.id`、`up_to_seq`、`turn`、`count`、`outcome` |
+| span | `chatdsh.gateway.share.preview` | 分享预览 | `session.id`、`turn`、`count`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.share.create` | 建立固定快照 | `session.id`、`turn`、`count`、`bytes`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.share.list` | 分享记录列举 | `count`、`bytes`、`outcome` |
+| span | `chatdsh.gateway.share.revoke` | 撤销分享 | `outcome` |
+| span | `chatdsh.gateway.share.attachment` | 公开附件下载 | `bytes`、`outcome` |
+| event | `chatdsh.gateway.share.rejected` | 分享动作被拒绝或失败 | `error.type`、`error.code`、`outcome`、`kind`、`reason` |
 | span | `chatdsh.gateway.push.deliver` | 推送投递 | `device.kind`、`outcome` |
+| span | `chatdsh.push.dispatch` | 通知批次投递 | `stage`、`mode`、`count`、`outcome` |
+| span | `chatdsh.push.send` | 单次 Web Push 发送 | `outcome`、`http.status_code`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.notification.record` | 通知记录写入 | `kind`、`session.id`、`outcome` |
+| span | `chatdsh.gateway.notification.list` | 通知中心分页 | `count`、`outcome` |
+| span | `chatdsh.gateway.notification.read` | 已读标记 | `count`、`outcome` |
+| span | `chatdsh.gateway.notification.handled` | 业务已处理标记 | `count`、`outcome` |
+| span | `chatdsh.gateway.notification.settings` | 通知设置读写 | `action`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.notification.subscription` | 推送订阅管理 | `action`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.notification.probe` | 验证通知发送与回执 | `stage`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.push.failed` | 推送发送失败 | `http.status_code`、`error.type`、`error.code`、`outcome` |
+| event | `chatdsh.gateway.push.withdrawn` | 审批决定撤回同键通知 | `count`、`outcome`、`session.id` |
+| event | `chatdsh.gateway.push.subscription.expired` | 订阅失效或过期清理 | `action`、`outcome` |
+| event | `chatdsh.gateway.notification.rejected` | 通知接口请求被拒绝 | `action`、`outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.power.policy` | 电源策略下发与生效 | `power.mode`、`outcome` |
 | span | `chatdsh.gateway.webhook` | 外部 webhook 投递处理 | `automation.id`、`outcome` |
+| span | `chatdsh.gateway.automation.list` | 自动化列表读取 | `action`、`count`、`trigger.kind`、`enabled`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.automation.read` | 单条自动化读取 | `action`、`trigger.kind`、`enabled`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.automation.create` | 自动化建立 | `action`、`trigger.kind`、`enabled`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.automation.update` | 自动化编辑 | `action`、`trigger.kind`、`enabled`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.automation.delete` | 自动化删除 | `action`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.automation.toggle` | 自动化启用与停用 | `action`、`enabled`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.automation.deliveries` | 投递记录分页 | `action`、`count`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.automation.rejected` | 自动化动作被拒绝或失败 | `action`、`trigger.kind`、`enabled`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.data.usage` | 用量统计 | `action`、`count`、`bytes`、`kind`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.data.retention` | 保留策略读写与到期候选 | `action`、`count`、`bytes`、`kind`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.data.cleanup` | 清理预估与执行 | `action`、`count`、`bytes`、`kind`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.data.deletion` | 软删除、恢复与永久删除 | `action`、`count`、`bytes`、`kind`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.data.lineage` | 血缘查询 | `action`、`count`、`bytes`、`kind`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.data.rejected` | 数据维护动作被拒绝或失败 | `action`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.export.estimate` | 导出预估 | `action`、`format`、`count`、`bytes`、`turns`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.export.generate` | 导出生成 | `action`、`format`、`count`、`bytes`、`turns`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.export.download` | 导出下载 | `action`、`format`、`bytes`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.export.rejected` | 导出动作被拒绝或失败 | `action`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.auth.failed` | 认证失败 | `error.type`、`error.code` |
-| event | `chatdsh.gateway.runtime.ready` | 运行时打印启动地址并探活通过 | `runtime.id` |
+| event | `chatdsh.gateway.runtime.ready` | 运行时打印启动地址并探活通过 | `runtime.id`、`exit.code` |
 | event | `chatdsh.gateway.runtime.exited` | 托管运行时意外退出 | `runtime.id`、`exit.code`、`signal` |
 | event | `chatdsh.gateway.power.failed` | 阻止睡眠失败或被执行环境拒绝 | `power.mode`、`error.code` |
 | event | `chatdsh.gateway.webhook.rejected` | webhook 投递被拒绝 | `reason`、`error.code` |
@@ -161,8 +202,25 @@ flowchart TB
 | metric | `chatdsh_http_request_duration_seconds` | 全部入站请求 | `route`、`method` |
 | metric | `chatdsh_replica_lag_sessions` | 副本落后会话数 | 无 |
 | metric | `chatdsh_push_deliveries_total` | 推送投递 | `device.kind`、`outcome` |
+| metric | `chatdsh_push_sends_total` | Web Push 发送结果 | `outcome` |
+| metric | `chatdsh_push_subscriptions_total` | 推送订阅状态变化 | `outcome` |
+| metric | `chatdsh_gateway_notifications_total` | 通知记录结果 | `outcome` |
+| metric | `chatdsh_gateway_notification_settings_total` | 通知设置变更 | `outcome` |
+| metric | `chatdsh_gateway_share_previews_total` | 分享预览结果 | `outcome` |
+| metric | `chatdsh_gateway_share_creations_total` | 分享建立结果 | `outcome` |
+| metric | `chatdsh_gateway_share_listings_total` | 分享列举结果 | `outcome` |
+| metric | `chatdsh_gateway_share_revocations_total` | 分享撤销结果 | `outcome` |
+| metric | `chatdsh_gateway_share_views_total` | 公开页访问结果 | `outcome` |
+| metric | `chatdsh_gateway_share_attachment_downloads_total` | 公开附件下载结果 | `outcome` |
 | metric | `chatdsh_power_policy_active` | 当前生效的保活与阻止睡眠档位 | `power.mode` |
 | metric | `chatdsh_webhook_receipts_total` | webhook 投递结果 | `outcome` |
+| metric | `chatdsh_gateway_automation_requests_total` | 自动化读取请求结果 | `action`、`outcome` |
+| metric | `chatdsh_gateway_automation_writes_total` | 自动化写入结果 | `action`、`outcome` |
+| metric | `chatdsh_gateway_automation_deliveries_total` | 投递记录读取结果 | `outcome` |
+| metric | `chatdsh_gateway_data_operations_total` | 数据维护动作结果 | `action`、`outcome` |
+| metric | `chatdsh_gateway_data_reclaimed_bytes` | 实际释放字节分布 | `kind` |
+| metric | `chatdsh_gateway_exports_total` | 导出动作结果 | `action`、`outcome` |
+| metric | `chatdsh_gateway_export_bytes` | 导出字节分布 | `action`、`format` |
 | metric | `chatdsh_mcp_registry_writes_total` | MCP 端点上报次数 | `outcome` |
 | metric | `chatdsh_mobile_pairings_total` | 手机配对结果 | `outcome` |
 | metric | `chatdsh_mobile_sessions_total` | 手机取运行时启动路径 | `outcome` |
@@ -170,7 +228,7 @@ flowchart TB
 | event | `chatdsh.gateway.mobile.rejected` | 配对、取启动路径与设备管理的拒绝 | `action`、`outcome`、`error.type`、`error.code` |
 | metric | `chatdsh_mobile_telemetry_batches_total` | 移动端遥测批次接收结果 | `outcome`、`error.code` |
 | metric | `chatdsh_mobile_devices_total` | 手机设备管理操作 | `action`、`outcome` |
-| span | `chatdsh.gateway.mobile.devices` | 已配对手机设备的列举与吊销 | `action`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.mobile.devices` | 已配对设备与执行节点的列举、配对与吊销 | `action`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.mobile.telemetry.rejected` | 移动端遥测批次被拒绝 | `action`、`outcome`、`error.type`、`error.code` |
 | metric | `chatdsh_mobile_telemetry_records_total` | 移动端遥测记录接收结果 | `signal`、`outcome` |
 | event | `chatdsh.gateway.mobile.upgrade.rejected` | 手机 WebSocket 升级被拒绝 | `error.type`、`error.code` |
@@ -196,6 +254,100 @@ flowchart TB
 | span | `chatdsh.gateway.settings.write` | 写一条白名单设置并推给其余设备 | `outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.settings.rejected` | 设置写入被拒绝（越界命名空间等） | `outcome`、`error.type`、`error.code` |
 | metric | `chatdsh_gateway_settings_writes_total` | 设置同步写入结果 | `outcome` |
+
+私有客户端读取模块登记以下信号；属性只使用固定枚举，不记录搜索内容、会话标题、Cookie 或令牌。
+
+| 信号 | 名称 | 触发点 | 必需属性 |
+|---|---|---|---|
+| span | `chatdsh.gateway.client.request` | 私有客户端列表请求与安全校验 | `outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.client.rejected` | 认证、来源、范围和分页校验拒绝，或内部服务失败；`outcome` 区分 `rejected` 与 `failed` | `outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_gateway_client_requests_total` | 私有客户端读取结果 | `outcome` |
+
+存储迁移与 schema 写入许可模块登记以下信号；属性只放枚举、计数与标识。
+
+| 信号 | 名称 | 触发点 | 必需属性 |
+|---|---|---|---|
+| event | `chatdsh.gateway.migration.lock.rejected` | 迁移锁被占用或为残留锁 | `outcome`、`error.type`、`error.code`、`kind`、`count` |
+| event | `chatdsh.gateway.migration.lock.reclaimed` | 回收残留迁移锁 | `outcome`、`kind`、`count`、`attempt` |
+| event | `chatdsh.gateway.migration.schema.rejected` | 存储 schema 版本不允许写入 | `outcome`、`error.type`、`error.code`、`kind`、`count` |
+| event | `chatdsh.gateway.migration.preflight.rejected` | 迁移预检查拒绝（空间、权限、格式、活动写者） | `outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.migration.copy.failed` | 迁移复制批次失败 | `outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.migration.switch.rejected` | 验证未通过或来源不满足条件时拒绝切换 | `outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.migration.preflight` | 迁移预检查 | `count`、`status`、`outcome` |
+| span | `chatdsh.gateway.migration.copy` | 迁移复制批次 | `count`、`status`、`outcome` |
+| span | `chatdsh.gateway.migration.switch` | 显式切换 | `count`、`status`、`outcome` |
+| metric | `chatdsh_gateway_migration_locks_total` | 迁移锁获取、回收与释放结果 | `outcome`、`error.code` |
+| metric | `chatdsh_gateway_migration_schema_checks_total` | 存储 schema 写入许可检查结果 | `outcome`、`error.code` |
+| span | `chatdsh.gateway.postgres.connect` | Postgres 后端连接建立与关闭 | `outcome`、`error.type`、`error.code`、`count` |
+| span | `chatdsh.gateway.postgres.migrate` | Postgres 后端建表与 schema 推进 | `outcome`、`error.type`、`error.code`、`count` |
+| metric | `chatdsh_gateway_postgres_connections_total` | Postgres 连接建立结果 | `outcome` |
+| metric | `chatdsh_gateway_postgres_migrations_total` | Postgres schema 推进结果 | `outcome` |
+| span | `chatdsh.gateway.postgres.lease` | Postgres 跨进程写租约取得与释放 | `action`、`outcome`、`error.type`、`error.code`、`count` |
+| event | `chatdsh.gateway.postgres.rejected` | Postgres 后端动作被拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_gateway_postgres_leases_total` | Postgres 写租约结果 | `action`、`outcome` |
+| span | `chatdsh.gateway.resource.guard` | 请求进入资源守卫与额度判定 | `kind`、`limit`、`bytes`、`count`、`duration`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.resource.backpressure` | 队列与连接背压判定 | `kind`、`count`、`duration`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.capacity.report` | 容量报告生成 | `count`、`duration`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.capacity.scenario` | 单个容量场景完成 | `kind`、`count`、`duration`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.resource.rejected` | 资源额度或背压拒绝 | `kind`、`limit`、`count`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.resource.backpressure.rejected` | 背压拒绝 | `kind`、`limit`、`count`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_gateway_resource_checks_total` | 资源额度检查结果 | `kind`、`outcome` |
+| metric | `chatdsh_gateway_resource_rejections_total` | 资源拒绝计数 | `kind`、`error.code` |
+| metric | `chatdsh_gateway_resource_backpressure_total` | 背压拒绝计数 | `kind`、`outcome` |
+| metric | `chatdsh_gateway_resource_bytes` | 资源占用字节分布 | `kind` |
+| metric | `chatdsh_gateway_resource_inflight` | 在途请求数 | `kind` |
+| metric | `chatdsh_gateway_resource_queue_depth` | 队列深度 | `kind` |
+| metric | `chatdsh_gateway_resource_pending_bytes` | 待处理字节 | `kind` |
+| metric | `chatdsh_gateway_resource_connections` | 连接数 | `kind` |
+| metric | `chatdsh_gateway_capacity_duration_seconds` | 容量场景耗时 | `kind` |
+| metric | `chatdsh_gateway_capacity_rss_bytes` | 容量场景常驻内存 | `kind` |
+| metric | `chatdsh_gateway_capacity_file_descriptors` | 容量场景文件描述符数 | `kind` |
+| metric | `chatdsh_gateway_capacity_subscriptions` | 容量场景订阅数 | `kind` |
+| metric | `chatdsh_gateway_capacity_scenarios_total` | 容量场景执行结果 | `kind`、`outcome` |
+| metric | `chatdsh_gateway_migration_preflights_total` | 迁移预检查结果 | `outcome`、`error.code` |
+| metric | `chatdsh_gateway_migration_batches_total` | 迁移复制批次结果 | `outcome`、`error.code` |
+| metric | `chatdsh_gateway_migration_switches_total` | 显式切换结果 | `outcome`、`error.code` |
+
+备份、校验与恢复模块登记以下信号；属性只放动作、对象数、字节数与错误码。
+
+| 信号 | 名称 | 触发点 | 必需属性 |
+|---|---|---|---|
+| span | `chatdsh.gateway.backup.create` | 生成加密备份 | `action`、`objects`、`bytes`、`domain`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.backup.verify` | 校验既有备份 | `action`、`objects`、`bytes`、`domain`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.backup.restore` | 隔离恢复 | `action`、`objects`、`bytes`、`domain`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.backup.switch` | 恢复后切换 | `action`、`objects`、`bytes`、`domain`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.backup.retention` | 保留策略执行 | `action`、`objects`、`bytes`、`domain`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.backup.rejected` | 生成备份失败 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.backup.verify.rejected` | 备份校验失败 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.backup.restore.rejected` | 隔离恢复失败 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.backup.restore.completed` | 隔离恢复完成 | `action`、`outcome`、`objects` |
+| event | `chatdsh.gateway.backup.switch.rejected` | 恢复后切换失败 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.backup.retention.pruned` | 保留策略删除过期备份 | `action`、`outcome`、`objects` |
+| metric | `chatdsh_gateway_backup_operations_total` | 备份与恢复动作结果 | `action`、`outcome`、`error.code` |
+| metric | `chatdsh_gateway_backup_objects_total` | 处理的对象条数 | `action` |
+| metric | `chatdsh_gateway_backup_bytes` | 处理的明文字节分布 | `action` |
+| metric | `chatdsh_gateway_restore_duration_seconds` | 隔离恢复耗时 | `outcome` |
+| metric | `chatdsh_gateway_backup_retention_total` | 保留策略删除的备份套数 | `action` |
+
+部署传输安全与能力拆包模块登记以下信号；属性只放动作、错误码、地址分类、传输形态与组合包标识。
+
+| 信号 | 名称 | 触发点 | 必需属性 |
+|---|---|---|---|
+| span | `chatdsh.gateway.deploy.listener.start` | 启动前的绑定地址与安全条件检查，以及监听建立 | `kind`、`mode`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.deploy.tls.material` | 证书与密钥的生命周期与文件权限检查 | `mode`、`status`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.deploy.request` | 入站请求的 Host、来源、代理链与身份头校验 | `http.method`、`transport`、`source`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.deploy.upgrade` | WebSocket 升级与长连接的同源校验 | `http.method`、`transport`、`source`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.deploy.bundle` | 组合包装载、卸载与装卸检查 | `action`、`module`、`count`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.deploy.capability` | 平台能力按真实加载结果声明 | `module`、`status`、`outcome` |
+| event | `chatdsh.gateway.deploy.rejected` | 绑定地址、传输材料、Host、来源、代理链与身份头的拒绝 | `action`、`mode`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.deploy.tls.expiring` | 证书在 30 天告警窗口内 | `status`、`mode`、`outcome`、`error.code` |
+| event | `chatdsh.gateway.deploy.bundle.rejected` | 组合包装卸被拒绝或失败 | `action`、`module`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.deploy.capability.failed` | 平台能力加载失败 | `module`、`status`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_gateway_deploy_listener_starts_total` | 监听启动检查结果 | `kind`、`mode`、`outcome` |
+| metric | `chatdsh_gateway_deploy_rejections_total` | 传输与部署拒绝次数 | `action`、`error.code` |
+| metric | `chatdsh_gateway_deploy_bundle_mounts_total` | 组合包装卸结果 | `module`、`action`、`outcome` |
+| metric | `chatdsh_gateway_deploy_capabilities_total` | 平台能力加载结果 | `module`、`status`、`outcome` |
+| metric | `chatdsh_gateway_deploy_resources` | 组合包当前持有的资源数量 | `kind` |
 
 ### 6.2 运行时宿主平面
 
@@ -230,6 +382,8 @@ flowchart TB
 | event | `chatdsh.runtime.model.provider.failed` | 模型提供方注册校验失败 | `provider`、`error.type`、`error.code` |
 | event | `chatdsh.chat.hermes.run.failed` | Hermes 承载的聊天运行失败 | `error.type`、`error.code` |
 | event | `chatdsh.chat.hermes.approval.relayed` | Hermes 审批应答结果 | `outcome`、`error.code` |
+| span | `chatdsh.chat.hermes.run` | Hermes 承载的一次聊天运行 | `session.id`、`outcome` |
+| span | `chatdsh.chat.hermes.approval` | Hermes 审批应答中转 | `rpc.method` |
 | event | `chatdsh.runtime.approval.decided` | 审批应答 | `decision`、`decided_by` |
 | metric | `chatdsh_runtime_boot_seconds` | 启动耗时 | `stage` |
 | metric | `chatdsh_runtime_device_links_total` | 设备长连接生命周期 | `outcome` |
@@ -241,6 +395,15 @@ flowchart TB
 | metric | `chatdsh_model_provider_resolutions_total` | 模型提供方注册校验次数 | `provider`、`outcome` |
 | metric | `chatdsh_context_usage_ratio` | 上下文占用比例 | `level` |
 | metric | `chatdsh_skill_toggles_total` | 技能启用状态切换次数 | `enabled`、`outcome` |
+| span | `chatdsh.runtime.skill.search` | 按来源与关键字检索技能目录 | `source`、`hits`、`outcome`、`error.type` |
+| event | `chatdsh.runtime.skill.rejected` | 技能启停、检索与目录装载被拒绝（重名、超限、未知标识） | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_skill_searches_total` | 技能检索结果 | `outcome` |
+| span | `chatdsh.runtime.project.write` | 项目记录的写入动作 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.runtime.project.rejected` | 项目写入被拒绝（目录非法、revision 过期、重名等） | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_runtime_project_writes_total` | 项目记录写入结果 | `action`、`outcome` |
+| span | `chatdsh.runtime.assistant.write` | 助手记录的写入与装配动作 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.runtime.assistant.rejected` | 助手写入与装配被拒绝（重名、超限、引用非法等） | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_runtime_assistant_writes_total` | 助手记录写入结果 | `action`、`outcome` |
 | metric | `chatdsh_chat_hermes_runs_total` | Hermes 承载的聊天运行数 | `outcome` |
 | metric | `chatdsh_chat_hermes_approvals_total` | Hermes 审批应答数 | `outcome` |
 | metric | `chatdsh_process_resident_memory_bytes` | 常驻内存 | 无 |
@@ -260,6 +423,12 @@ flowchart TB
 | metric | `chatdsh_tool_call_duration_seconds` | 工具耗时 | `tool` |
 | metric | `chatdsh_tool_result_bytes` | 结果尺寸 | `tool` |
 | metric | `chatdsh_approvals_total` | 审批结果 | `kind`、`decision` |
+| span | `chatdsh.session.persist.open` | 会话存储打开句柄 | `outcome`、`error.type`、`error.code`、`count` |
+| span | `chatdsh.session.persist.append` | 会话事件追加批次 | `outcome`、`error.type`、`error.code`、`count` |
+| span | `chatdsh.session.persist.flush` | 会话耐久屏障 | `outcome`、`error.type`、`error.code`、`count` |
+| event | `chatdsh.session.persist.ownership.lost` | 会话写所有权失效 | `error.type`、`error.code` |
+| metric | `chatdsh_session_persist_appends_total` | 会话事件追加结果 | `outcome` |
+| metric | `chatdsh_session_persist_ownership_losses_total` | 会话写所有权失效计数 | `reason` |
 
 工具参数、命令文本、文件内容与模型输出不进入任何信号。需要区分调用规模时记录参数字节数、结果字节数与条目数。
 
@@ -290,13 +459,32 @@ flowchart TB
 | span | `chatdsh.client.module.load` | 单个客户端模块实例化 | `module.id`、`outcome` |
 | span | `chatdsh.client.remote.call` | 浏览器发起 Remote 调用 | `rpc.method`、`outcome` |
 | span | `chatdsh.client.stream.reconnect` | 实时通道重连 | `attempt`、`outcome` |
+| span | `chatdsh.theme.switch` | 生效主题或配色基线切换 | `theme.id`、`previous.id`、`color_scheme`、`outcome`、`duration` |
 | event | `chatdsh.client.error` | `window.onerror` 与 `unhandledrejection` | `error.type`、`error.code` |
-| event | `chatdsh.client.ui.action` | 关键界面动作 | `action`、`outcome` |
+| event | `chatdsh.client.ui.action` | 关键界面动作 | `action`、`outcome`、`theme.id`、`previous.id`、`color_scheme` |
 | metric | `chatdsh_client_module_load_seconds` | 模块加载耗时 | `module` |
 | metric | `chatdsh_client_reconnects_total` | 重连次数 | `outcome` |
 | metric | `chatdsh_client_errors_total` | 前端错误 | `error_type` |
+| metric | `chatdsh_theme_switch_total` | 主题切换次数 | `theme_id`、`previous_id`、`color_scheme` |
+| span | `chatdsh.client.navigate` | 宿主向内容端请求打开指定会话 | `deviceId`、`session.id`、`attempt`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.client.navigate.rejected` | 导航消息被拒绝、确认超时或重试耗尽 | `deviceId`、`attempt`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_client_navigations_total` | 导航请求结果 | `outcome` |
+| span | `chatdsh.client.message.send` | 一次发送动作，覆盖提交、确认与去重 | `session.id`、`deviceId`、`mode`、`chars`、`references`、`attachments`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.client.stream.consume` | 一次跟随流的接收 | `session.id`、`deviceId`、`frames`、`chunks`、`late.chunks`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.client.queue.consume` | 一次队列动作 | `session.id`、`action`、`count`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.client.command.run` | 一次命令执行 | `command.id`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.client.message.rejected` | 消息发送被拒绝或失败 | `session.id`、`deviceId`、`action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.client.stream.interrupted` | 流中断（断线、停止、错误帧） | `session.id`、`deviceId`、`action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.client.queue.rejected` | 队列动作被拒绝 | `session.id`、`deviceId`、`action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.client.command.rejected` | 命令执行被拒绝 | `session.id`、`deviceId`、`action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.client.reference.invalidated` | 一条引用失效 | `session.id`、`action`、`kind`、`outcome` |
+| metric | `chatdsh_client_message_sends_total` | 发送动作结果 | `outcome` |
+| metric | `chatdsh_client_stream_events_total` | 流事件接收与丢弃 | `outcome`、`reason` |
+| metric | `chatdsh_client_queue_actions_total` | 队列动作结果 | `outcome`、`action` |
+| metric | `chatdsh_client_command_runs_total` | 命令执行结果 | `outcome` |
+| metric | `chatdsh_client_reference_changes_total` | 引用变更结果 | `outcome`、`kind` |
 
-浏览器侧的上报走同源端点 `POST /chatdsh/telemetry/browser`。端点接受批量记录，限制单批 64 条与 256 KB，按来源地址限流，校验 `Origin` 与 CSRF 令牌，转发时补上 `chatdsh.surface=browser`。凭据不下发到浏览器。
+浏览器侧的上报走同源端点 `POST /chatdsh/telemetry/browser`。端点只接受回环来源，校验 `Origin`，遥测关闭时返回 404；客户端插件在载荷里自带 `service.name=chatdsh-browser` 与 `chatdsh.surface=browser`，端点原样交给本机 OpenObserve。凭据不下发到浏览器。客户端插件的日志、span 与计数器都走这一个端点，按请求头 `x-chatdsh-signal` 分流到对应的 OTLP 出口。
 
 ### 6.6 桌面壳
 
@@ -307,9 +495,27 @@ flowchart TB
 | span | `chatdsh.desktop.update.check` | 更新检查与下载 | `channel`、`outcome` |
 | span | `chatdsh.desktop.computeruse.lease` | 桌面控制租约 | `action`、`outcome` |
 | span | `chatdsh.desktop.power.block` | 电源阻止启动与释放 | `power.mode`、`action`、`outcome` |
+| span | `chatdsh.desktop.menu.invoke` | 应用菜单动作 | `action`、`outcome` |
+| span | `chatdsh.desktop.tray.invoke` | 托盘动作 | `action`、`outcome` |
+| span | `chatdsh.desktop.window.restore` | 窗口状态恢复 | `outcome` |
+| span | `chatdsh.desktop.native.invoke` | 打开外部目标的原生动作 | `action`、`outcome` |
+| span | `chatdsh.desktop.ipc.invoke` | 渲染进程到主进程的一次调用 | `channel`、`kind`、`outcome` |
+| span | `chatdsh.desktop.update.install` | 更新安装 | `stage`、`outcome` |
+| event | `chatdsh.desktop.menu.rejected` | 菜单或托盘动作被拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.desktop.ipc.rejected` | IPC 通道与载荷校验拒绝 | `channel`、`kind`、`error.type`、`error.code` |
+| event | `chatdsh.desktop.native.rejected` | 原生动作被拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.desktop.update.rejected` | 更新检查、下载与安装失败 | `stage`、`error.type`、`error.code` |
+| event | `chatdsh.desktop.power.failed` | 阻止睡眠失败 | `power.mode`、`error.type`、`error.code` |
+| event | `chatdsh.desktop.login.failed` | 开机自启设置失败 | `error.type`、`error.code` |
+| event | `chatdsh.desktop.startup.failed` | 启动阶段失败 | `stage`、`error.type`、`error.code` |
+| event | `chatdsh.desktop.startup.safe_mode` | 安全模式启动 | `stage`、`reason`、`outcome` |
 | event | `chatdsh.desktop.crash.evidence` | 崩溃证据采集 | `exit.code`、`uptime.seconds` |
 | event | `chatdsh.desktop.notification` | 系统通知 | `kind`、`outcome` |
 | metric | `chatdsh_desktop_startup_seconds` | 启动阶段耗时 | `stage` |
+| metric | `chatdsh_desktop_actions_total` | 桌面动作结果 | `action`、`outcome` |
+| metric | `chatdsh_desktop_ipc_rejections_total` | IPC 拒绝 | `channel`、`reason` |
+| metric | `chatdsh_desktop_update_failures_total` | 更新失败 | `stage` |
+| metric | `chatdsh_desktop_safe_mode_starts_total` | 安全模式启动次数 | `reason` |
 | metric | `chatdsh_desktop_crashes_total` | 崩溃次数 | `reason` |
 | metric | `chatdsh_desktop_power_blockers` | 活动电源阻止器数量 | `power.mode` |
 
@@ -337,8 +543,13 @@ flowchart TB
 | span | `chatdsh.cli.command` | 单条命令执行 | `command`、`outcome`、`exit.code` |
 | span | `chatdsh.cli.channel.open` | 渠道建立 | `outcome` |
 | span | `chatdsh.cli.scene.open` | 场景打开 | `scene` |
+| span | `chatdsh.cli.channel.reconnect` | 渠道断开后重连本机运行时 | `attempt`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.cli.command.failed` | 命令执行的失败分支（参数非法、权限拒绝、执行失败） | `command`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.cli.approval.decided` | 终端审批应答 | `decision`、`decided_by`、`outcome` |
 | event | `chatdsh.cli.noninteractive.exit` | 非交互模式退出 | `exit.code`、`reason` |
 | metric | `chatdsh_cli_commands_total` | 命令执行 | `command`、`outcome` |
+| metric | `chatdsh_cli_channel_reconnects_total` | 渠道重连结果 | `outcome` |
+| metric | `chatdsh_cli_approvals_total` | 终端审批应答结果 | `decision`、`outcome` |
 
 ### 6.9 MCP 服务端
 
@@ -358,10 +569,22 @@ flowchart TB
 | span | `chatdsh.memory.recall` | 记忆召回（Hindsight 或 Hermes 内置） | `bank.kind`、`hits`、`outcome` |
 | span | `chatdsh.memory.write` | 记忆写入（Hindsight 或 Hermes 内置） | `bank.kind`、`outcome` |
 | span | `chatdsh.memory.summary` | 回合记忆的模型摘要 | `model.provider`、`outcome`、`chars` |
+| span | `chatdsh.memory.search` | 按 bank 范围检索记忆 | `action`、`hits`、`outcome` |
+| span | `chatdsh.memory.group.save` | 新建或更新记忆组映射 | `action`、`outcome` |
+| span | `chatdsh.memory.group.detach` | 解除工作区关联或删除记忆组映射 | `action`、`outcome` |
+| span | `chatdsh.memory.write.queue` | 读取或丢弃未确认写入记录 | `action`、`outcome` |
 | span | `chatdsh.dependency.probe` | Hermes、Hindsight 探活 | `dependency`、`outcome` |
 | event | `chatdsh.memory.degraded` | 记忆降级 | `operation`、`reason`、`error.type` |
+| event | `chatdsh.memory.search.failed` | 记忆检索失败并降级 | `error.type`、`error.code`、`outcome` |
+| event | `chatdsh.memory.group.rejected` | 记忆组保存、解除或删除被拒绝 | `error.type`、`error.code`、`outcome` |
+| event | `chatdsh.memory.write.failed` | 记忆写入未确认 | `error.type`、`error.code`、`outcome` |
+| event | `chatdsh.memory.queue.rejected` | 未确认写入记录处理被拒绝 | `error.type`、`error.code`、`outcome` |
 | metric | `chatdsh_memory_recall_seconds` | 召回耗时 | `bank_kind` |
 | metric | `chatdsh_memory_injections_total` | 召回注入结果 | `outcome` |
+| metric | `chatdsh_memory_searches_total` | 记忆检索结果 | `outcome` |
+| metric | `chatdsh_memory_group_changes_total` | 记忆组变更结果 | `action`、`outcome` |
+| metric | `chatdsh_memory_writes_total` | 记忆写入结果 | `outcome` |
+| metric | `chatdsh_memory_queue_actions_total` | 未确认写入记录处理动作 | `action`、`outcome` |
 | metric | `chatdsh_dependency_probe_failures_total` | 探活失败 | `dependency` |
 | span | `chatdsh.import.seed` | 把会话副本还原成会话种子 | `records.count`、`seed.count`、`outcome` |
 | event | `chatdsh.import.seed.failed` | 副本形状不合法 | `error.type`、`records.count` |
@@ -369,6 +592,12 @@ flowchart TB
 | span | `chatdsh.connectors.sync` | 把连接器记录同步成加载器行 | `connectors.count`、`create.count`、`update.count`、`remove.count`、`outcome` |
 | event | `chatdsh.connectors.sync.failed` | 同步失败 | `error.type` |
 | metric | `chatdsh_connectors_sync_total` | 同步次数 | `outcome` |
+| span | `chatdsh.runtime.artifact.access` | 制品读取、版本列举、受限预览与删除范围计算 | `action`、`version`、`outcome`、`error.type` |
+| event | `chatdsh.runtime.artifact.rejected` | 制品读取、版本引用与删除被拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_artifact_operations_total` | 制品操作结果 | `action`、`outcome` |
+| span | `chatdsh.connectors.change` | 连接器新建、更新、启停与删除 | `action`、`transport`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.connectors.rejected` | 连接器表单与条件校验、名称冲突、凭据变量名不合法 | `action`、`outcome`、`error.type`、`error.code` |
+| metric | `chatdsh_connector_changes_total` | 连接器变更结果 | `action`、`outcome` |
 
 ### 6.11 同步、分享与遥测自监控
 
@@ -380,6 +609,7 @@ flowchart TB
 | event | `chatdsh.telemetry.dropped` | 队列满丢弃 | `signal`、`reason` |
 | event | `chatdsh.telemetry.invalid` | `traceparent` 非法被丢弃 | `carrier`、`reason` |
 | event | `chatdsh.telemetry.enabled` | 遥测在进程内开启 | `reason` |
+| event | `chatdsh.telemetry.disabled` | 遥测在进程内关闭 | `reason` |
 | event | `chatdsh.telemetry.export.failed` | 导出失败 | `signal`、`error.code` |
 | span | `chatdsh.telemetry.probe` | 自检探针写一条日志、一个 span 与一个计数器 | `probe.id` |
 | metric | `chatdsh_telemetry_queue_depth` | 队列深度 | `signal` |
@@ -440,7 +670,7 @@ flowchart TB
 
 允许记录的是长度、数量、类型、状态、耗时、枚举值与登记过的标识。错误只记 `error.type` 与 `error.code`；`error.message` 默认不记，调试模式下可以记录，但必须经过 `redactMessage` 处理：截断到 200 字符，替换绝对路径、URL 查询串、形似凭据的片段。
 
-脱敏在唯一的出口做。`@chatdsh/core-diagnostics` 提供 `createRedactor(rules)`，规则按属性键与值的形状匹配；业务侧只传登记过的键，未登记的键在关闭调试模式时被丢弃并计数。这条限制让「忘记脱敏」变成一个可观测的丢弃计数，不依赖评审记忆。
+脱敏在唯一的出口做。`@chatdsh/core-diagnostics` 提供 `createRedactor(rules)`，规则按属性键与值的形状匹配；业务侧只传登记过的键，未登记的键在关闭调试模式时被丢弃并计数。这条限制让「忘记脱敏」变成一个可观测的丢弃计数，不依赖评审记忆。span 上通过 `setAttribute` 追加的属性同样经过这张白名单，未登记键丢弃并计入 `chatdsh_telemetry_dropped_total`。
 
 凭据读取只记录 `credential.name` 与 `outcome`，值不进入任何信号。模型请求只记录 token 计数与耗时，消息内容不进入遥测。
 
@@ -459,6 +689,8 @@ flowchart TB
 队列满时丢弃新记录并累加 `chatdsh_telemetry_dropped_total`，不阻塞业务路径。导出失败按 429、502、503、504 重试，上限 5 次，其余状态直接计数。关闭与进程退出时以 3 秒为界刷新，超时后放弃剩余记录并计数。
 
 `@chatdsh/core-diagnostics` 维护一个容量为 32 条的自建有界环形缓冲，只保存最近导出失败与丢弃记录的元数据，字段为 `signal`、`reason` 或 `status`、`at`，不保存日志正文、属性值、载荷与任何原文。缓冲未满时顺序写入；写满后覆盖最旧记录，并把覆盖次数计入 `chatdsh_telemetry_dropped_total`。状态端点的 `recentDiagnostics` 字段返回这个缓冲的有界快照。
+
+诊断导出另有一个容量为 64 条的最近事件环形缓冲，保存已脱敏的 `event`、`log` 与结束后的 `span` 记录：字段为 `at`、`signal`、`kind`、`name`，日志另带 `level` 与截断后的消息，属性只保留白名单内的键。写满后覆盖最旧记录，不保存任何原文、载荷与凭据。
 
 容量按单用户自托管估算：一次回合大约产生 40 条日志、12 个 span 与 30 个指标数据点；一天 200 个回合约 8 千条日志与 6 千个 span。建议日志流保留 14 天、追踪流保留 7 天、指标流保留 90 天；OpenObserve 容器的全局压缩保留期为 90 天，高流量调试流在流级设置更短的保留期。
 
@@ -502,7 +734,9 @@ order by _timestamp desc
 limit 200
 ```
 
-自检有两处。运行时开启遥测时提供 `GET /chatdsh/telemetry/status` 与 `POST /chatdsh/telemetry/self-test`：前者返回开关状态、端点、信号列表、队列深度与最近一次导出时间；后者写一条日志、一个 span、一个计数器并返回 `probe_id`，随后可以用 `probe_id` 在三个信号里核对。关闭时 status 返回 `enabled: false` 与原因，self-test 返回 409 `telemetry-disabled`。端点只绑回环，校验 `Origin` 与 CSRF 令牌。
+自检有两处。运行时开启遥测时提供 `GET /chatdsh/telemetry/status` 与 `POST /chatdsh/telemetry/self-test`：前者返回开关状态、全部关闭来源、端点、信号列表、队列深度、丢弃计数与最近一次导出时间；后者写一条日志、一个 span、一个计数器并返回 `probe_id`，随后可以用 `probe_id` 在三个信号里核对。关闭时 status 返回 `enabled: false` 与原因，self-test 返回 409 `telemetry-disabled`。端点只绑回环，校验 `Origin` 与 CSRF 令牌。
+
+诊断导出为 `GET /chatdsh/telemetry/diagnostics?limit=<1..256>`，返回脱敏后的最近事件、丢弃汇总与队列深度；关闭时返回 409 `telemetry-disabled` 与原因。运行期开关为 `POST /chatdsh/telemetry/state`，请求体 `{"enabled": boolean}`，要求 `x-chatdsh-csrf: 1`，返回切换后的状态载荷；设置页与命令的持久化写入设置文件，本进程立即生效。浏览器、桌面与移动端上报统一走 `POST /chatdsh/telemetry/browser`，关闭时返回 404。
 
 仓库自带 `scripts/telemetry-probe.mjs`，它用 DSH 安装里的 OpenTelemetry 包向本机 OpenObserve 发三类信号，再查询回来核对，退出码表示核对结果；全局关闭状态下它直接退出，不写入数据。用法见脚本头部注释。
 
@@ -532,7 +766,7 @@ limit 200
 |---|---|---|
 | 控制平面 | 进程入口注入 `traceparent` 中间件，HTTP 路由统一包装 | 反代透传上游上下文 |
 | 运行时 | 宿主平面插件在 fiber 启动时创建 provider，销毁时 `shutdown` | 工具与 Remote 走语义化包装器 |
-| 浏览器 | 客户端插件在启动早期安装错误钩子与上报队列 | 上报走同源端点 |
+| 浏览器 | 客户端插件在启动早期建立统一客户端并安装错误钩子 | 事件、span、计数与 `traceparent` 注入都走这个客户端，上报走同源端点 |
 | 桌面 | 主进程在单实例锁之后创建 provider | 启动五阶段各自一个 span |
 | 移动端 | 应用启动时创建 provider，经控制平面端点上报 | 不持有 OpenObserve 凭据 |
 | 命令行 | 进程入口创建 provider，退出前有界刷新 | 每条命令一个 span |

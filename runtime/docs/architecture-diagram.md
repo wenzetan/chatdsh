@@ -19,7 +19,7 @@ flowchart TB
   end
   subgraph P["控制平面 @chatdsh/gateway"]
     PROXY["反向代理与按设备路由"]
-    ACC["设备与会话归属、工作区成员"]
+    ACC["设备与会话归属、工作区"]
     DEV["设备在线状态与订阅"]
     PUSH["跨设备推送中枢"]
     SYNC["会话日志只读副本"]
@@ -212,8 +212,8 @@ flowchart TB
   HOSTB["@chatdsh/bundle-hosted"] --> STORE
   PBASE["@chatdsh/preset-chat"] --> STORE
   subgraph STORE["存储后端：二选一"]
-    JS["bundle-storage-jsonl<br/>单机与桌面"]
-    PG["bundle-storage-postgres<br/>团队版"]
+    JS["bundle-storage-jsonl<br/>默认"]
+    PG["bundle-storage-postgres<br/>需要 Postgres 时"]
   end
   subgraph CHAT["聊天后端：按 chatBackend"]
     HERB["bundle-chat-hermes<br/>chatBackend 为 hermes 时加入"]
@@ -373,7 +373,7 @@ flowchart TB
   end
 ```
 
-四种形态的客户端都只与控制平面对话。移动端的三条路线里，设备本地跑完整运行时的形态在 iOS 上不允许存在，手机直连同一台电脑上运行时的形态承载不了互不信任的多个人，因此产品主线是原生应用连控制平面。
+四种形态的客户端都只与控制平面对话。移动端的三条路线里，设备本地跑完整运行时的形态作为手机日常入口不成立，手机直连同一台电脑上运行时的形态换设备就没有会话语境，因此产品主线是 PWA 连控制平面。
 
 ## 十一、远程执行节点
 

@@ -1,6 +1,8 @@
 # ChatDSH 架构设计
 
-以 DSH（deepseek-harness）为运行内核，覆盖 Web 端、命令行、Windows 桌面、移动端四种形态的开源自托管 ChatGPT 对应物。目标形态是单用户自托管；团队版与公网多租户版是同一套代码在更大规模下的部署。全部能力以插件、组合包、profile 补丁进入运行时。
+完整目标契约使用[系统完成设计](<system-completion-design.md>)，客户端行为使用[完整交互规格](<client-complete-spec.md>)，后续实施使用[工作包](<implementation-work-packages.md>)。本文件保留上游事实、模块边界与既有实现证据；设备实时通道、单用户访问认证、连续副本、存储迁移、Hermes 运行桥接与资源限制以完整系统契约为准。
+
+以 DSH（deepseek-harness）为运行内核，覆盖 Web 端、命令行、Windows 桌面、移动端四种形态的开源自托管 ChatGPT 对应物。目标形态是单用户、多设备、多终端：一个人拥有一套部署，在自己的多台设备与多种客户端上使用，没有账号体系，没有租户维度。全部能力以插件、组合包、profile 补丁进入运行时。
 
 本机实测基线：`@deepseek-ai/dsh` 0.2.1-rc.2，安装根 `/usr/local/nvm/versions/node/v24.19.0/lib/node_modules/@deepseek-ai/dsh`（下文记作 `$DSH`），内置包目录 `$DSH/node_modules/@deepseek-ai/`（305 个条目）。Hermes 0.21.7 装在 `/usr/local/lib/hermes-agent/`。
 
@@ -292,19 +294,19 @@ flowchart TB
 
 `@chatdsh/gateway` 是独立 Node 服务，承担：
 
-- 设备、会话归属索引、工作区与成员、订阅、分享记录、用量账本；
-- 扩展包的安装记录与分发：哪个用户装了哪个版本、来源、权限声明与安装时间；
+- 设备、会话归属索引、工作区、订阅、分享记录、用量账本；
+- 扩展包的安装记录与分发：哪台设备装了哪个版本、来源、权限声明与安装时间；
 - 会话日志副本：执行节点推送的事件按 `seq` 追加成只读镜像并记录同步水位，供跨设备浏览、会话导入与设备离线时读取；
 - 分享快照渲染：按分享记录从会话副本读出到指定序号的事件，服务端直接渲染只读页面，不经运行时、不受运行时的鉴权约束；
 - 反向代理与按设备路由：客户端的 `/api` 请求经它转发到运行时并改写 Host 与 Origin；带 `/d/<deviceId>/` 前缀的请求经该设备的长连接转发；
-- 跨设备推送的中枢：按设备订阅决定投给谁，应用在前台走长连接，后台由 Android 前台服务发本地通知；
+- 跨设备推送的中枢：按设备订阅决定投给谁，应用在前台走长连接，后台由 Service Worker 收到 Web Push 后展示本地通知；
 - 自动化的入口与去重：持有自动化记录与投递记录，webhook 路由按记录里的密钥环境变量鉴权、按事件标识去重，手工触发的动作由控制平面转发给运行时；
 - Hermes 的生命周期托管：只在 `chatBackend` 为 `hermes` 时启动，每部署一个实例，控制平面负责启动、探活、降级与回收；Hindsight 由用户自行部署，控制平面只探活不托管进程；
 - 聊天与记忆后端开关：持有 `chatBackend` 与 `memoryBackend` 的值并下发给运行时，四种组合见[聊天后端与记忆接入](hermes-integration.md)第四节；
 - 强制不休眠的电源策略：按用户开关让控制平面与运行时保持存活，并阻止计算机进入睡眠与休眠；
 - 运行时的进程托管：按需启动、空闲回收。
 
-数据访问走接口，单机实现落在 SQLite，团队版换 Postgres。
+数据访问走接口，当前实现落在 SQLite。
 
 **分享是控制平面自己渲染的只读快照。** 分享不经过运行时，原因有两条：运行时的鉴权以 authority 绑定的 cookie 为前提，而分享要发给 tailnet 之外的人；快照只需要读，不需要 agent 参与。
 
@@ -336,6 +338,10 @@ flowchart TB
 | `@chatdsh/host-voice` | 语音识别，复用内置实验性接口 | `dsh-experimental-api-speech-to-text` 行 |
 | `@chatdsh/host-images` | 图像生成与编辑工具的服务端部分 | `ctx.tools`、`ctx.attachments` |
 | `@chatdsh/host-mcp-server` | 把工具目录暴露为 MCP 服务端 | `ctx.webServer.register`、独立子系统，见 4.4 |
+| `@chatdsh/host-chat-hermes` | Hermes 承载聊天时的执行分支与事件代写；`chatBackend` 为 `hermes` 时加载 | `ctx.llm`、`appendPluginRecord` |
+| `@chatdsh/host-device-link` | 执行节点出站长连接与按设备转发：握手、心跳、请求回填与在线表维护 | `ctx.webServer.registerUpgrade`、控制平面的设备链路 |
+| `@chatdsh/host-settings-sync` | 设置按白名单命名空间跨设备同步：监听变更、上报控制平面、接收推送写本机 home 层 | `ctx.chatdshSettings`、控制平面的设置端点 |
+| `@chatdsh/host-import` | 从控制平面的会话副本导入并在本地 fork，用于「在本机继续」 | `buildForkSeed`、`ctx.agents.create` |
 | `@chatdsh/core-diagnostics` | 各端共享的纯诊断库：客户端、配置、脱敏、自建 W3C 链路上下文、有界环形缓冲与三条进程内导出管道 | 无，由各端客户端与宿主插件引用 |
 | `@chatdsh/host-telemetry` | 宿主平面唯一遥测出口：`ctx.chatdshTelemetry`、状态端点、自检端点、浏览器与移动端中继、开关切换与配置重载 | `ctx.provide`、`ctx.webServer.register`、`dsh-session-telemetry-otel` 行 |
 
@@ -362,7 +368,7 @@ MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协�
 
 连接失败是允许的。某台服务器在 A 端能连、在 B 端因网络条件连不上时，B 端记录里仍有这一段，工具目录里没有它的工具，其他端不受影响。
 
-上面这张清单是宿主平面的设计集合。已实现的是其中十七个：`core-session-index`、`core-diagnostics`、`host-telemetry`、`host-usage`、`host-assistants`、`host-artifacts`、`host-projects`、`host-push`、`host-model-provider`、`host-llm-router`、`host-context-insights`、`host-skills`、`host-memory`、`host-approval`、`host-connectors`、`host-import`、`host-mcp-server`。表中其余两项尚未实现，各自的状态与替代方式如下：
+上面这张清单是宿主平面的设计集合。表中实际实现的是 `packages/host/` 下的 18 个包与 `packages/core/` 下的 `core-session-index`、`core-diagnostics`；`host-voice` 与 `host-images` 只有设计没有实现，状态与替代方式如下：
 
 | 未实现的包 | 现状 |
 |---|---|
@@ -416,7 +422,7 @@ MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协�
 
 命令行形态不另设组合包：终端交互与命令行审批应答方全部由上游的 dsh-tui 承担，见 6.2 节。
 
-存储实现独立成组合包，由 profile 的 bundles 列表选择，单机与桌面取 JSONL，团队版取 Postgres。聊天后端与记忆后端也各成组合包：`bundle-memory-hindsight` 在 `memoryBackend` 为 `hindsight` 时加入，`bundle-chat-hermes` 在 `chatBackend` 为 `hermes` 时加入，两者都不加入时就是「无 Hermes 无 Hindsight」的最轻形态。组合包之间不表达「基础」关系，叠加顺序由 profile 决定，同一组合包在列表里只出现一次。
+存储实现独立成组合包，由 profile 的 bundles 列表选择，默认取 JSONL，需要 Postgres 时取 Postgres 后端。聊天后端与记忆后端也各成组合包：`bundle-memory-hindsight` 在 `memoryBackend` 为 `hindsight` 时加入，`bundle-chat-hermes` 在 `chatBackend` 为 `hermes` 时加入，两者都不加入时就是「无 Hermes 无 Hindsight」的最轻形态。组合包之间不表达「基础」关系，叠加顺序由 profile 决定，同一组合包在列表里只出现一次。
 
 ### 4.8 扩展包
 
@@ -458,10 +464,11 @@ MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协�
 | `chatdsh-web` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`preset-chat` | 单机 Web 与执行节点 |
 | `chatdsh-desktop` | `dsh-base`、`dsh-web-app`、`bundle-storage-jsonl`、`bundle-hosted`、`bundle-desktop`、`preset-chat` | Electron 载体持有的本机 profile |
 | `chatdsh-cli` | `dsh-base`、`dsh-experimental-ralph-bundle`、`dsh-tui` | 命令行交互 |
-| `chatdsh-postgres` | `dsh-base`、`dsh-web-app`、`bundle-storage-postgres`、`bundle-hosted`、`preset-chat` | Postgres 会话日志联调 |
 | `chatdsh-hermes` | `dsh-base`、`dsh-web-app`、`bundle-hosted`、`bundle-chat-hermes`、`preset-chat` | Hermes 承载聊天 |
 
 这张表以 `runtime/profiles/*/package.json` 的 `dsh.profile.bundles` 为准，改动时两处同步。`dsh-tui` 与 `dsh-experimental-ralph-bundle` 是上游组合包：后者让 dsh-tui 0.16.1 补丁层里的 `tool-ralph` 关闭行有目标可寻。
+
+`e2e/profiles/` 下另有四个只给验收脚本用的 profile：`chatdsh-acp`、`chatdsh-acp-live`、`chatdsh-hermes-live`、`chatdsh-postgres`。其中 `chatdsh-postgres` 用 `bundle-storage-postgres` 把会话日志切到 Postgres，只用于存储替换的联调，不作为部署形态。它们不计入上面的部署 profile 表。
 
 每个 profile 的 `cordis.patch.yml` 负责本部署的差异：会话存储 `root`、`session-query` 打开检索、`connection` 行补 `trustedHosts`、按形态禁用不需要的宿主行。
 
@@ -469,7 +476,7 @@ MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协�
 
 禁用的内置行包括账号链六行（`deepseek-account`、`llm-deepseek-account`、`account-controller`、`ui-settings-account`、`web-deepseek-api`、`web-search-deepseek`），`deepseekAccount` 被六个包引用，禁用时必须整链处理，否则会留下失败的 fiber。`llm-deepseek` 是否保留取决于是否允许用户直接配 DeepSeek API key。
 
-模型供应方的配置面是 `dsh-llm-pi-ai` 的 `providers` 与 `dsh-llm-deepseek-api-key` 的 `apiKeyEnv`。单机形态下默认配一条指向本机 OmniRoute 的路由；多租户形态下这两条配置面必须锁住，约束来自运行时文件系统对租户只读或运行时禁止直连外网。
+模型供应方的配置面是 `dsh-llm-pi-ai` 的 `providers` 与 `dsh-llm-deepseek-api-key` 的 `apiKeyEnv`。默认配一条指向本机 OmniRoute 的路由。
 
 ## 六、四种客户端形态
 
@@ -501,11 +508,13 @@ Electron 主进程承担原生能力与运行时编排，控制平面、运行�
 
 ### 6.4 移动端
 
-Android 应用以上游 [Clarklevis1995/dsh-mobile](https://github.com/Clarklevis1995/dsh-mobile) 为基础，源码分三层放在 [`mobile/`](../mobile)：上游子树快照在 `mobile/base`，本仓库的适配在 `mobile/overlay`，合成出的构建目录在 `mobile/android`（不进版本管理）。这样上游的协议解码、事件折叠、会话状态机与界面结构可以持续跟随，本仓库只维护真正不同的部分。分层与升级流程见[Android 客户端](mobile.md)。
+移动端是 PWA：控制平面托管的外壳与官方发布的前端产物是同一份产物，加移动布局与 `manifest` 安装入口。安装到主屏后与浏览器访问共用同一份 Service Worker 与推送权限。这样做的理由是官方前端产物本身就是可安装的 PWA，本项目在它之上加移动形态，官方出移动端时替换的是外壳这一层。
 
-接入链路上，手机只与控制平面通信。配对码在控制平面换成设备令牌，之后每次启动用令牌换运行时的带令牌路径；业务通道是运行时的 `/ws/mobile`，由控制平面在 WebSocket 升级阶段校验设备令牌后转发，插件只接受本机回环直连。配对载荷由控制平面按上游客户端的格式下发，客户端因此不需要区分「连控制平面」与「连运行时」。设备吊销后 HTTP 与 WebSocket 同时拒绝。语音上传、附件上传、后台通知与系统回收后的推送尚未实现，相关设计保留为后续目标。
+接入链路上，手机只与控制平面通信。配对码在控制平面换成设备令牌，之后每次启动用令牌换运行时的带令牌路径；业务通道是运行时的 `/ws/mobile`，由控制平面在 WebSocket 升级阶段校验设备令牌后转发，插件只接受本机回环直连。配对载荷由控制平面下发，客户端因此不需要区分「连控制平面」与「连运行时」。设备吊销后 HTTP 与 WebSocket 同时拒绝。
 
-应用连控制平面，不直连运行时。会话列表与内容走控制平面的冷读接口，实时更新走 WebSocket；发消息与回答审批两类动作经控制平面转给对应运行时。语音上传到 `host-voice` 暴露的转写接口，拍照与相册走附件上传。送达分三档：应用在前台走长连接，后台由 Android 前台服务发本地通知，应用被系统回收后的送达需要厂商推送通道，排在后续。首期只做 Android。
+会话列表与内容走控制平面的冷读接口，实时更新走 WebSocket；发消息与回答审批两类动作经控制平面转给对应运行时。附件上传走附件接口。送达分三档：应用在前台走长连接，后台由 Service Worker 收到 Web Push 后展示本地通知，应用被系统回收后的送达依赖推送服务。iOS 不纳入范围。
+
+通知的能力边界要交代清楚：Web Push 由服务端经推送服务下发，浏览器收到后唤起 Service Worker 展示，应用侧无法保证系统回收后立即送达。这一条与原生前台服务不同，在开启通知时的说明里列出。
 
 离线队列只接受发消息，审批在离线时明确拒绝并保留卡片，因为审批的应答时窗有限：`chatBackend` 为 `hermes` 时由 Hermes 决定，为 `dsh` 时由 DSH 审批服务决定。
 
@@ -537,7 +546,7 @@ Android 应用以上游 [Clarklevis1995/dsh-mobile](https://github.com/Clarklevi
 
 第一级设备在等待期间离线时不会提前升级，仍然等到阈值到期才进入第二段。第二级窗口不小于 15 秒，审批超时被改得很短时按剩余时间收缩。回合结束的通知走同一套模式与阈值。
 
-任一端处理之后，控制平面撤回其余设备上的对应通知：Android 用通知标识取消，桌面关闭对应气泡，避免用户点开一条已经失效的提醒。同一设备由单实例锁保证只有一个进程。
+任一端处理之后，控制平面撤回其余设备上的对应通知：PWA 按 Service Worker 注册的推送标识撤回，桌面关闭对应气泡，避免用户点开一条已经失效的提醒。同一设备由单实例锁保证只有一个进程。
 
 **设备注册与在线状态。** 控制平面持有设备列表（精确 Origin、平台、令牌摘要、最后在线时间、送达档位）与在线端集合。第一级按模式选取目标（最近活跃的一台，或最近活跃设备加全部手机），第二级取全部在线端并排除已上报已读的。
 
@@ -573,17 +582,15 @@ Android 应用以上游 [Clarklevis1995/dsh-mobile](https://github.com/Clarklevi
 
 ### 7.4 部署形态
 
-目标形态是单用户自托管：控制平面、运行时、以及可选的 Hermes 与 Hindsight 部署在同一网络内，运行时只绑回环，控制平面开两个 TLS 监听（回环供 Serve 转发、EasyTier 接口供反代以 mTLS 接入），数据根下只有 `tenants/default` 一个租户，存储用 SQLite 与本地文件，不需要任何外部服务。Hermes 由控制平面托管，与运行时同机；Hindsight 由用户自行部署，可同机或分机。
+目标形态是单用户、多设备、多终端：控制平面、运行时、以及可选的 Hermes 与 Hindsight 部署在同一网络内，运行时只绑回环，控制平面开两个 TLS 监听（回环供 Serve 转发、EasyTier 接口供反代以 mTLS 接入），数据根下只有一份部署、没有账号或租户目录，存储用 SQLite 与本地文件，不需要任何外部服务。每台设备跑一个运行时进程，客户端是窗口。Hermes 由控制平面托管，与运行时同机；Hindsight 由用户自行部署，可同机或分机。
 
 Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合都成立：无 Hermes 有 Hindsight 时聊天走 DSH、记忆经 Hindsight；无 Hermes 无 Hindsight 时聊天走 DSH、记忆不启用；有 Hermes 无 Hindsight 时聊天与记忆都走 Hermes 内置；有 Hermes 有 Hindsight 时聊天走 Hermes、记忆走 Hindsight 的 bank。见[聊天后端与记忆接入](hermes-integration.md)。
 
-团队版与公网多租户版是同一套代码在更大规模下的部署：控制平面存储换 Postgres、会话日志换 Postgres 后端、附件换对象存储、公网形态追加容器隔离与配额强制。调用方与数据模型不变。
-
-必须从第一天就按最终形态实现的接缝，以及单机下可以简化掉的部分，见[部署形态与兼容接缝](deployment.md)。
+必须从第一天就按最终形态实现的接缝，以及当下可以简化掉的部分，见[部署形态与兼容接缝](deployment.md)。
 
 ### 7.5 远程执行节点
 
-单机形态下控制平面与运行时同机，工作区是本地目录。多设备形态下可以把其他设备注册为执行节点，工作区落在那些设备上，从任意客户端继续会话。
+控制平面与运行时可以同机，也可以分处不同设备：控制宿主承载控制平面并默认兼作执行节点，其他设备注册为执行节点，工作区落在各自设备上，从任意客户端继续会话。
 
 **两种角色。** 控制宿主承载控制平面，默认也是执行节点；执行节点只跑运行时，不对外提供服务。一台设备可以同时是两者。判断依据由设备表记录，不靠推断。
 
@@ -633,9 +640,16 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 ### 7.6 跨设备会话
 
-其他设备上的会话是只读的，不提供接续。它们出现在会话列表里（控制平面持有投影缓存），打开后可以浏览完整对话，但没有输入框——接续意味着写操作发生在文件不在本机的设备上，一旦那台设备离线就变成写不进去的会话。
+在其他设备上打开一个会话时给用户两个显式动作：
 
-要在另一台设备上继续同一件事，用导入加本地 fork：
+| 选项 | 行为 | 结果 |
+|---|---|---|
+| 在远程继续 | 右栏 iframe 指向 `/d/<deviceId>/`，写落到该会话所在设备的运行时 | 同一条会话，`deviceId` 不变 |
+| 在本机继续 | 从控制平面的会话副本导入并在本地 fork | 新会话，`cwd` 与 `deviceId` 是本机，`parentSession` 指向源会话 |
+
+「在远程继续」是默认动作，写操作发生在会话本来所在的设备上，因此文件视图始终正确；目标设备离线时这个动作明确失败并报设备离线，不改路由、不排队、不回退到宿主机执行。
+
+「在本机继续」用导入加本地 fork：
 
 1. 在会话列表里勾选要导入的会话，可以多选；
 2. 控制平面从会话副本读取被选中会话的事件序列；
@@ -778,8 +792,6 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 会话分两类。工作会话带 `workspaceId`，`cwd` 指向工作区根目录，agent preset 为 `chatdsh`。聊天会话不带工作区，`cwd` 指向一个专用的聊天目录，归属表里 `workspaceId` 留空。聊天会话的 agent preset 与执行者由 `chatBackend` 决定：为 `hermes` 时 preset 是空组合、执行由 Hermes 承载，为 `dsh` 时 preset 为 `chatdsh`、执行由 DSH 自己的 agent 完成。
 
-工作区的私有与共享是一个标记，只影响记忆召回规则，不影响数据布局。
-
 **工作区之间的记忆共享靠手动关联。** 默认每个工作区独立，记忆写入并召回 `ws:<workspaceId>`。用户可以把两个工作区关联成一个记忆组，关联后两者共用 `ws:<memoryGroupId>`，在一台设备的工作区里积累的记忆可以在另一台设备的关联工作区里召回。关联是双向的，一个工作区同时只属于一个组；它只影响记忆的写入与召回目标，不改变会话归属、项目指令、会话列表与助手设置，这些仍按各自的工作区记录。
 
 关联入口只在记忆能力开启时出现：`memoryBackend` 为 `none`、`@chatdsh/host-memory` 未启用或 Hindsight 不可达时，界面不展示关联操作，因为它不产生任何效果。解除关联后两个工作区各自回到自己的 `ws:<workspaceId>`，此前写入组 bank 的记忆留在原处不迁移。
@@ -801,7 +813,7 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 | 记忆 | 外部 Hindsight 的 bank 或 Hermes 内置记忆，由 `memoryBackend` 决定，见[聊天后端与记忆接入](hermes-integration.md) |
 | Connectors | `host-connectors` 生成 MCP 条目，凭据走 `ctx.authorization` |
 | 助手与插件市场 | `dsh-plugin-market` 与 `dsh-plugin-market-index` 的索引格式 |
-| 团队与工作区 | 控制平面的成员表与进程边界 |
+| 工作区 | 控制平面的工作区记录与设备归属；单用户部署下没有成员表 |
 | 定时任务 | `ctx.schedule` 的任务表在 `$DSH_HOME`，与会话同处，`dsh-tool-schedule` 让会话里的模型自己建任务 |
 | 移动端推送 | 控制平面按设备订阅投递，前台走长连接、后台走本地通知 |
 | 外部程序接入工具 | `host-mcp-server` 已实现，设计保留、默认关闭；当前没有消费方 |
@@ -818,7 +830,7 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 **整行 config 覆盖与静默跳过。** 补丁覆盖整行配置，遗漏键会落到未定义；`name` 写错或 `id` 未匹配只打印警告。取舍是每次改动后用 `--dump-config` 与 `--dump-config-schema` 校验并要求警告输出为空。
 
-**多部署各自一个进程的内存开销。** 每个部署装载整套插件树，`Node` 无法跨进程共享堆。取舍是接受按部署数线性增长，用空闲回收控制峰值；单机自托管下常驻的就是控制平面与运行时两个进程。
+**多部署各自一个进程的内存开销。** 每个部署装载整套插件树，`Node` 无法跨进程共享堆。取舍是接受按部署数线性增长，用空闲回收控制峰值；一套部署常驻的就是控制平面与运行时两个进程，外加每台执行节点各一个运行时。
 
 **空闲回收与写句柄归属。** 回收后重新打开会话必须有 agent 或走持久化句柄，`SessionStore` 不承担持久化。取舍是冷读恢复走持久化句柄，并明确它由哪个组件负责。
 
@@ -852,13 +864,13 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 保活与强制不休眠：开启强制不休眠后让 Windows 空闲超过系统睡眠阈值，`powercfg /requests` 出现本程序的 `SYSTEM` 与 `DISPLAY` 请求且机器不睡眠；关闭设置后两条请求消失。托盘常驻下关闭窗口进程仍在、通知照常；选择退出后进程消失、通知停止。
 
-定时与推送：控制平面登记一个到期任务，动作是唤醒休眠租户的运行时并投递消息，进程被回收后仍能按期触发；审批请求产生后，按设备订阅投递到在线设备。
+定时与推送：控制平面登记一个到期任务，动作是唤醒休眠设备的运行时并投递消息，进程被回收后仍能按期触发；审批请求产生后，按设备订阅投递到在线设备。
 
 多客户端共存：两台设备在两个客户端打开同一会话，两端事件流顺序一致；在一端应答审批后，另一端的卡片收敛为已处理且该审批的通知被撤回；在一端上报已读后，另一端的未读计数同步下降；两端同时提交消息时两条都保留且不重复。通知先只到最近活跃的一台，超过阈值仍未处理才推给全部在线设备。
 
 远程执行节点：从客户端 B 把聊天转成落在客户端 A 目录上的工作会话，`deviceId` 与 `cwd` 写入后不可改；在 B 发消息由 A 执行并写 A 本地的会话日志，事件流回到 B；A 离线时该会话只读且明确报设备离线。
 
-跨设备会话：在 B 打开 A 上的会话只读且没有输入框；选择在本地继续后，B 生成新会话，`cwd` 是 B 的工作区、`deviceId` 是 B、`parentSession` 指向源会话，且能在 B 上正常执行；A 离线时导入仍可用，读取的是控制平面的会话副本，并显示副本的同步水位。
+跨设备会话：在 B 打开 A 上的会话，默认「在远程继续」把右栏指向 `/d/A/`，写落到 A 的运行时且 `deviceId` 仍为 A；A 离线时该动作明确报设备离线，不改路由、不回退。选择「在本机继续」后 B 生成新会话，`cwd` 是 B 的工作区、`deviceId` 是 B、`parentSession` 指向源会话，能在 B 上正常执行；A 离线时这一步仍可用，读取的是控制平面的会话副本，并显示副本的同步水位。
 
 会话副本：执行节点产生的事件在控制平面形成按 `seq` 连续的只读镜像；节点断线期间副本落后，重连后从水位补齐；副本用于跨设备浏览、会话导入与设备离线时的读取。
 

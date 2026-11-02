@@ -125,6 +125,9 @@ declare module '@deepseek-ai/cordis' {
 
 ## 五、遥测规范
 
-主题切换操作接入 OpenObserve 遥测：
-- 指标：`chatdsh_theme_switch_total{theme_id, previous_id, color_scheme}`
+主题切换操作接入 OpenObserve 遥测，全部经同源中继 `/chatdsh/telemetry/browser` 上报：
+- 日志事件：`chatdsh.client.ui.action`，`action="theme-switch"`，属性带 `outcome`、`theme.id`、`previous.id` 与 `color_scheme`。
+- 指标：`chatdsh_theme_switch_total{theme_id, previous_id, color_scheme}`。
 - Span 名称：`chatdsh.theme.switch`，记录属性包含耗时与目标主题标识符。
+
+触发点是主题运行时分发的 `theme/change` 事件；只有生效主题标识或配色基线发生变化才算一次切换，注册主题、调整字号与令牌层叠引起的快照变化不上报。

@@ -1,5 +1,7 @@
 # 聊天后端与记忆接入
 
+完整运行期目标使用[系统完成设计](<system-completion-design.md>)的 Hermes 历史运行桥接与后端分派契约，实施验收见[SYS05、SYS06](<implementation-work-packages.md>)。每轮完整历史、实时审批、可定位运行和实际取消必须同时成立；发送受理结果不确定时禁止切换执行体重放。下文的接口事实与记忆后端边界继续作为实现依据。
+
 本文件设计 ChatDSH 的聊天后端与记忆后端。两者各自是可选插件，彼此独立：Hermes 承载聊天时可省略，Hindsight 承载记忆时可省略，四种组合都成立。工作会话始终由 DSH 自己的 agent 执行，不随聊天后端变化。
 
 事实基线：Hermes 0.21.7 安装在 `/usr/local/lib/hermes-agent/`（Python，systemd 用户单元 `hermes-gateway.service`，OpenAI 兼容服务在 `:8642`），Hindsight 是独立服务（`127.0.0.1:8889`），DSH 为 `@deepseek-ai/dsh` 0.2.1-rc.2。Hermes 的记忆提供方在 `plugins/memory/` 下按目录分发，`memory.provider` 选中其中一个，内置存储在 `memory.provider` 取空值时启用，二者由 `agent/memory_manager.py` 的 `MemoryManager` 统一驱动。
@@ -69,7 +71,7 @@ DSH 承载不依赖任何外部服务，是这条形态能够「无 Hermes 也�
 
 Hindsight 由用户自行部署，ChatDSH 不打包它、不托管它的进程、不替用户启动容器。`@chatdsh/host-memory` 在这个后端下本质是一个配置层加定期摘要处理：它提供 Hindsight 的连接配置、bank 命名规则与探活，按规则把会话摘要写进记忆，按规则召回并注入。用户填好 Hindsight 的地址与凭据、把服务跑起来，记忆就生效；服务不可达时插件报告不可用，记忆功能显示为「未启用（Hindsight 不可达）」，不静默退化成本地假记忆。
 
-Hindsight 的部署形态由用户决定，可以是本机、可以是另一台机器。单机部署时的实测参数记在[部署形态与兼容接缝](deployment.md)第八节：嵌入模型经 OmniRoute 用 `sfc/Qwen/Qwen3-Embedding-8B`（4096 维），超过 pgvector 的 HNSW 上界 2000，因此数据库要用带 `vchord` 扩展的 Postgres（`tensorchord/vchord-postgres:pg18-v1.1.1`，`shared_preload_libraries=vchord,vector`），配 `HINDSIGHT_API_DATABASE_URL` 与 `HINDSIGHT_API_VECTOR_EXTENSION=vchord`，就绪判定用 `GET /version` 返回 200。
+Hindsight 的部署形态由用户决定，可以是本机、可以是另一台机器。本机部署时的实测参数记在[部署形态与兼容接缝](deployment.md)第六节：嵌入模型经 OmniRoute 用 `sfc/Qwen/Qwen3-Embedding-8B`（4096 维），超过 pgvector 的 HNSW 上界 2000，因此数据库要用带 `vchord` 扩展的 Postgres（`tensorchord/vchord-postgres:pg18-v1.1.1`，`shared_preload_libraries=vchord,vector`），配 `HINDSIGHT_API_DATABASE_URL` 与 `HINDSIGHT_API_VECTOR_EXTENSION=vchord`，就绪判定用 `GET /version` 返回 200。
 
 接入层需要的配置项：服务地址、凭据、嵌入模型与维度、`bank_id_template` 的取值、`mirror_to_own_bank` 开关、额外召回 bank 的优先级。这些配置由控制平面写入 `@chatdsh/host-memory` 的配置行，凭据走环境变量名引用，不作为配置值落盘。
 
@@ -93,27 +95,22 @@ Hermes 自带一套内置记忆存储，`memory.provider` 取空值、`default`�
 
 | 会话场景 | 召回 | 写入 |
 |---|---|---|
-| 聊天（无工作区） | `acct:<accountId>` | `acct:<accountId>` |
-| 私有工作区 | `t:<tenantId>:ws:<memoryGroupId>` 加 `acct:<accountId>` | `acct:<accountId>` |
-| 共享工作区 | `t:<tenantId>:ws:<memoryGroupId>` 加当前用户自己的 `acct:<accountId>` | `t:<tenantId>:ws:<memoryGroupId>` |
+| 聊天（无工作区） | `acct` | `acct` |
+| 有工作区 | `ws:<memoryGroupId>` 加 `acct` | `acct` |
 
 `memoryGroupId` 默认等于 `workspaceId`。用户把两个工作区关联成记忆组之后，两者共用同一个组标识，这使跨设备的两份检出（例如同一个仓库在两台机器上各一份克隆）共享记忆，而会话归属、项目指令与会话列表仍按各自的工作区记录。
 
-多租户下 bank 名还要带租户维度，否则不同租户的标识会相撞。写入不跨 bank 镜像。
-
-这套规则与 ChatGPT 的实际行为对应：项目外可用账号记忆；私有项目内账号记忆可用而引用限于项目内；共享项目强制 project-only。差别在于它用「干脆不用账号记忆」实现共享项目的隔离，这里用「只叠加当前用户自己的账号 bank」，因为 bank 按账号分区，每个人的召回只查自己那一个，别人的记忆不会进入他的上下文。
-
-**私有工作区转为共享时不迁移记忆。** 转共享之后，作者仍能带着自己的历史工作，新成员只能看到转共享之后沉淀的内容，这一点要在界面里说明。
+bank 名只有这两个维度，没有账号维度也没有租户维度。实现在 `runtime/packages/host/memory/src/rules.ts` 的 `banksFor`，`acct` 是跨工作区共用的那一份，`ws:` 前缀按记忆组隔离。
 
 **工作会话向记忆回流的路径。** 回合结束后按会话去重与节流，用 `ctx.llm` 生成适合长期记忆的摘要（compaction 的摘要目标是让对话继续，不直接复用），交给存储层写入。写入 Hindsight 时走带 `operation_id` 的异步路径：`RetainRequest` 的 `operation_id` 是客户端提供的 UUID，用同一标识重提交会返回原操作且不产生新工作，配套有 `GET /v1/default/banks/{bank_id}/operations` 与 `POST .../operations/{operation_id}/retry`。把 UUID 与游标一起持久化，写入失败时按同一 UUID 重试，避免重新抽取。本机现有的 `openclaw-memory-bridge.py` 不携带该标识、还有 6000 字符整段截断与 1200 字符单条截断、跳过压缩事件、并把游标一次推进到本批最后一条，这几处不要继承。
 
 **工作会话从记忆召回。** 在 `agent/pre-step` 里按当前问题向存储层发起召回。注入位置要选定一条通道：注入进表面就进入持久化转录，界面上可见；要保持转录干净原文就用表面 `replace` 覆盖当前轮的用户消息节点。Hermes 的做法是把召回文本追加在当前轮用户消息之后、持久化转录保留干净原文，两边要做到「看到的内容一致」必须先统一通道选择。
 
-召回失败的降级是「本轮无记忆」继续，并在界面提示；写入失败进本地待写队列按 `operation_id` 重试。多 bank 召回要给出预算分配规则：每个 bank 各自带 `max_tokens`，固定优先级拼接会让工作区记忆永远排在账号记忆之后，应当按 bank 给出配额。
+召回失败的降级是「本轮无记忆」继续，并在界面提示；写入失败进本地待写队列按 `operation_id` 重试。多 bank 召回要给出预算分配规则：每个 bank 各自带 `max_tokens`，固定优先级拼接会让工作区记忆永远排在共用 bank 之后，应当按 bank 给出配额。
 
 **管理界面**直接接 Hindsight 的读接口：`/memories/list`、`/memories/{id}`、`/graph`、`/audit-logs`。删除与整合两个写动作要有授权边界，写入仍交给接入层或 Hermes，避免两条写入路径冲突。
 
-**删除项目时的记忆处理。** 删除工作区默认不动记忆，账本保留为审计记录。确认框里另有一个下拉选项，默认「不跟踪」，可改为「上报项目废弃」：选中之后控制平面把项目名、路径与废弃时间交给记忆写入路径，写入一条记忆，进当前用户的账号 bank。这条记忆的内容是该项目已废弃、此前的方案与结论不再沿用。
+**删除项目时的记忆处理。** 删除工作区默认不动记忆，账本保留为审计记录。确认框里另有一个下拉选项，默认「不跟踪」，可改为「上报项目废弃」：选中之后控制平面把项目名、路径与废弃时间交给记忆写入路径，写入一条记忆，进 `acct` bank。这条记忆的内容是该项目已废弃、此前的方案与结论不再沿用。
 
 它的价值在于召回时的判断：项目删掉之后，记忆里关于它的经验仍然存在，若不标记，后续会话可能把这些经验当成仍然有效的指导。标记之后，召回能把「已经废弃的方案」与「仍在用的方案」分开。
 
@@ -134,7 +131,7 @@ Hermes 自带一套内置记忆存储，`memory.provider` 取空值、`default`�
 
 **组合三：有 Hermes，无 Hindsight。** 聊天由 Hermes 承载，记忆走 Hermes 内置存储，只覆盖聊天会话。DSH 执行的工作会话没有记忆能力，界面在记忆设置里说明这一范围限制。这个组合不要求用户部署任何额外服务，Hermes 与 DSH 装好即可。
 
-**组合四：有 Hermes，有 Hindsight。** 聊天由 Hermes 承载，Hermes 的记忆提供方配置为 Hindsight（`memory.provider: hindsight`，这是 Hermes `plugins/memory/` 下的一个目录），聊天记忆写进 Hindsight 的 bank；工作会话由 DSH 执行，经接入层写入同一批 Hindsight bank。两边的 bank 命名规则一致，因此账号 bank 与工作区 bank 在聊天与工作之间是同一份记忆。这是功能最完整的组合。
+**组合四：有 Hermes，有 Hindsight。** 聊天由 Hermes 承载，Hermes 的记忆提供方配置为 Hindsight（`memory.provider: hindsight`，这是 Hermes `plugins/memory/` 下的一个目录），聊天记忆写进 Hindsight 的 bank；工作会话由 DSH 执行，经接入层写入同一批 Hindsight bank。两边的 bank 命名规则一致，因此共用 bank 与工作区 bank 在聊天与工作之间是同一份记忆。这是功能最完整的组合。
 
 **组合切换通过修改配置完成，不迁移已有数据。** 从组合二切到组合一只是填 Hindsight 配置并加载插件；从组合一切到组合三要把 `chatBackend` 改为 `hermes` 并把 `memoryBackend` 改为 `hermes`，已有聊天会话仍在 DSH 侧，新聊天会话由 Hermes 承载；从一个记忆后端切到另一个时，旧后端的记忆不自动搬进新后端，界面在切换前说明这一点，需要保留的历史由用户在新后端里重新沉淀或手工导入。会话日志本身不属于记忆，切换不影响会话内容。
 
@@ -172,11 +169,11 @@ Hermes 自带一套内置记忆存储，`memory.provider` 取空值、`default`�
 
 渠道会话的 ChatDSH 会话编号与 Hermes 的 `session_key` / `chat_id` 一一对应。`SessionSource` 的字段同时喂养四件事：回复路由、系统提示的上下文块、cron 的 origin 绑定、会话键的生成。字段定义在 `/usr/local/lib/hermes-agent/gateway/session.py:65-100`。
 
-取值：`platform` 取我们注册的平台名；`chat_id` 取 ChatDSH 的会话编号，这意味着每条 ChatDSH 会话在 Hermes 侧都是一个独立会话；`chat_name` 取会话标题；`user_id` 取账号编号；`user_name` 取账号显示名；`chat_type` 取 `channel`；`scope_id` 留空（它只在 Slack 平台进入会话键，其余平台只作记录）。
+取值：`platform` 取我们注册的平台名；`chat_id` 取 ChatDSH 的会话编号，这意味着每条 ChatDSH 会话在 Hermes 侧都是一个独立会话；`chat_name` 取会话标题；`user_id` 与 `user_name` 取固定的部署标识（单用户部署下只有一个 owner）；`chat_type` 取 `channel`；`scope_id` 留空（它只在 Slack 平台进入会话键，其余平台只作记录）。
 
 `build_session_key` 的布局是 `<ns>:<platform>:<chat_type>[:<slack scope_id>][:<chat_id>][:<thread_id>][:<user>]`（`session.py:691`）。`chat_type` 影响三处：会话键的第三个槽位与是否带参与者段（`dm` 且带 `chat_id` 时不加参与者，非 `dm` 时默认按 `group_sessions_per_user` 加）、`is_shared_multi_user_session` 的判定（`dm` 恒为非共享）、以及显示描述。
 
-`chat_type` 取 `channel`，`group_sessions_per_user` 的取值与工作区的私有共享标记对应：私有工作区取 `true`，同频道的每个成员各有一条独立 Hermes 会话；共享工作区取 `false`，成员共用一条会话，彼此看得到同一段对话。
+`chat_type` 取 `channel`。`group_sessions_per_user` 固定取 `true`：单用户部署下每个频道只有 owner 一个参与者，取 `true` 或 `false` 在会话键上等价，写 `true` 与「一条 ChatDSH 会话对一条 Hermes 会话」的映射保持一致。
 
 ### 审批在 DSH 的呈现
 
@@ -224,7 +221,7 @@ ChatGPT 的做法是在同一个对话里切换形态，DSH 的机制不同：**
 
 用 `developer/message` 承载这条声明要注意它的可见性：`projectToolUpdates` 在路由未声明 `toolUpdate` 时会把全部 developer 消息删掉，即使进入保留分支也只有 id 命中 `history.updates` 的消息被逐块保留。`toolUpdate` 只有 pi-ai 的 anthropic-messages（`in-history`）与 openai-completions（`addition-only`）会声明，自建适配器转发到 OmniRoute 时必须显式声明它，否则这条声明对模型完全不可见且被静默丢弃。
 
-**目标工作区是共享的时候要拦。** 把私人聊天整段转入共享工作区会把内容带进其他成员可见的上下文。做法是转工作前检查目标工作区的私有与共享标记，共享时要求确认并只导入用户勾选的区间。
+**转工作按用户勾选的区间导入。** 聊天历史可能很长，整段搬进新工作区会让首轮上下文过大；导入前让用户选择区间，只把选中的部分构造成种子。
 
 ## 七、生命周期与降级
 
@@ -252,4 +249,4 @@ ChatGPT 的做法是在同一个对话里切换形态，DSH 的机制不同：**
 
 ## 九、首期之后
 
-主动推送之外的其他渠道内容注入、Hermes 侧的账号与 profile 划分随团队版扩大、记忆管理界面的写权限、记忆后端之间的导入工具（把一个后端的记忆批量搬进另一个）。
+主动推送之外的其他渠道内容注入、记忆管理界面的写权限、记忆后端之间的导入工具（把一个后端的记忆批量搬进另一个）。

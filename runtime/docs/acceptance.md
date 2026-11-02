@@ -15,7 +15,7 @@ node scripts/sync-profiles.mjs
 
 ## 一、组合成立性
 
-**通过。** `node scripts/check-composition.mjs` 对每个 profile 检查退出码、警告输出与条目 id 唯一性，并附带核对配置模式文档能否产出。四个 profile 全部通过。
+**部分。** `node scripts/check-composition.mjs` 对每个 profile 检查退出码、警告输出与条目 id 唯一性，并附带核对配置模式文档能否产出。三个 profile 通过，`chatdsh-cli` 受本机安装的上游版本变化阻塞。
 
 ```bash
 node scripts/check-composition.mjs
@@ -24,13 +24,15 @@ node scripts/check-composition.mjs
 最近一次结果：
 
 ```
-chatdsh-cli：通过（条目 117 个，重复 0 个，配置模式文档 有，投影警告 12 条）
-chatdsh-desktop：通过（条目 222 个，重复 0 个，配置模式文档 有，投影警告 11 条）
-chatdsh-hermes：通过（条目 222 个，重复 0 个，配置模式文档 有，投影警告 11 条）
-chatdsh-web：通过（条目 223 个，重复 0 个，配置模式文档 有，投影警告 11 条）
+chatdsh-cli：不通过（条目 97 个，重复 0 个，配置模式文档 有，投影警告 2 条）
+chatdsh-desktop：通过（条目 224 个，重复 0 个，配置模式文档 有，投影警告 11 条）
+chatdsh-hermes：通过（条目 224 个，重复 0 个，配置模式文档 有，投影警告 11 条）
+chatdsh-web：通过（条目 225 个，重复 0 个，配置模式文档 有，投影警告 11 条）
 ```
 
-`chatdsh-cli` 挂载了 `@deepseek-ai/dsh-experimental-ralph-bundle`。dsh-tui 0.16.1 的补丁层按 id 关闭 `tool-ralph`，该行由这个可选组合包插入；补丁目标缺失时启动器会打印 `patch: entry "tool-ralph" not found`。profile 的补丁层再把整组 `optional-ralph` 关闭，命令行形态不暴露重复执行能力。
+`chatdsh-cli` 的失败原因是本机全局 DSH 已升到 `0.2.1-rc.5`，随装分发的是 `dsh-tui` `0.17.0`，后者的已验证清单只覆盖到 `0.2.1-rc.3`，因此该 profile 跳过 `dsh-tui` 组合包并输出警告，条目数从 117 掉到 97。仓库钉住的组合是 `0.2.1-rc.2` 加 `dsh-tui` `0.16.1`。必要条件是把本机安装恢复到仓库钉住的版本，或者按 [compatibility.md](compatibility.md) 第三节把仓库升级到新版本，两者完成其一之后重跑本脚本。版本基线的取法见[文档总纲](README.md)第二节。
+
+`chatdsh-cli` 挂载了 `@deepseek-ai/dsh-experimental-ralph-bundle`。dsh-tui `0.16.1` 的补丁层按 id 关闭 `tool-ralph`，该行由这个可选组合包插入；补丁目标缺失时启动器会打印 `patch: entry "tool-ralph" not found`。profile 的补丁层再把整组 `optional-ralph` 关闭，命令行形态不暴露重复执行能力。
 
 配置模式导出（`--dump-config-schema`）在当前上游版本上总会返回非零并打印投影限制的警告，内置 profile 同样如此；检查判定的是模式文档能否产出。
 
@@ -43,9 +45,11 @@ node scripts/check-plugin-contract.mjs
 ```
 
 ```
-插件 31 个、客户端插件 13 个、组合包 8 个、profile 9 个、纯库 0 个
+插件 34 个、客户端插件 14 个、组合包 7 个、profile 8 个、纯库 0 个
 插件契约检查通过
 ```
+
+这里的 profile 8 个是 `profiles/` 的 4 个加 `e2e/profiles/` 的 4 个，脚本同时扫描这两处；组合包 7 个是 `packages/bundle/` 的 6 个加 `packages/preset/chat`，后者也声明了 `dsh.bundle`。数量随代码变化，取法与含义见[文档总纲](README.md)第二节。
 
 这一轮新增的包是 `host/model-provider`、`host/context-insights`、`host/skills`、`tool/skill-manage`、`client/model-provider`、`client/context-insights`、`client/skills`、`client/automation`，另有同级的 `hermes-adapter`、`hindsight-adapter` 与 `forge-bridge`。它们的接口与验收命令见 [兼容性与升级](compatibility.md) 与对应包的源码注释。
 
@@ -172,11 +176,13 @@ node scripts/verify-desktop-shell.mjs --port 3124
 
 第一条断言启动口令的鉴权顺序、设备 cookie、`Host`/`Origin` 改写、自动化启停落库与 WebSocket 升级转发；第二条用真实 Electron 壳、真实控制平面与真实运行时验证窗口地址落在控制平面上，页面可访问且桌面桥正常。控制平面自身的托管运行时就绪与退出回收见 `gateway/src/runtime.ts`，信号登记在 [telemetry.md](telemetry.md) 第六节。
 
-### 5.6 Android 客户端
+### 5.6 移动端
 
-**通过（release APK 已构建并核对）。** Android 载体以上游 [Clarklevis1995/dsh-mobile](https://github.com/Clarklevis1995/dsh-mobile) 为基础，源码分三层：`mobile/base` 是上游子树快照，`mobile/overlay` 是本仓库的适配，`mobile/android` 是合成出的构建目录（不进版本管理）。上游的协议解码、事件折叠、会话状态机与界面结构因此可以持续跟随，本仓库只维护真正不同的部分，分层与升级流程见 [Android 客户端](mobile.md)。
+**通过（现状为 Android 原生，目标形态是 PWA）。** 目标形态与 PWA 的取舍见 [目标形态](target-shape.md) 1.1 节与 [桌面与移动端载体](desktop-mobile.md) 第六节；本节记录的是当前 Android 原生实现已经跑通的接入链路，它使用的控制平面接口与未来的 PWA 相同。
 
-手机只与控制平面通信：配对码在控制平面换成设备令牌，每次启动用令牌换运行时的带令牌路径，业务通道是运行时的 `/ws/mobile`。控制平面在 WebSocket 升级阶段校验设备令牌后转发，插件只接受本机回环直连；配对载荷由控制平面按上游客户端的格式下发，客户端不需要改协议代码。令牌只存 SHA-256 摘要，设备吊销后 HTTP 与 WebSocket 同时拒绝。
+Android 载体以上游 [Clarklevis1995/dsh-mobile](https://github.com/Clarklevis1995/dsh-mobile) 为基础，源码分三层：`mobile/base` 是上游子树快照，`mobile/overlay` 是本仓库的适配，`mobile/android` 是合成出的构建目录（不进版本管理）。
+
+手机只与控制平面通信：配对码在控制平面换成设备令牌，每次启动用令牌换运行时的带令牌路径，业务通道是运行时的 `/ws/mobile`。控制平面在 WebSocket 升级阶段校验设备令牌后转发，插件只接受本机回环直连；配对载荷由控制平面下发，客户端不需要改协议代码。令牌只存 SHA-256 摘要，设备吊销后 HTTP 与 WebSocket 同时拒绝。
 
 ```bash
 node scripts/build-android.mjs
@@ -294,7 +300,7 @@ node scripts/verify-account-migration.mjs
 
 ## 九、聊天与记忆后端
 
-**部分。** 记忆接入层的召回、写入、降级与召回注入有真实服务证据（Hindsight 在本机运行）：
+**部分。** 记忆接入层的召回、写入、降级与召回注入在本机 Hindsight 上有真实服务与真实模型回合的证据，缺的是 `chatBackend: hermes` 的组合：
 
 ```bash
 node scripts/verify-memory.mjs
@@ -303,23 +309,27 @@ node scripts/verify-memory.mjs
 ```
 Hindsight 地址：http://127.0.0.1:8889
 探活：可用
-写入：{"items":1}（17645 毫秒）
-召回：4 条
-  - 蓝鲸的体长记录为三十米。
-召回注入段：会话工作目录 "/workspace/chatdsh"，召回 bank t:default:ws:%2Fworkspace%2Fchatdsh、acct:local
-会话 52119e9d-… 事件 29 个，模型请求 2 次
+写入：{"items":1,"operationId":"df5cd926-…"}（26 毫秒）
+召回：3 条（等待整合 11 秒）
+  - 蓝鲸的体长记录是三十米。
+  - 验收探针记录：蓝鲸的体长记录是三十米。 | When: 2026-10-31 | 验收脚本中的探针记录
+  - 蓝鲸的体长记录是三十米
+召回注入段：会话工作目录 "/workspace/chatdsh"，召回 bank ws:%2Fworkspace%2Fchatdsh、acct
+召回注入段：写入 2 条带标记的记忆到 ws:%2Fworkspace%2Fchatdsh（标记 chatdsh-recall-…）
+召回注入段：种子记忆已可召回 4 条
+会话 a93d840a-… 事件 29 个，模型请求 2 次
 system 消息：1 条，长度为 2567 字
 第一轮请求：消息 6 条，召回 1 条
 第二轮请求：消息 9 条，召回 2 条
-前缀比对：第一轮 29257 字节，第二轮开头 29257 字节，逐字节一致
+前缀比对：第一轮 26343 字节，第二轮开头 26343 字节，逐字节一致
 记忆后端与召回注入验收通过
 ```
 
-探活、写入、召回三段都走真实的 Hindsight。写入用同步方式，耗时约 18 秒——异步写入只要几十毫秒但整合完成后才可召回，验收里用同步换取确定性。
+探活、写入、召回三段都走真实的 Hindsight。写入请求在百毫秒级返回；召回要等服务端后台整合完成，本机实测写入后约 10 到 14 秒开始命中，脚本按有界时间轮询等待，最多等 24 秒。`async` 字段会透传到服务端，`async: false` 表示请求同步等待服务端接收，命中时机仍取决于整合进度。
 
 第二段起一个加载 `chatdsh-memory` 的 ACP 会话，连续两轮提问触发召回，再读该会话的 JSONL 日志核对注入方式：召回走 `agent/pre-step` 追加一条用户消息，`system` 因此只有开头一条；第二轮请求的消息前缀与第一轮逐字节一致，新增内容只出现在末尾。这一段需要测试模型网关的凭据（`CHATDSH_TEST_GATEWAY_API_KEY`），缺凭据时明确失败，`--skip-session` 只跑第一段并打印跳过原因。
 
-本机 Hindsight 一次召回实测 21 到 23 秒，组合包的 `requestTimeoutMs` 因此设为 60000：五秒会让每次召回都走降级分支，记忆功能等于不可用。
+本机 Hindsight 一次召回实测 10 到 14 秒，组合包的 `requestTimeoutMs` 因此设为 60000：五秒会让每次召回都走降级分支，记忆功能等于不可用。
 
 ```bash
 node --test e2e/unit/memory.test.mjs
@@ -369,7 +379,7 @@ node scripts/verify-receipt-sync.mjs      # 一端上报已读，另一端收到
 
 **未触及。** 本机只有一个执行节点。
 
-需要第二台设备，或同一台机器上第二个独立的执行节点进程。条件满足后：从 B 把聊天转成落在 A 目录上的工作会话，核对 `deviceId` 与 `cwd` 写入后不可改；在 B 发消息由 A 执行并写 A 本地的会话日志，事件流回到 B；A 离线时该会话只读且明确报设备离线。
+需要第二台设备，或同一台机器上第二个独立的执行节点进程。条件满足后：从 B 把聊天转成落在 A 目录上的工作会话，核对 `deviceId` 与 `cwd` 写入后不可改；在 B 发消息由 A 执行并写 A 本地的会话日志，事件流回到 B；A 离线时该会话的写操作明确报设备离线。
 
 ## 十四、跨设备会话
 
@@ -388,7 +398,7 @@ node scripts/verify-import.mjs
 
 导入在控制平面上建一条带 `parentSession` 的新会话，从源会话的副本复制事件，取请求里的工作目录与当前设备标识。源设备是否在线不参与这一步——读的是控制平面保存的副本，因此「源设备离线时导入仍可用」成立。
 
-没有做的部分：客户端侧的「只读打开」界面与输入框禁用。
+没有做的部分：客户端侧的「在远程继续」与「在本机继续」两个显式动作的界面。
 
 运行时侧已经具备恢复能力，装进 `bundle-hosted` 后挂在每个 profile 上（配置树里能看到 `chatdsh-import` 这一行，启动零激活警告）：
 
@@ -543,9 +553,9 @@ node scripts/check-upstream-names.mjs
 
 **Hermes 承载聊天的验证边界。** `bundle-chat-hermes` 与 `host-chat-hermes` 已建立：组合包通过 `check-composition`（chatdsh-hermes 215 条），事件形状通过上游 `materializeAppendBatch` 与 `validateStoredEvents` 校验。`send` 的服务层写入已由 `e2e/unit/hermes-send.test.mjs` 覆盖：真实 Cordis 上下文、真实 JSONL 会话持久化、真实 Hermes 测试容器，断言两轮发送的 12 条事件与序号连续。Remote 方法经页面上下文的调用已经打通：`e2e/fixtures/client-remote-bridge` 手写自建服务的 descriptor 并 `$mount`，再用 `ctx.inject(['remote.chatdshHermesChat'])` 暴露命名空间；`scripts/verify-hermes-send-page.mjs` 在页面上下文创建会话并调用 `send`，断言 6 条事件与助手文本。产品客户端插件也按同一方案接入了各自的贡献，见下一条。
 
-**记忆的自动写入优先使用模型摘要，模型不可用时退回规则抽取。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message；配置 `summaryProvider` 与 `summaryModel` 时用 `ctx.llm.stream` 生成摘要，流式块同时兼容 `text` 与 `delta` 字段，输出按 4000 字符截断。调用失败或输出为空时退回 `composeTurnMemory`，并记录 `chatdsh.memory.degraded`（`operation: turn-summary`）；两个字段都缺省时保持规则抽取。同一会话的同一回合只写一次，写入链路与 bank 选择不变。真实回合已验证：`chatdsh-acp-live` 跑一次 prompt 后，Hindsight 文档的 `original_text` 是模型摘要而不是带「用户：」「助手：」前缀的规则文本，`acct:local` bank 收到写入并进入整合。
+**记忆的自动写入优先使用模型摘要，模型不可用时退回规则抽取。** 插件在 `turn/end` 后读本回合的 user/message 与 assistant/message；配置 `summaryProvider` 与 `summaryModel` 时用 `ctx.llm.stream` 生成摘要，流式块同时兼容 `text` 与 `delta` 字段，输出按 4000 字符截断。调用失败或输出为空时退回 `composeTurnMemory`，并记录 `chatdsh.memory.degraded`（`operation: turn-summary`）；两个字段都缺省时保持规则抽取。同一会话的同一回合只写一次，写入链路与 bank 选择不变。真实回合已验证：`chatdsh-acp-live` 跑一次 prompt 后，Hindsight 文档的 `original_text` 是模型摘要而不是带「用户：」「助手：」前缀的规则文本，`acct` bank 收到写入并进入整合。
 
-**共享工作区的记忆写入已接通。** 项目记录增加了 `shared` 标记，`project` 工具的 `set` 可以写入；回合写入时按 cwd 读项目记录，把 `shared` 传给 `banksFor`，共享工作区写组 bank，私有工作区写账号 bank。
+**回合写入一律落在 `acct`。** `planTurnWrite` 只按 cwd 算出记忆组标识决定召回范围，写入 bank 恒为 `acct`，与工作区是否共享无关；召回时有工作区先查 `ws:<memoryGroupId>` 再查 `acct`，聊天会话只查 `acct`。
 
 **自建 Remote 面板已接通客户端贡献。** 新增 `@chatdsh/core-remote-client` 构造器，九个产品客户端插件在 `apply` 里手写 descriptor、`$mount` 后用 `ctx.inject` 等命名空间就绪再注册面板。`scripts/verify-remote-namespaces.mjs` 在真实页面里断言十个自建命名空间全部挂载，并对每个命名空间做一次只读调用，全部返回成功。审批、制品、助手、连接器等服务的 `remove` 与 Remote 命名空间服务自带方法冲突，宿主导出名改为 `delete`。
 

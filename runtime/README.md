@@ -4,19 +4,31 @@
 
 ## 文档
 
+文档的权威顺序、事实基线、状态词表与进度台账见 [`docs/README.md`](docs/README.md)，那是全部文档的入口。
+
 | 文件 | 内容 |
 |---|---|
+| [docs/README.md](docs/README.md) | 文档总纲：权威顺序、事实基线、状态词表、写作约束、进度台账、复查方式 |
 | [architecture.md](docs/architecture.md) | 总体架构：硬约束、插件与组合包契约、各子系统设计、验收方式 |
+| [target-shape.md](docs/target-shape.md) | 目标形态、形态差异、与官方路线图的边界、删除项 |
 | [architecture-diagram.md](docs/architecture-diagram.md) | 设计架构图：平面构成、配置叠加、装配点、加载次序、会话回合、数据布局、遥测管道与验收对应 |
-| [deployment.md](docs/deployment.md) | 部署形态与兼容接缝：单机组件、数据布局、多租户扩展 |
+| [deployment.md](docs/deployment.md) | 部署形态与兼容接缝：组件、数据布局、第一天就要做对的接缝、资源占用 |
 | [desktop-mobile.md](docs/desktop-mobile.md) | 桌面与移动端载体 |
-| [mobile.md](docs/mobile.md) | Android 客户端的配对、构建、release 产物命名与安装包下载服务 |
-| [mobile-protocol.md](docs/mobile-protocol.md) | Android 与未来 iOS 共用的配对、RPC 与会话事件流协议 |
+| [mobile.md](docs/mobile.md) | 移动端 PWA 的配对、构建与分发（现为 Android 原生，目标是 PWA） |
+| [mobile-protocol.md](docs/mobile-protocol.md) | 移动端共用的配对、RPC 与会话事件流协议 |
 | [client-modules.md](docs/client-modules.md) | 四种客户端的模块构成与分层 |
+| [ui-feature-inventory.md](docs/ui-feature-inventory.md) | 界面功能点清单与实现程度 |
+| [ui-baseline-design.md](docs/ui-baseline-design.md) | 界面令牌、尺度与组件规格；可渲染参考页在 `docs/ui-design/` |
+| [ui-verification.md](docs/ui-verification.md) | 界面实现的验证记录 |
+| [theme-plugin-contract.md](docs/theme-plugin-contract.md) | 主题插件契约（可选能力，尚未实现运行时） |
 | [reachability.md](docs/reachability.md) | 网络可达性与 Tailscale 接入 |
 | [hermes-integration.md](docs/hermes-integration.md) | 聊天后端与记忆接入：Hermes 与 Hindsight 的可选组合、四种形态、插件划分 |
 | [computer-use-design-review.md](docs/computer-use-design-review.md) | 桌面控制方案的独立评审记录 |
 | [telemetry.md](docs/telemetry.md) | 遥测与调试接口：信号清单、命名规范、上下文传播、关闭开关、内容边界、验收方式 |
+| [upstream-capabilities.md](docs/upstream-capabilities.md) | 上游能力的处置清单 |
+| [compatibility.md](docs/compatibility.md) | 上游版本对应、登记表职责、升级步骤 |
+| [acceptance.md](docs/acceptance.md) | 逐项验收状态与复现命令 |
+| [next-steps.md](docs/next-steps.md) | 验收顺序与解锁条件 |
 | [secret-guard.md](docs/secret-guard.md) | 凭据与隐私防护：钩子、规则、占位约定、历史泄露清理 |
 | [prompts/git-commit-message.md](docs/prompts/git-commit-message.md) | 提交信息提示词模板 |
 | [../dsh-adapter/README.md](../dsh-adapter/README.md) | 适配层 `@chatdsh/adapter`：上游内部 API 的唯一接触面，位于仓库根下与 `runtime` 同级 |
@@ -59,11 +71,15 @@ dsh --profile chatdsh-web --no-open   # 启动单机 Web 形态
 node scripts/build-client.mjs        # 把 packages/client 下每个包打成 window.__ModuleLoader__ 形态
 ```
 
-Android release 包由独立脚本构建，产物固定命名并自动提供下载地址：
+移动端形态的目标是 PWA，随控制平面分发，复用 `build-shell.mjs` 产出的外壳与 `manifest`。
+
+现状仍保留 Android 原生客户端的构建入口，产物固定命名并自动提供下载地址：
 
 ```sh
 node scripts/build-android.mjs       # 产出 .run/apk/chatdsh<版本号>.apk 并打印下载地址
 ```
+
+PWA 改造完成后这个脚本、签名密钥与 APK 分发服务一并删除，见 [mobile.md](docs/mobile.md)。
 
 调试用的容器环境在 [`dev/`](dev/)，编排与说明见 [dev/README.md](dev/README.md)。dsh 运行时、Hermes、Hindsight 各自跑在独立容器里，端口与宿主上已经在跑的实例错开。
 

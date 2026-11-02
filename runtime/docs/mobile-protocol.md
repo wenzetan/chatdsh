@@ -1,6 +1,8 @@
 # 移动端接入协议
 
-这份文档固定 Android 原生客户端与后续 iOS 客户端共用的网络协议。平台实现可以不同，请求形状、认证顺序与事件折叠必须一致。
+本文件记录现有移动接入请求与事件。PWA 最终安全、凭据、设备选择和流式通道使用[系统完成设计](<system-completion-design.md>)，页面与离线行为使用[完整交互规格](<client-complete-spec.md>)。生产接入要求受保护 HTTPS；离线只保存草稿，业务写入不排队且不自动重发。现有移动协议的兼容入口不能绕过访问认证或设备归属校验。
+
+这份文档固定移动端（PWA 与当前的 Android 原生实现）共用的网络协议。平台与客户端形态可以不同，请求形状、认证顺序与事件折叠必须一致。
 
 ## 一、认证顺序
 
@@ -11,7 +13,7 @@
 | 换运行时会话 | `GET <控制平面地址><bootPath>` | 303 跳转并下发 `dsh-auth-*` cookie |
 | 设备管理 | `GET /chatdsh/gateway/mobile/devices`，`DELETE /chatdsh/gateway/mobile/devices?id=<deviceId>` | `{devices:[{id,name,platform,createdAt,lastSeenAt,revokedAt?}]}`、`{revoked:true}` |
 
-设备令牌是长期凭据，只在配对响应里出现一次，服务端只保存 SHA-256 摘要。控制平面地址由用户填写，Android 与 iOS 都允许 `http` 与 `https`，生产入口应使用 HTTPS。
+设备令牌是长期凭据，只在配对响应里出现一次，服务端只保存 SHA-256 摘要。控制平面地址由用户填写，`http` 与 `https` 都允许，生产入口应使用 HTTPS。
 
 ### 配对载荷与 WebSocket 配对
 
@@ -157,6 +159,6 @@ WebSocket 地址为 `/api/remote.mux`。连接时带上运行时会话 cookie。
 
 ## 六、平台实现边界
 
-协议实现不得依赖 WebView。Android 使用 OkHttp 的原生 socket，并把 `SocketFactory` 与 `Dns` 绑定到 VPN 网络；iOS 使用 URLSession 与 `URLSessionWebSocketTask`，网络绑定由 NetworkExtension 或系统 VPN 路由承担。两端都实现同一组请求、响应与事件折叠。
+协议实现与客户端形态无关：`fetch` 与 `WebSocket` 承担请求与事件流，PWA 上不需要原生传输层。当前 Android 原生实现用 OkHttp 的原生 socket，并把 `SocketFactory` 与 `Dns` 绑定到 VPN 网络。两者实现同一组请求、响应与事件折叠。
 
-Android 的平台无关部分在 `mobile/android/app/src/main/java/com/chatdsh/mobile/core`，平台部分在同级的 `NetworkRoute`、`MainActivity` 与 `ChatActivity`。
+Android 的平台无关部分在 `mobile/android/app/src/main/java/com/chatdsh/mobile/core`，平台部分在同级的 `NetworkRoute`、`MainActivity` 与 `ChatActivity`。PWA 改造后这一段整体由浏览器 API 取代。

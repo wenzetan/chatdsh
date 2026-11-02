@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>ChatDSH · 完整客户端设计稿</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="complete.css">
+  <script defer src="complete.js"></script>
+  <script defer src="complete-more.js"></script>
+  <script defer src="complete-details.js"></script>
+</head>
+<body data-color-scheme="dark">
+  <a class="skip" href="#canvas">跳转到设计画板</a>
+  <header class="review-bar">
+    <a class="wordmark" href="#S01"><span class="brand-mark">C</span> ChatDSH <span class="muted">/ 客户端设计</span></a>
+    <span class="design-label">设计示例 · 未连接业务服务</span>
+    <div class="review-controls">
+      <label>配色 <select id="scheme"><option value="dark">暗色</option><option value="light">亮色</option><option value="contrast">高对比度</option></select></label>
+      <label>画板 <select id="viewport"><option value="fluid">自适应</option><option value="desktop">桌面 1440</option><option value="tablet">平板 768</option><option value="mobile">移动 390</option></select></label>
+      <label>状态 <select id="state"><option value="ready">正常</option><option value="loading">加载中</option><option value="empty">空内容</option><option value="error">读取失败</option><option value="offline">设备离线</option><option value="readonly">只读</option><option value="pending">等待处理</option><option value="forbidden">权限不足</option><option value="disabled">能力停用</option><option value="danger">危险操作</option><option value="degraded">后端降级</option><option value="long">长任务</option></select></label>
+    </div>
+  </header>
+  <div class="review-layout">
+    <nav class="scene-nav" aria-label="设计场景">
+      <label class="nav-search">搜索场景<input id="scene-search" type="search" placeholder="输入页面名称或编号"></label>
+      <div id="scene-links"></div>
+      <a class="doc-link" href="../client-complete-spec.md">交互与字段规格</a>
+      <a class="doc-link" href="../implementation-work-packages.md">实施任务与验收标准</a>
+    </nav>
+    <main id="canvas" tabindex="-1">
+      <div class="scene-heading"><div><div id="scene-id" class="eyebrow"></div><h1 id="scene-title"></h1><p id="scene-note"></p></div><span class="badge">可浏览设计画板</span></div>
+      <div id="viewport-frame" data-viewport="fluid"><div id="state-region" aria-live="polite"></div><div id="scene-content"></div></div>
+      <footer class="review-footer">画板内的名称、路径、消息与读数为排版示例。按钮仅演示界面状态；业务验收使用真实服务与设备。所有写操作均由对应执行设备负责。</footer>
+    </main>
+  </div>
+  <dialog id="design-dialog" aria-labelledby="dialog-title"><form method="dialog"><header><h2 id="dialog-title">设计交互</h2><button aria-label="关闭对话框" value="cancel">关闭</button></header><div id="dialog-content"></div><footer><button value="cancel">返回画板</button><button class="primary" value="confirm">确认设计动作</button></footer></form></dialog>
+  <div id="toast" role="status" hidden></div>
+  <noscript>请启用 JavaScript 以浏览完整设计场景。</noscript>
+</body>
+</html>

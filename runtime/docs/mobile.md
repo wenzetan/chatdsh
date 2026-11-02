@@ -1,20 +1,24 @@
-# Android 客户端
+# 移动端
 
-Android 应用以上游 [Clarklevis1995/dsh-mobile](https://github.com/Clarklevis1995/dsh-mobile) 为基础。源码分三层放在 [`mobile/`](../mobile)：`base/` 是上游 Android 子树的原样快照，`overlay/` 是本仓库的适配，`android/` 是合成出的构建目录且不进版本管理。上游的协议解码、事件折叠、会话状态机与界面结构因此可以持续跟随，升级流程见 [`mobile/README.md`](../mobile/README.md)。
+完整 PWA 设计见[完整交互规格](<client-complete-spec.md>) S26、S27 与[设计稿](<ui-design/complete.html#S26>)；安全通道见[系统完成设计](<system-completion-design.md>)，实施见[WP31](<implementation-work-packages.md>)。本文件的原生载体部分记录当前实现，客户端目标统一为 PWA。离线仅保存草稿，重新连接不自动提交业务操作。
+
+移动端的形态是 PWA，复用控制平面托管的外壳与官方发布的前端产物，加移动布局与 `manifest` 安装入口。目标形态见 [目标形态](target-shape.md) 1.1 节与 [桌面与移动端载体](desktop-mobile.md) 第六节。
+
+当前实现仍是 Android 原生客户端，以上游 [Clarklevis1995/dsh-mobile](https://github.com/Clarklevis1995/dsh-mobile) 为基础，源码分三层放在 `mobile/`：`base/` 是上游子树快照，`overlay/` 是本仓库的适配，`android/` 是合成出的构建目录。本文余下部分描述它现在使用的接入协议；PWA 用的仍是同一套控制平面接口（`POST /chatdsh/gateway/mobile/pair`、`GET /chatdsh/gateway/mobile/session`、`/ws/mobile`），协议部分继续有效，客户端形态与构建分发部分随后续改造替换。
 
 ## 接入流程
 
-1. 首次启动填写控制平面地址与配对码，或直接粘贴控制平面下发的配对载荷。
+1. 首次打开填写控制平面地址与配对码，或直接粘贴控制平面下发的配对载荷。
 2. 配对走两条等价路径：`POST /chatdsh/gateway/mobile/pair`，或按上游客户端的习惯用子协议 `dsh-pair.<code>` 连 `/ws/mobile` 并收到 `paired` 帧。两条路径都只保存令牌的 SHA-256 摘要。
-3. 应用把设备令牌写入 Android Keystore；之后每次启动调用 `GET /chatdsh/gateway/mobile/session`，用令牌换取运行时的带令牌路径。
-4. 应用用原生 HTTP 客户端访问带令牌路径，控制平面完成登录并下发会话 cookie。
+3. 客户端保存设备令牌（PWA 用 WebCrypto 加密后存 IndexedDB，Android 原生实现存 Keystore）；之后每次启动调用 `GET /chatdsh/gateway/mobile/session`，用令牌换取运行时的带令牌路径。
+4. 客户端访问带令牌路径，控制平面完成登录并下发会话 cookie。
 5. 业务通道是 `/ws/mobile`：控制平面在 WebSocket 升级阶段校验设备令牌，通过后转发到运行时插件。会话列表、创建会话、发送消息与实时事件都沿用上游插件协议。
 6. 令牌失效时回到配对页；运行时未就绪时显示重试入口。
 7. 遥测经控制平面端点 `POST /chatdsh/telemetry/mobile` 上报，设备令牌鉴权，关闭遥测后端点返回 404。
 
 配对与取启动路径的失败分支都会写 `chatdsh.gateway.mobile.rejected` 事件并累加 `chatdsh_mobile_pairings_total` 或 `chatdsh_mobile_sessions_total`。WebSocket 升级被拒绝时写 `chatdsh.gateway.mobile.upgrade.rejected` 并累加 `chatdsh_mobile_upgrades_total`。设备管理端点 `GET /chatdsh/gateway/mobile/devices` 与 `DELETE /chatdsh/gateway/mobile/devices?id=<deviceId>` 使用网页身份，吊销后同一令牌在 HTTP 与 WebSocket 上同时失效。
 
-控制平面配对只在设置 `CHATDSH_PAIRING_CODE` 时开放，未配置时返回 404。手机设备会同时登记到设备表，平台记为 `android`。
+控制平面配对只在设置 `CHATDSH_PAIRING_CODE` 时开放，未配置时返回 404。手机设备会同时登记到设备表，平台记为 `android`（PWA 改造后按浏览器平台记录）。
 
 ## 控制平面、运行时与插件
 
@@ -43,15 +47,15 @@ node scripts/verify-mobile-channel.mjs    # 真实控制平面 + 托管运行时
 
 ## 网络出口
 
-ClashMi、EasyTier 与 ZeroTier 都以 Android VPN 形式接入。Android 的按应用代理会把新安装应用排除在 VPN 默认路由之外，表现为浏览器能访问 `192.0.2.10`，应用的原生 socket 却从 Wi-Fi 地址出网。
+现状（Android 原生）：ClashMi、EasyTier 与 ZeroTier 都以 Android VPN 形式接入。Android 的按应用代理会把新安装应用排除在 VPN 默认路由之外，表现为浏览器能访问 `192.0.2.10`，应用的原生 socket 却从 Wi-Fi 地址出网。
 
 设置页还提供 `ClashMi 代理` 输入框。填写 ClashMi 的混合代理端口（常见为 `127.0.0.1:7890`）后，OkHttp 的 HTTP 与 WebSocket 都经该 HTTP 代理出网，ClashMi 再按分流规则转发到 ZeroTier。代理留空时使用 VPN 套接字绑定。
 
-原生客户端不依赖 WebView 的网络进程。`NetworkRoute` 枚举带有 `TRANSPORT_VPN` 的网络，把 OkHttp 的 `SocketFactory` 与 `Dns` 绑定到该网络，HTTP 与 WebSocket 都从 VPN 接口出网。没有活动 VPN 时保持系统默认选择。
+原生客户端不依赖 WebView 的网络进程。`NetworkRoute` 枚举带有 `TRANSPORT_VPN` 的网络，把 OkHttp 的 `SocketFactory` 与 `Dns` 绑定到该网络，HTTP 与 WebSocket 都从 VPN 接口出网。没有活动 VPN 时保持系统默认选择。PWA 上这一层由浏览器与系统的网络路由承担，不需要客户端代码。
 
 ## 与上游的代码边界
 
-上游的仓库结构里，协议解码、事件折叠、会话状态机、投影与历史同步都在 `shared/`，界面结构在 `androidApp/`。这些整体保留，本仓库不改。分界如下：
+现状（Android 原生）：上游的仓库结构里，协议解码、事件折叠、会话状态机、投影与历史同步都在 `shared/`，界面结构在 `androidApp/`。这些整体保留，本仓库不改。分界如下：
 
 | 事项 | 归属 |
 |---|---|
@@ -64,9 +68,11 @@ ClashMi、EasyTier 与 ZeroTier 都以 Android VPN 形式接入。Android 的按
 
 接管文件与新增文件在 `mobile/overlay/manifest.json` 里逐条登记，并记下被接管文件对应的上游原文摘要。分层原因与上游升级流程见 [`mobile/README.md`](../mobile/README.md)。
 
+PWA 形态没有这份上游子树：界面复用控制平面托管外壳与官方前端产物，配色仍按下面的令牌实现，由主题插件注入。
+
 ## 界面规范
 
-App 按 [`ui-baseline-design.md`](ui-baseline-design.md) 的令牌实现，颜色集中在接管后的 `DshTheme.kt` 里的 `DshColors`：
+现状（Android 原生）：App 按 [`ui-baseline-design.md`](ui-baseline-design.md) 的令牌实现，颜色集中在接管后的 `DshTheme.kt` 里的 `DshColors`：
 
 | 用途 | 令牌 |
 |---|---|
@@ -79,6 +85,8 @@ App 按 [`ui-baseline-design.md`](ui-baseline-design.md) 的令牌实现，颜�
 亮色取值在 `DshColors.Light` 里，与暗色保持同一语义映射。上游页面继续使用它原有的名字（`DshColors.Ocean`、`DshColors.Ink`、`DshColors.Success` 等），这些名字现在指向同一套设计令牌，因此换配色不需要逐个页面改。
 
 ## 构建
+
+现状（Android 原生）：
 
 ```bash
 cd runtime
@@ -106,9 +114,11 @@ CHATDSH_APK_BIND=192.0.2.10 node scripts/serve-apk.mjs --port 8099
 
 它绑定 `CHATDSH_APK_BIND` 给出的地址（缺省只监听回环），提供 `.run/apk` 下的 APK 与一个列出全部产物的首页。构建脚本检测到服务未运行时会自动拉起。
 
+目标形态（PWA）：不再有独立的构建与分发通道。外壳随控制平面一起分发，由 `scripts/build-shell.mjs` 把 `packages/client/shell` 打成单文件产物，`manifest` 与 Service Worker 由控制平面在根路径提供。上面的 Android 构建脚本、签名密钥、APK 分发服务在 PWA 改造完成后删除。
+
 ## 版本与验收
 
-`mobile/version.properties` 是版本号的唯一来源，Gradle 的 `versionName` 与 `versionCode` 都从它读取；合成时它被复制到构建目录根部。
+现状（Android 原生）：`mobile/version.properties` 是版本号的唯一来源，Gradle 的 `versionName` 与 `versionCode` 都从它读取；合成时它被复制到构建目录根部。
 
 ```bash
 # 核对包名、版本号与签名
@@ -119,7 +129,7 @@ CHATDSH_APK_BIND=192.0.2.10 node scripts/serve-apk.mjs --port 8099
 curl -I http://192.0.2.10:8099/chatdsh0.4.0.apk   # 地址按 CHATDSH_APK_BIND 的取值替换
 ```
 
-三条端到端验收命令，全部使用真实控制平面、托管运行时与真实插件：
+三条端到端验收命令，全部使用真实控制平面、托管运行时与真实插件，形态换成 PWA 后继续有效：
 
 ```bash
 node scripts/check-mobile-plugin.mjs      # 插件挂载配置的静态核对

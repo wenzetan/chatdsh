@@ -1,6 +1,8 @@
 # 界面设计参考页面
 
-本目录是可渲染的界面参考页面，配合 [`../ui-baseline-design.md`](../ui-baseline-design.md) 使用。页面只引用目录内的相对路径资源，可以直接用任意静态服务器打开。
+完整产品设计使用[完整客户端设计稿](<complete.html>)，包含 S01–S32、暗色/亮色/高对比度、响应式画板和通用状态。页面仅使用本地资源，可以直接打开；画板明确标注设计示例与未连接业务服务。字段、行为与验收使用[完整交互规格](<../client-complete-spec.md>)，实施使用[工作包](<../implementation-work-packages.md>)。
+
+[基础样张目录](<catalog.html>)与原有页面用于查看基础视觉组件；产品交互使用完整设计稿和完整规格。完整稿资源为[页面入口](<complete.html>)、[样式](<complete.css>)、[场景一至十六](<complete.js>)、[场景十七至三十二](<complete-more.js>)和[补充画板](<complete-details.js>)，共享[基础令牌](<tokens.css>)。
 
 | 文件 | 用途 |
 |---|---|
