@@ -9,10 +9,14 @@
  * 业务帧原样到达客户端；插件只看得到一个本机回环连接。
  *
  * 握手与帧编解码由 `websocket.ts` 提供，与设备长连接共用。
+ *
+ * 配对码按设备生命周期登记的一次性配对码校验：有效期、一次性与失败尝试限流都由登记
+ * 负责，环境变量配置的固定配对码也按同一套语义登记。撤销判定同时作用于新升级与已桥接
+ * 的连接：撤销之后升级回 401，登记过的套接字由设备通道关闭。
  * @module @chatdsh/gateway/mobile-channel
  */
 
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import type { IncomingMessage } from 'node:http';
@@ -20,12 +24,23 @@ import type { Duplex } from 'node:stream';
 import type { ChatdshTelemetry } from '@chatdsh/core-contracts';
 import type { GatewayStore } from './store.ts';
 import { deviceTokenHash, mobileTokenOf } from './mobile-http.ts';
+import { PairingService, pairingSourceOf } from './devices/pairing.ts';
+import type { DeviceTransportRegistry } from './devices/transports.ts';
 import { rejectUpgrade } from './websocket.ts';
 
 /** 配对只在使用一次性配对码时发生；之后的连接一律用设备令牌。 */
 export interface MobileChannelOptions {
   /** 一次性配对码；未配置时配对子协议一律拒绝。 */
   readonly pairingCode: string | undefined;
+  /**
+   * 配对码登记。提供时按登记里的有效期、一次性与限流判定；缺省时把 `pairingCode`
+   * 登记成一个同样一次使用、到期失效的配对码，两种来源共享同一套语义。
+   */
+  readonly pairing?: PairingService;
+  /** 设备通道登记；撤销设备时用它关闭已经桥接的 WebSocket。 */
+  readonly transports?: DeviceTransportRegistry;
+  /** 撤销判定；撤销之后即使存储里还能查到令牌也拒绝升级。 */
+  readonly revoked?: (deviceId: string) => boolean;
   /** 运行时插件监听的基地址，手机连接桥接到这里。 */
   readonly runtimeUrl: string;
   readonly store: GatewayStore;
@@ -66,12 +81,14 @@ export function pairingCodeOf(request: IncomingMessage): string | undefined {
   return code === '' ? undefined : code;
 }
 
-/** 恒定时间比较两个字符串，避免按字节比较泄露配对码。 */
-function sameSecret(given: string, expected: string): boolean {
-  const left = Buffer.from(given, 'utf8');
-  const right = Buffer.from(expected, 'utf8');
-  if (left.length !== right.length) return false;
-  return createHash('sha256').update(left).digest().equals(createHash('sha256').update(right).digest());
+/** 从子协议里取设备令牌：`dsh-auth.<token>`，供不能设置请求头的手机客户端使用。 */
+export function authTokenOf(request: IncomingMessage): string {
+  const offered = String(request.headers['sec-websocket-protocol'] ?? '')
+    .split(',')
+    .map((entry) => entry.trim());
+  const entry = offered.find((candidate) => candidate.startsWith('dsh-auth.'));
+  if (entry === undefined) return '';
+  return entry.slice('dsh-auth.'.length).trim();
 }
 
 /**
@@ -90,7 +107,8 @@ export function handleMobileChannel(
 ): ChannelDecision {
   const pairingCode = pairingCodeOf(request);
   if (pairingCode !== undefined) {
-    if (options.pairingCode === undefined) {
+    const service = options.pairing ?? staticPairingService(options.pairingCode);
+    if (service === undefined) {
       options.telemetry.event('chatdsh.gateway.mobile.rejected', {
         action: 'ws-pair',
         outcome: 'rejected',
@@ -100,14 +118,17 @@ export function handleMobileChannel(
       rejectUpgrade(socket, 404, 'pairing-disabled');
       return {};
     }
-    if (!sameSecret(pairingCode, options.pairingCode)) {
+    const consumed = service.consume(pairingCode, pairingSourceOf(request));
+    if (consumed.ok === false) {
       options.telemetry.event('chatdsh.gateway.mobile.rejected', {
         action: 'ws-pair',
         outcome: 'rejected',
-        'error.type': 'auth',
-        'error.code': 'pairing-code-invalid',
+        'error.type': consumed.code === 'pairing-rate-limited' ? 'limit' : 'auth',
+        'error.code': consumed.code,
       });
-      rejectUpgrade(socket, 401, 'pairing-code-invalid');
+      options.telemetry.counter('chatdsh_mobile_upgrades_total', { description: '手机 WebSocket 升级次数' })
+        .add(1, { outcome: 'rejected' });
+      rejectUpgrade(socket, consumed.code === 'pairing-code-invalid' ? 401 : 403, consumed.code);
       return {};
     }
     const token = randomBytes(32).toString('base64url');
@@ -117,6 +138,8 @@ export function handleMobileChannel(
       platform: platformOf(request),
       tokenHash: deviceTokenHash(token),
     });
+    const release = options.transports?.track(record.id, 'websocket', () => socket.destroy());
+    socket.once('close', () => release?.());
     options.telemetry.counter('chatdsh_mobile_upgrades_total', { description: '手机 WebSocket 升级次数' })
       .add(1, { outcome: 'paired' });
     return {
@@ -128,6 +151,7 @@ export function handleMobileChannel(
         device: { id: record.id, name: record.name },
       }),
       rollback: () => {
+        release?.();
         options.store.revokeMobileDevice(record.id);
         options.telemetry.event('chatdsh.gateway.mobile.rejected', {
           action: 'ws-pair',
@@ -139,7 +163,8 @@ export function handleMobileChannel(
     };
   }
 
-  const token = mobileTokenOf(request);
+  const headerToken = mobileTokenOf(request);
+  const token = headerToken === '' ? authTokenOf(request) : headerToken;
   if (token === '') {
     options.telemetry.event('chatdsh.gateway.mobile.upgrade.rejected', {
       'error.type': 'auth',
@@ -161,10 +186,51 @@ export function handleMobileChannel(
     rejectUpgrade(socket, 401, 'device-token-invalid');
     return {};
   }
+  if (options.revoked?.(record.id) === true) {
+    options.telemetry.event('chatdsh.gateway.mobile.upgrade.rejected', {
+      'error.type': 'auth',
+      'error.code': 'device-token-revoked',
+    });
+    options.telemetry.counter('chatdsh_mobile_upgrades_total', { description: '手机 WebSocket 升级次数' })
+      .add(1, { outcome: 'rejected' });
+    rejectUpgrade(socket, 401, 'device-token-revoked');
+    return {};
+  }
   options.store.touchMobileDevice(record.id);
+  const release = options.transports?.track(record.id, 'websocket', () => socket.destroy());
+  socket.once('close', () => release?.());
   options.telemetry.counter('chatdsh_mobile_upgrades_total', { description: '手机 WebSocket 升级次数' })
     .add(1, { outcome: 'accepted' });
   return { bridgePath: MOBILE_CHANNEL_PATH, headers: runtimeHeaders(request) };
+}
+
+/** 同一个配对码复用静态配对服务实例的数量上限。 */
+const STATIC_PAIRING_LIMIT = 8;
+
+/** 以配置里的静态配对码为索引的服务实例。 */
+const STATIC_PAIRING_SERVICES = new Map<string, PairingService>();
+
+/**
+ * 以环境变量配置的静态配对码登记服务。
+ *
+ * 静态配对码仍然可用，它和签发出来的配对码共用同一套一次性与限流语义：同一个配对码
+ * 在同一个进程里只完成一次配对，到期之后需要重新签发。服务按配对码复用，保证跨连接的
+ * 状态一致。
+ * @param code - 配置里的配对码；未配置时为 `undefined`。
+ */
+function staticPairingService(code: string | undefined): PairingService | undefined {
+  if (code === undefined || code === '') return undefined;
+  const existing = STATIC_PAIRING_SERVICES.get(code);
+  if (existing !== undefined) return existing;
+  const service = new PairingService();
+  service.adopt(code, { controlUrl: '' });
+  while (STATIC_PAIRING_SERVICES.size >= STATIC_PAIRING_LIMIT) {
+    const oldest = STATIC_PAIRING_SERVICES.keys().next();
+    if (oldest.done === true) break;
+    STATIC_PAIRING_SERVICES.delete(oldest.value);
+  }
+  STATIC_PAIRING_SERVICES.set(code, service);
+  return service;
 }
 
 /**

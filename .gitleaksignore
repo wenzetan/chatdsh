@@ -37,3 +37,13 @@ runtime/packages/host/settings-sync/src/index.ts:chatdsh-private-hostname:602
 # 五、契约里的字段声明被密码赋值规则命中：`password` 是请求体字段的校验声明，
 #     取值为 `z.string().min(1).max(1024)`，不含任何实际密码。
 runtime/packages/core/contracts/src/access.ts:chatdsh-password-assignment:85
+#
+# 六、后端起进程管理里的属性访问被私有域名规则命中：数据目录字段是部署配置里的路径，
+#     本身不含网络位置。
+runtime/gateway/src/backends/supervisor.ts:chatdsh-private-hostname:316
+runtime/gateway/src/backends/supervisor.ts:chatdsh-private-hostname:321
+#
+# 七、备份模块的密钥派生用途标签与附加认证数据被凭据规则命中：两处都是固定的
+#     HKDF 标签常量，不含任何密钥材料。
+runtime/gateway/src/backup/crypto.ts:chatdsh-provider-credential:19
+runtime/gateway/src/backup/crypto.ts:chatdsh-provider-credential:22

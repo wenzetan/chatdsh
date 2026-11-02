@@ -8,6 +8,8 @@
  */
 
 import type { GatewayStore, ReplicaStore } from './store.ts';
+import type { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 
 /** 左栏里的一条会话。 */
 export interface SessionSummary {
@@ -107,4 +109,102 @@ export function aggregateSessions(options: AggregateSessionsOptions): SessionsSn
   devices.sort((left, right) => right.lastSeenAt - left.lastSeenAt);
 
   return { devices };
+}
+
+/** 客户端列表只返回业务状态，内部日志序号留在存储层。 */
+export interface ClientSessionSummary extends SessionSummary {
+  readonly deviceId: string;
+  readonly deviceName: string;
+  readonly online: boolean;
+  readonly unreadMessages: number;
+}
+
+export interface ClientSessionPageQuery {
+  readonly clientId: string;
+  readonly deviceIds: readonly string[] | 'all';
+  readonly deviceId?: string;
+  readonly query: string;
+  readonly limit: number;
+  readonly after?: readonly [number, string];
+}
+
+interface ClientSessionRow {
+  session_id: string;
+  device_id: string;
+  device_name: string;
+  cwd: string;
+  kind: 'work' | 'chat';
+  title: string;
+  updated_at: number;
+  unread_messages: number;
+}
+
+const registeredDatabases = new WeakSet<DatabaseSync>();
+
+/** 结果集在数据库内限制到一页加一条，设备范围在读取事件摘要前过滤。 */
+export function createClientSessionQuery(database: DatabaseSync, online: (deviceId: string) => boolean) {
+  if (!registeredDatabases.has(database)) {
+    database.function('chatdsh_cwd_tail', { deterministic: true }, (value) => cwdTail(String(value)));
+    database.function('chatdsh_casefold', { deterministic: true }, (value) => String(value).toLowerCase());
+    database.function('chatdsh_identifier_digest', { deterministic: true }, (value) => createHash('sha256').update(String(value)).digest('hex'));
+    registeredDatabases.add(database);
+  }
+  const anchor = database.prepare(`select s.session_id from sessions s where s.deleted_at is null
+    and chatdsh_identifier_digest(s.session_id) = $digest
+    and ($scope is null or s.device_id in (select value from json_each($scope)))
+    and ($device is null or s.device_id = $device) limit 1`);
+  const statement = database.prepare(`
+    with summaries as materialized (
+      select s.session_id, s.device_id, s.cwd, s.kind,
+        coalesce(n.name, s.device_id) as device_name,
+        coalesce((select json_extract(e.payload, '$.data.title') from replica_events e
+          where e.session_id = s.session_id and e.kind = 'session/title'
+            and json_type(e.payload, '$.data.title') = 'text'
+            and json_extract(e.payload, '$.data.title') <> ''
+          order by e.seq desc limit 1), nullif(chatdsh_cwd_tail(s.cwd), ''), s.session_id) as title,
+        coalesce((select max(e.time) from replica_events e where e.session_id = s.session_id), s.created_at) as updated_at
+      from sessions s left join node_devices n on n.id = s.device_id
+      where s.deleted_at is null
+        and ($scope is null or s.device_id in (select value from json_each($scope)))
+        and ($device is null or s.device_id = $device)
+    ), selected as materialized (
+      select * from summaries
+      where instr(chatdsh_casefold(title), $query) > 0
+        and ($after_time is null or updated_at < $after_time
+          or (updated_at = $after_time and session_id > $after_id collate binary))
+      order by updated_at desc, session_id collate binary asc limit $count
+    )
+    select selected.*, (select count(*) from replica_events e
+      where e.session_id = selected.session_id and e.kind = 'assistant/message'
+        and e.seq > coalesce((select r.read_up_to_seq from read_receipts r
+          where r.session_id = selected.session_id and r.device_id = $client), -1)) as unread_messages
+    from selected order by updated_at desc, session_id collate binary asc
+  `);
+  const query = (input: ClientSessionPageQuery): { items: ClientSessionSummary[]; hasMore: boolean } => {
+    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 200) throw new Error('每页条数需要在 1 到 200 之间');
+    const rows = statement.all({
+      $scope: input.deviceIds === 'all' ? null : JSON.stringify(input.deviceIds),
+      $device: input.deviceId ?? null,
+      $query: input.query.toLowerCase(),
+      $after_time: input.after?.[0] ?? null,
+      $after_id: input.after?.[1] ?? null,
+      $count: input.limit + 1,
+      $client: input.clientId,
+    }) as unknown as ClientSessionRow[];
+    return {
+      hasMore: rows.length > input.limit,
+      items: rows.slice(0, input.limit).map((row) => ({
+        sessionId: row.session_id, deviceId: row.device_id, deviceName: row.device_name,
+        cwd: row.cwd, workspaceName: cwdTail(row.cwd) || row.session_id, kind: row.kind,
+        title: row.title, updatedAt: row.updated_at, unreadMessages: row.unread_messages,
+        online: online(row.device_id),
+      })),
+    };
+  };
+  return Object.assign(query, {
+    resolveAnchor(digest: string, deviceIds: readonly string[] | 'all', deviceId?: string): string | undefined {
+      const row = anchor.get({ $digest: digest, $scope: deviceIds === 'all' ? null : JSON.stringify(deviceIds), $device: deviceId ?? null }) as { session_id: string } | undefined;
+      return row?.session_id;
+    },
+  });
 }

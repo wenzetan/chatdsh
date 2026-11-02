@@ -1,8 +1,8 @@
 /**
  * 控制平面的配置与存储。
  *
- * 单机形态用内置的 SQLite（`node:sqlite`）。单账号形态下没有账号表与账号列：会话归属按
- * 设备记录，额度只有一份读数。团队版把同一组接口换成 Postgres，调用方不变。
+ * 当前形态用内置的 SQLite（`node:sqlite`）。单用户部署下没有账号表与账号列：会话归属按
+ * 设备记录，额度只有一份读数。换 Postgres 时把同一组接口换实现，调用方不变。
  * @module @chatdsh/gateway/store
  */
 
@@ -12,6 +12,9 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { LlmGatewayConfig } from './llm.ts';
+
+/** 访问认证的启用方式。 */
+export type GatewayAccessMode = 'disabled' | 'required';
 
 /** 控制平面配置。 */
 export interface GatewayConfig {
@@ -33,8 +36,16 @@ export interface GatewayConfig {
   readonly pushEscalationMs: number;
   /** 模型入口：上游地址、额度与凭据环境变量名。 */
   readonly llmGateway: LlmGatewayConfig;
+  /** 访问认证的启用方式；`disabled` 时按单账号边界处理写动作。 */
+  readonly accessMode: GatewayAccessMode;
+  /** 备份根目录；备份集、恢复目录与切换记录都落在这里。 */
+  readonly backupRoot: string;
+  /** PWA 清单与 Service Worker 的版本号，写进清单描述与缓存名。 */
+  readonly pwaVersion: string;
   /** 手机配对码；未配置时配对端点返回 404。 */
   readonly pairingCode?: string;
+  /** 对外访问的精确 origin；缺省按监听地址与实际端口拼出。 */
+  readonly publicUrl?: string;
 }
 
 /** 一条会话归属记录。 */
@@ -145,23 +156,39 @@ export function parseLlmGateway(env: NodeJS.ProcessEnv): LlmGatewayConfig {
 }
 
 /**
+ * 解析访问认证的启用方式。取值不认识时直接失败，不静默退到任何一种模式。
+ * @param raw - `CHATDSH_ACCESS_MODE` 的取值。
+ * @returns 访问模式。
+ */
+export function parseAccessMode(raw: string | undefined): GatewayAccessMode {
+  if (raw === undefined || raw.trim() === '') return 'disabled';
+  if (raw === 'disabled' || raw === 'required') return raw;
+  throw new Error(`CHATDSH_ACCESS_MODE 只能取 disabled 或 required：${raw}`);
+}
+
+/**
  * 读取配置。环境变量优先，缺省值面向单机自托管。
  * @param env - 进程环境变量。
  * @returns 配置。
  */
 export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   const root = dataRoot();
+  const version = env.CHATDSH_VERSION ?? '0.1.0';
   return {
     host: env.CHATDSH_GATEWAY_HOST ?? '127.0.0.1',
     port: Number.parseInt(env.CHATDSH_GATEWAY_PORT ?? '3170', 10),
     runtimeUrl: env.CHATDSH_RUNTIME_URL ?? 'http://127.0.0.1:3080',
     databasePath: env.CHATDSH_GATEWAY_DB ?? join(root, 'gateway', 'gateway.sqlite'),
     environment: env.CHATDSH_ENVIRONMENT ?? 'local',
-    version: env.CHATDSH_VERSION ?? '0.1.0',
+    version,
     pushMode: env.CHATDSH_PUSH_MODE === 'all-at-once' ? 'all-at-once' : 'two-stage',
     pushEscalationMs: Number.parseInt(env.CHATDSH_PUSH_ESCALATION_MS ?? '120000', 10),
+    accessMode: parseAccessMode(env.CHATDSH_ACCESS_MODE),
+    backupRoot: env.CHATDSH_BACKUP_ROOT ?? join(root, 'backups'),
+    pwaVersion: env.CHATDSH_PWA_VERSION ?? version,
     llmGateway: parseLlmGateway(env),
     ...(env.CHATDSH_PAIRING_CODE === undefined || env.CHATDSH_PAIRING_CODE === '' ? {} : { pairingCode: env.CHATDSH_PAIRING_CODE }),
+    ...(env.CHATDSH_PUBLIC_URL === undefined || env.CHATDSH_PUBLIC_URL === '' ? {} : { publicUrl: env.CHATDSH_PUBLIC_URL }),
   };
 }
 

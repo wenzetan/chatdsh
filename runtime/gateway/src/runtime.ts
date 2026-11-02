@@ -1,5 +1,5 @@
 /**
- * 运行时进程编排：由控制平面启动、等待就绪与停止租户运行时。
+ * 运行时进程编排：由控制平面启动、等待就绪与停止运行时。
  *
  * 单机形态下一个运行时进程；启动命令沿用 DSH 自己的命令行，端口从配置的起始值开始
  * 逐个探测。就绪判定以运行时打印的带令牌地址为准，再探一次该地址确认端口已开。
@@ -50,6 +50,29 @@ export interface RuntimeSupervisorOptions {
   readonly onLog?: (line: string) => void;
 }
 
+/** 编排器的状态，供诊断页显示托管事实。 */
+export interface RuntimeSupervisorState {
+  /** 托管还是外部地址。 */
+  readonly mode: 'managed' | 'external';
+  /** 当前反代目标。 */
+  readonly url: string;
+  /** 是否就绪。 */
+  readonly ready: boolean;
+  /** 托管进程标识；外部地址模式下恒为缺省。 */
+  readonly pid: number | undefined;
+  /** 启动路径；外部地址模式下恒为缺省。 */
+  readonly bootPath: string | undefined;
+  /** 最近一次托管进程退出。 */
+  readonly lastExit: {
+    /** 退出码。 */
+    readonly code: number | undefined;
+    /** 终止信号。 */
+    readonly signal: string | undefined;
+    /** 退出时刻。 */
+    readonly at: number;
+  } | undefined;
+}
+
 /**
  * 解析托管配置。
  *
@@ -71,7 +94,7 @@ export function parseRuntimeLaunchConfig(env: NodeJS.ProcessEnv, dataRoot: strin
   return {
     bin,
     profile: env.CHATDSH_RUNTIME_PROFILE ?? 'chatdsh-web',
-    home: env.CHATDSH_RUNTIME_HOME ?? join(dataRoot, 'tenants', 'default', 'harness'),
+    home: env.CHATDSH_RUNTIME_HOME ?? join(dataRoot, 'harness'),
     cwd: env.CHATDSH_RUNTIME_CWD ?? process.cwd(),
     port,
     readyTimeoutMs,
@@ -144,6 +167,7 @@ export class RuntimeSupervisor implements RuntimeTarget {
   private targetUrl: string;
   private boot: string | undefined;
   private readyFlag = false;
+  private lastExit: RuntimeSupervisorState['lastExit'];
 
   constructor(private readonly options: RuntimeSupervisorOptions) {
     this.targetUrl = options.externalUrl;
@@ -164,8 +188,22 @@ export class RuntimeSupervisor implements RuntimeTarget {
     return this.readyFlag;
   }
 
+  /** 状态快照。 */
+  state(): RuntimeSupervisorState {
+    return {
+      mode: this.options.config === undefined ? 'external' : 'managed',
+      url: this.targetUrl,
+      ready: this.readyFlag,
+      pid: this.child?.pid,
+      bootPath: this.boot,
+      lastExit: this.lastExit,
+    };
+  }
+
   /**
    * 启动运行时并等待就绪。
+   *
+   * 托管模式下同一时刻只允许一个子进程：已经就绪时直接返回。
    * @throws 子进程无法启动、提前退出或超时。
    */
   async start(): Promise<void> {
@@ -174,6 +212,7 @@ export class RuntimeSupervisor implements RuntimeTarget {
       this.readyFlag = true;
       return;
     }
+    if (this.readyFlag && this.child !== undefined && this.child.exitCode === null) return;
     const telemetry = this.options.telemetry;
     await telemetry.runSpan('chatdsh.gateway.runtime.lifecycle', {
       action: 'start',
@@ -192,6 +231,18 @@ export class RuntimeSupervisor implements RuntimeTarget {
         windowsHide: true,
       });
       this.child = child;
+      child.once('exit', (code, signal) => {
+        const afterReady = this.readyFlag;
+        this.readyFlag = false;
+        this.child = undefined;
+        this.lastExit = { code: code ?? undefined, signal: signal ?? undefined, at: Date.now() };
+        if (!afterReady) return;
+        telemetry.event('chatdsh.gateway.runtime.exited', {
+          'runtime.id': this.targetUrl,
+          'exit.code': code ?? -1,
+          signal: signal ?? 'none',
+        });
+      });
 
       let bootUrl: string | undefined;
       let buffered = '';
@@ -253,15 +304,6 @@ export class RuntimeSupervisor implements RuntimeTarget {
         span.setAttribute('runtime.id', this.targetUrl);
         span.setAttribute('outcome', 'ready');
         telemetry.event('chatdsh.gateway.runtime.ready', { 'runtime.id': this.targetUrl });
-        child.once('exit', (code, signal) => {
-          if (!this.readyFlag) return;
-          this.readyFlag = false;
-          telemetry.event('chatdsh.gateway.runtime.exited', {
-            'runtime.id': this.targetUrl,
-            'exit.code': code ?? -1,
-            signal: signal ?? 'none',
-          });
-        });
       } catch (error) {
         span.recordException(error);
         span.setAttribute('outcome', 'failed');

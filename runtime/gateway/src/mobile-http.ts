@@ -33,22 +33,46 @@ export function mobileTokenOf(request: IncomingMessage): string {
   return typeof fallback === 'string' ? fallback : '';
 }
 
+/**
+ * 设备认证的补充判定。
+ *
+ * 撤销状态可能不在设备表里（执行节点的撤销记录由设备生命周期保存），存储查询通过之后
+ * 再问一次撤销判定，撤销的设备因此不会因为先查到记录而通过。
+ */
+export interface MobileDeviceAuthOptions {
+  /** 设备是否已被撤销；缺省只看存储里的吊销标记。 */
+  readonly isRevoked?: (deviceId: string) => boolean;
+}
+
 /** 校验结果。 */
 export interface MobileDeviceAuth {
   /** 请求里给出的令牌；缺失时为空字符串。 */
   readonly token: string;
   /** 命中的设备；校验失败时为 `undefined`。 */
   readonly record?: MobileDeviceRecord;
-  /** 失败码，取 `device-token-required` 或 `device-token-invalid`。 */
-  readonly error?: 'device-token-required' | 'device-token-invalid';
+  /** 失败码，取 `device-token-required`、`device-token-invalid` 或 `device-token-revoked`。 */
+  readonly error?: 'device-token-required' | 'device-token-invalid' | 'device-token-revoked';
 }
 
-/** 用设备令牌解析设备；已吊销的记录按不存在处理。 */
-export function authenticateMobileDevice(request: IncomingMessage, store: GatewayStore): MobileDeviceAuth {
+/**
+ * 用设备令牌解析设备；已吊销的记录按不存在处理。
+ *
+ * 认证只认令牌本身。设备标识头（`x-chatdsh-device-id` 一类）只用于展示当前设备，永远
+ * 不参与认证。
+ * @param request - 入站请求。
+ * @param store - 网关存储。
+ * @param options - 撤销判定。
+ */
+export function authenticateMobileDevice(
+  request: IncomingMessage,
+  store: GatewayStore,
+  options: MobileDeviceAuthOptions = {}
+): MobileDeviceAuth {
   const token = mobileTokenOf(request);
   if (token === '') return { token, error: 'device-token-required' };
   const record = store.mobileDeviceByTokenHash(deviceTokenHash(token));
   if (record === undefined) return { token, error: 'device-token-invalid' };
+  if (options.isRevoked?.(record.id) === true) return { token, error: 'device-token-revoked' };
   return { token, record };
 }
 

@@ -46,3 +46,13 @@ export { McpRegistry, McpRegistryError, toServerName } from './mcp-registry.ts';
 export type { McpEndpointRecord, McpServerInput, McpSnapshot, McpTransport } from './mcp-registry.ts';
 export type { LlmGatewayConfig, LlmQuotaConfig } from './llm.ts';
 export type { GatewayServer } from './server.ts';
+
+// 领域模块入口：按命名空间导出，避免与上面的存储与传输类型重名。
+export * as postgres from './postgres/index.ts';
+export * as maintenance from './maintenance/index.ts';
+export * as backup from './backup/index.ts';
+export * as replicaContinuity from './replica-continuity/index.ts';
+export * as exports from './exports/index.ts';
+export * as resourceLimits from './resource-limits/index.ts';
+export * as backends from './backends/index.ts';
+export * as deploy from './deploy/index.ts';

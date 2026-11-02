@@ -8,18 +8,29 @@
  * @module @chatdsh/gateway/server
  */
 
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import type { Duplex } from 'node:stream';
 import type { ChatdshTelemetry } from '@chatdsh/core-contracts';
-import { NODE_HEADERS, CHATDSH_ERROR_CODES } from '@chatdsh/core-contracts';
-import type { GatewayConfig, GatewayStore, NodeRole, ReceiptStore, ReplicaStore, SettingsStore, ShareStore } from './store.ts';
-import { SETTINGS_NAMESPACES } from './store.ts';
+import { ACCESS_SECURITY, accessSignInSchema, ChatdshError, NODE_HEADERS, reauthRequestSchema, REAUTH_WINDOW_SECONDS } from '@chatdsh/core-contracts';
+import type { GatewayAccessMode, GatewayConfig, GatewayStore, NodeRole, ReceiptStore, ReplicaStore, SettingsStore } from './store.ts';
+import { dataRoot, SETTINGS_NAMESPACES } from './store.ts';
 import type { PushHub } from './push.ts';
 import type { RuntimeTarget } from './runtime.ts';
-import { renderSharePage } from './render.ts';
-import { AutomationStore, handleWebhook } from './automation.ts';
+import { AutomationStore, handleWebhook, type AutomationSessionRequest } from './automation.ts';
+import { AUTOMATION_CSRF_HEADER, createAutomationRoutes } from './automation-routes.ts';
+import { createClientHttpHandler } from './client-http.ts';
+import type { ClientPrincipal } from './client-security.ts';
+import { validateClientOrigin } from './client-security.ts';
+import { createExports } from './exports/index.ts';
+import { createDirectoryAttachmentSource } from './sharing/attachments.ts';
+import { createShareHttpHandler } from './sharing/http.ts';
+import { ShareRepository } from './sharing/repository.ts';
+import { ShareService } from './sharing/service.ts';
 import { handleLlmRequest, LlmQuotaLedger } from './llm.ts';
 import { McpRegistry } from './mcp-registry.ts';
 import {
@@ -42,6 +53,53 @@ import { aggregateSessions } from './sessions.ts';
 import { DevicePluginsError, fetchDevicePlugins } from './device-plugins.ts';
 import { SHELL_SCRIPT_PATH, readShellScript, renderShellPage, shellBuilt } from './shell.ts';
 import { encodeServerTextFrame } from './websocket.ts';
+import { AccessStore, type AccessSessionRow } from './access/store.ts';
+import { deriveAccessKey, loadAccessMasterKey } from './access/keys.ts';
+import { issueCsrfToken, verifyCsrfToken } from './access/csrf.ts';
+import {
+  ACCESS_SESSION_TTL_MS,
+  accessSessionView,
+  accessTicketHash,
+  accessTokenHash,
+  accessTokenOf,
+  newAccessToken,
+  newSessionId,
+  renewalOf,
+  serializeAccessCookie,
+} from './access/session.ts';
+import { burnPasswordTime, verifyAccessPassword } from './access/password.ts';
+import { totpEnrolled } from './access/totp.ts';
+import { consumeRecoveryCode, generateRecoveryCodes, recoveryCodesRemaining } from './access/recovery.ts';
+import { createAccessLimiter } from './access/limit.ts';
+import { createNotificationHost, type NotificationHost } from './notifications/index.ts';
+import { createDeviceHost, DeviceLifecycle, DeviceTransportRegistry, PairingService, type DeviceHost } from './devices/index.ts';
+import { DataMaintenance, type StorageMeasurement } from './maintenance/index.ts';
+import { ReplicaContinuityStore } from './replica-continuity/store.ts';
+import {
+  MigrationJobRunner,
+  MigrationJobStore,
+  preflightMigration,
+  readVerificationReport,
+  switchToTarget,
+  type MigrationCopyBatchInput,
+  type MigrationCopyBatchResult,
+} from './storage/index.ts';
+import { StorageError } from './storage/errors.ts';
+import { MigrationLock } from './migrations/lock.ts';
+import {
+  BackupError,
+  activateRestoredRoot,
+  createBackup,
+  listBackupSets,
+  planRestoreSwitch,
+  planRetention,
+  pruneBackups,
+  readSchemaVersion,
+  restoreBackup,
+  verifyBackup,
+  type ExternalServiceInput,
+} from './backup/index.ts';
+import type { SqlExecutor, SqlParameter, SqlRow } from './storage/sqlite.ts';
 
 /** 服务实例。 */
 export interface GatewayServer {
@@ -58,7 +116,6 @@ interface HandlerContext {
   readonly config: GatewayConfig;
   readonly store: GatewayStore;
   readonly replica: ReplicaStore;
-  readonly share: ShareStore;
   /** 已读水位。 */
   readonly receipts: ReceiptStore;
   /** 白名单设置的存储。 */
@@ -84,6 +141,33 @@ const DEVICE_PLUGINS_PATH = /^\/chatdsh\/gateway\/devices\/([^/]+)\/plugins$/;
 
 /** 外壳静态资源的路径前缀。 */
 const SHELL_ASSET_PREFIX = '/shell/';
+
+/** 设备管理的公共前缀：配对码签发、撤销、链路检查与活动通道都在它下面。 */
+const DEVICE_HOST_PREFIX = '/chatdsh/gateway/devices/';
+
+/** 通知中心的公共前缀。 */
+const NOTIFICATION_PREFIX = '/chatdsh/gateway/notifications';
+
+/** 接入页的公共前缀。 */
+const ACCESS_PREFIX = '/chatdsh/access';
+
+/** 备份、校验、恢复与切换的公共前缀。 */
+const BACKUP_PREFIX = '/chatdsh/gateway/backup';
+
+/** 连续副本的保留策略路径。 */
+const REPLICA_RETENTION_PATH = '/chatdsh/gateway/replica/retention';
+
+/** 数据管理的公共前缀。 */
+const DATA_PREFIX = '/chatdsh/client/data';
+
+/** 存储迁移的公共前缀。 */
+const MIGRATION_PREFIX = '/chatdsh/gateway/migration';
+
+/** PWA 的应用清单、Service Worker 与离线页路径；图标在该前缀下。 */
+const PWA_MANIFEST_PATH = '/manifest.webmanifest';
+const PWA_SERVICE_WORKER_PATH = '/sw.js';
+const PWA_OFFLINE_PATH = '/offline.html';
+const PWA_ICON_PREFIX = '/assets/icons/';
 
 /** 逐跳头部：前缀反代时不转发请求方向，也不回填响应方向。 */
 const HOP_BY_HOP_HEADERS = new Set([
@@ -119,6 +203,18 @@ const DEVICE_PROXY_BODY_LIMIT = 8 * 1024 * 1024;
 /** 前缀反代的转发超时。 */
 const DEVICE_PROXY_TIMEOUT_MS = 60_000;
 
+/** 浏览器身份的有效期；应用级登录接入后由访问会话的有效期取代。 */
+const CLIENT_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** 没有携带浏览器设备标识时的请求者身份。 */
+const OWNER_CLIENT_ID = 'owner';
+
+/** 自动化派发的超时：目标设备要建立会话，比一次普通请求长。 */
+const AUTOMATION_DISPATCH_TIMEOUT_MS = 30_000;
+
+/** 一次公共入口请求的处理函数；接管时返回 true。 */
+type EntryHandler = (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
+
 /** 路由分类，用于指标的 `route` 属性与 span 命名。方法目前不参与分类，保留参数以便后续区分读写。 */
 function routeOf(_method: string, path: string): string {
   if (path === '/healthz') return 'healthz';
@@ -138,22 +234,62 @@ function routeOf(_method: string, path: string): string {
   if (DEVICE_PROBE_PATH.test(path)) return 'device-probe';
   if (DEVICE_PLUGINS_PATH.test(path)) return 'device-plugins';
   if (path === '/chatdsh/gateway/devices') return 'devices';
+  if (path === REPLICA_RETENTION_PATH) return 'replica-continuity';
+  if (path.startsWith(DEVICE_HOST_PREFIX)) return 'device-host';
+  if (path === NOTIFICATION_PREFIX || path.startsWith(`${NOTIFICATION_PREFIX}/`)) return 'notifications';
+  if (path === ACCESS_PREFIX || path.startsWith(`${ACCESS_PREFIX}/`)) return 'access';
+  if (path === BACKUP_PREFIX || path.startsWith(`${BACKUP_PREFIX}/`)) return 'backup';
+  if (path === MIGRATION_PREFIX || path.startsWith(`${MIGRATION_PREFIX}/`)) return 'migration';
   if (path === '/chatdsh/gateway/replica') return 'replica';
-  if (path === '/chatdsh/gateway/share') return 'share';
-  if (path === '/chatdsh/gateway/shares') return 'share-list';
   if (path === '/chatdsh/gateway/receipt') return 'receipt';
   if (path === '/chatdsh/gateway/import') return 'import';
   if (path === '/chatdsh/gateway/events') return 'events';
   if (path.startsWith('/chatdsh/gateway/webhook/')) return 'webhook';
-  if (path === '/chatdsh/gateway/automations') return 'automations';
   if (path === '/chatdsh/gateway/mcp') return 'mcp';
   if (path === '/chatdsh/gateway/llm') return 'llm';
-  if (path.startsWith('/s/')) return 'snapshot';
+  // 公共入口的领域：私有客户端读取、数据管理、分享、自动化与导出。
+  if (path === DATA_PREFIX || path.startsWith(`${DATA_PREFIX}/`)) return 'data';
+  if (path.startsWith('/chatdsh/client/')) return 'client';
+  if (path === '/chatdsh/gateway/shares') return 'share-list';
+  if (path === '/chatdsh/gateway/share' || path.startsWith('/chatdsh/gateway/share/')) return 'share';
+  if (path.startsWith('/s/')) return 'share-public';
+  if (path === '/chatdsh/gateway/automations' || path.startsWith('/chatdsh/gateway/automations/')) return 'automations';
+  if (path === '/chatdsh/gateway/automation-deliveries') return 'automation-deliveries';
+  if (path === '/chatdsh/gateway/export/estimate') return 'export-estimate';
+  if (path === '/chatdsh/gateway/exports' || path.startsWith('/chatdsh/gateway/exports/')) return 'exports';
+  // PWA 静态资源：清单、Service Worker、离线页与图标。
+  if (path === PWA_MANIFEST_PATH) return 'pwa-manifest';
+  if (path === PWA_SERVICE_WORKER_PATH) return 'pwa-service-worker';
+  if (path === PWA_OFFLINE_PATH) return 'pwa-offline';
+  if (path.startsWith(PWA_ICON_PREFIX)) return 'pwa-icon';
   if (DEVICE_PREFIX_PATH.test(path)) return 'device-proxy';
   if (path.startsWith('/api/')) return 'api';
   if (path.startsWith('/plugins/')) return 'plugins';
   return 'static';
 }
+
+/** 由领域处理器接管的公共入口路由。 */
+const ENTRY_ROUTES: ReadonlySet<string> = new Set([
+  'client',
+  'data',
+  'share',
+  'share-list',
+  'share-public',
+  'automations',
+  'automation-deliveries',
+  'export-estimate',
+  'exports',
+  'device-host',
+  'notifications',
+  'access',
+  'backup',
+  'replica-continuity',
+  'migration',
+  'pwa-manifest',
+  'pwa-service-worker',
+  'pwa-offline',
+  'pwa-icon',
+]);
 
 /** HTTP 状态码的分类，用于指标的 `status_class` 属性。 */
 function statusClass(status: number): string {
@@ -237,22 +373,1534 @@ function sameSecret(provided: string, expected: string): boolean {
 }
 
 /**
+ * 用控制平面的连接执行同一批 SQL：连续副本与迁移任务登记共用这把连接，不另开文件句柄。
+ * @param database - 控制平面的 SQLite 连接。
+ * @returns SQL 执行端口。
+ */
+function sqlExecutorOf(database: DatabaseSync): SqlExecutor {
+  let depth = 0;
+  return {
+    exec(sql: string): void {
+      database.exec(sql);
+    },
+    all<T extends SqlRow>(sql: string, parameters: readonly SqlParameter[] = []): T[] {
+      return database.prepare(sql).all(...parameters) as T[];
+    },
+    get<T extends SqlRow>(sql: string, parameters: readonly SqlParameter[] = []): T | undefined {
+      return database.prepare(sql).get(...parameters) as T | undefined;
+    },
+    run(sql: string, parameters: readonly SqlParameter[] = []): void {
+      database.prepare(sql).run(...parameters);
+    },
+    transaction<T>(fn: () => T): T {
+      if (depth > 0) return fn();
+      database.exec('begin immediate');
+      depth += 1;
+      try {
+        const result = fn();
+        database.exec('commit');
+        return result;
+      } catch (error) {
+        database.exec('rollback');
+        throw error;
+      } finally {
+        depth -= 1;
+      }
+    },
+    tableExists(table: string): boolean {
+      const row = database
+        .prepare("select name from sqlite_master where type = 'table' and name = ?")
+        .get(table) as { name: string } | undefined;
+      return row !== undefined;
+    },
+  };
+}
+
+/** 访问接口的路径。 */
+const ACCESS_STATUS_PATH = `${ACCESS_PREFIX}/status`;
+const ACCESS_SIGN_IN_PATH = `${ACCESS_PREFIX}/sign-in`;
+const ACCESS_SESSIONS_PATH = `${ACCESS_PREFIX}/sessions`;
+const ACCESS_SESSION_REVOKE_PATH = `${ACCESS_PREFIX}/sessions/revoke`;
+const ACCESS_SESSIONS_REVOKE_ALL_PATH = `${ACCESS_PREFIX}/sessions/revoke-all`;
+const ACCESS_REAUTH_PATH = `${ACCESS_PREFIX}/reauth`;
+const ACCESS_TOTP_ENROLL_PATH = `${ACCESS_PREFIX}/totp/enroll`;
+const ACCESS_TOTP_CONFIRM_PATH = `${ACCESS_PREFIX}/totp/confirm`;
+const ACCESS_RECOVERY_PATH = `${ACCESS_PREFIX}/recovery`;
+const ACCESS_RECOVERY_SAVED_PATH = `${ACCESS_PREFIX}/recovery/saved`;
+const ACCESS_PASSKEY_CHALLENGE_PATH = `${ACCESS_PREFIX}/passkey/challenge`;
+
+/** 访问接口的构造输入。 */
+interface AccessHandlerOptions {
+  /** 对外访问的精确 origin；写入请求要求它。 */
+  readonly origin: string;
+  /** 访问认证的启用方式。 */
+  readonly mode: GatewayAccessMode;
+  /** 访问层存储。 */
+  readonly store: AccessStore;
+  /** CSRF 令牌的派生子密钥。 */
+  readonly csrfKey: Buffer;
+}
+
+/**
+ * 请求携带的访问会话记录；没有令牌、令牌无效、已撤销或已过期都返回空。
+ * 会话处在续期窗口内时把到期时刻推后一次。
+ */
+function accessSessionRow(store: AccessStore, request: IncomingMessage, now: number): AccessSessionRow | undefined {
+  const token = accessTokenOf(request);
+  if (token === undefined) return undefined;
+  const row = store.sessionByTokenHash(accessTokenHash(token));
+  if (row === undefined || row.revokedAt !== undefined) return undefined;
+  const renewal = renewalOf(row, now);
+  if (renewal.expired) return undefined;
+  if (renewal.renew) store.touchSession(row.sessionId, now, renewal.expiresAt);
+  return row;
+}
+
+/**
+ * 装配接入页状态、登录、通行密钥、双因素、恢复码、会话与再认证的接口。
+ *
+ * 本机没有成熟的 TOTP 与 WebAuthn 库，两个端口未装配：状态应答不把这两种方式列为可用，
+ * 直接调用对应端点按不可用拒绝并给出稳定原因码。
+ */
+function createAccessHandler(options: AccessHandlerOptions): EntryHandler {
+  const { store, csrfKey, mode } = options;
+  const limiter = createAccessLimiter(store);
+
+  /** 读一个访问接口的 JSON 对象请求体。 */
+  const jsonBodyOf = (request: IncomingMessage, response: ServerResponse): Promise<Record<string, unknown> | undefined> =>
+    jsonObjectOf(request, response, 64 * 1024);
+
+  /** 建立一条访问会话并把令牌写进 HttpOnly Cookie。 */
+  const startSession = (request: IncomingMessage, response: ServerResponse, now: number): AccessSessionRow => {
+    const token = newAccessToken();
+    const sessionId = newSessionId();
+    const agent = String(request.headers['user-agent'] ?? '');
+    const row: AccessSessionRow = {
+      sessionId,
+      tokenHash: accessTokenHash(token),
+      clientName: agent === '' ? platformOf(request) : agent.slice(0, 80),
+      createdAt: now,
+      lastActiveAt: now,
+      expiresAt: now + ACCESS_SESSION_TTL_MS,
+    };
+    store.insertSession(row);
+    response.setHeader('Set-Cookie', serializeAccessCookie(token, Math.floor(ACCESS_SESSION_TTL_MS / 1000)));
+    return row;
+  };
+
+  /** 认证成功的应答：会话写进 Cookie，响应体不带令牌。 */
+  const sendAuthenticated = (response: ServerResponse, row: AccessSessionRow): void => {
+    response.setHeader('Cache-Control', 'no-store');
+    sendJson(response, 200, {
+      outcome: 'authenticated',
+      session: accessSessionView(row, { currentSessionId: row.sessionId }),
+      tokenWritten: true,
+    });
+  };
+
+  /** 校验动作的写入权限：精确来源加当前会话的 CSRF 令牌。 */
+  const writeRejectionOf = (request: IncomingMessage, session: AccessSessionRow | undefined): string | undefined => {
+    if (request.headers.origin !== options.origin) return 'origin-rejected';
+    if (session === undefined) return 'auth-required';
+    const expected = issueCsrfToken(csrfKey, session.tokenHash);
+    const supplied = request.headers[ACCESS_SECURITY.csrfHeader];
+    if (!verifyCsrfToken(Array.isArray(supplied) ? supplied[0] : supplied, expected)) return 'csrf-rejected';
+    return undefined;
+  };
+
+  /** 读一个已经认证的会话；缺失或失效时回 401。 */
+  const requiredSession = (
+    request: IncomingMessage,
+    response: ServerResponse,
+    now: number,
+  ): AccessSessionRow | undefined => {
+    const session = accessSessionRow(store, request, now);
+    if (session === undefined) {
+      const token = accessTokenOf(request);
+      sendJson(response, 401, { error: token === undefined ? 'auth-required' : 'access-session-revoked' });
+      return undefined;
+    }
+    return session;
+  };
+
+  /** 再认证窗口内的敏感动作校验；密码与受信任网络两种方式可用。 */
+  const reauthOf = async (
+    payload: Record<string, unknown>,
+    source: string,
+    now: number,
+  ): Promise<{ outcome: 'authorized'; validUntil: number } | { outcome: 'rejected'; code: string }> => {
+    const parsed = reauthRequestSchema.safeParse(payload);
+    if (!parsed.success) return { outcome: 'rejected', code: 'request-invalid' };
+    if (parsed.data.method === 'trusted-network') {
+      return mode === 'disabled'
+        ? { outcome: 'authorized', validUntil: now + REAUTH_WINDOW_SECONDS * 1000 }
+        : { outcome: 'rejected', code: 'auth-required' };
+    }
+    if (parsed.data.method !== 'password') return { outcome: 'rejected', code: 'auth-invalid' };
+    const decision = limiter.guard(source, now);
+    if (!decision.allowed) return { outcome: 'rejected', code: decision.code };
+    const credential = store.credential('password');
+    const supplied = parsed.data.credential ?? '';
+    if (credential === undefined) {
+      await burnPasswordTime(supplied);
+      limiter.fail(source, now);
+      return { outcome: 'rejected', code: 'auth-invalid' };
+    }
+    if (!(await verifyAccessPassword(supplied, credential.digest))) {
+      limiter.fail(source, now);
+      return { outcome: 'rejected', code: 'auth-invalid' };
+    }
+    limiter.succeed(source, now);
+    return { outcome: 'authorized', validUntil: now + REAUTH_WINDOW_SECONDS * 1000 };
+  };
+
+  return async (request, response) => {
+    const path = (request.url ?? '/').split('?')[0] ?? '/';
+    if (path !== ACCESS_PREFIX && !path.startsWith(`${ACCESS_PREFIX}/`)) return false;
+    const method = request.method ?? 'GET';
+    const now = Date.now();
+    const source = request.socket.remoteAddress ?? 'unknown';
+
+    if (path === ACCESS_STATUS_PATH) {
+      if (method !== 'GET') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const session = accessSessionRow(store, request, now);
+      const lockedUntil = limiter.lockedUntil(source, now);
+      response.setHeader('Cache-Control', 'no-store');
+      sendJson(response, 200, {
+        required: mode === 'required',
+        methods: mode === 'required' ? ['password'] : ['trusted-network'],
+        signedIn: mode === 'disabled' || session !== undefined,
+        secondFactorPending: false,
+        totpEnrolled: totpEnrolled(store),
+        recoveryCodesRemaining: recoveryCodesRemaining(store),
+        passkeyUnavailableReason: 'verifier-library-missing',
+        ...(session === undefined ? {} : { csrfToken: issueCsrfToken(csrfKey, session.tokenHash) }),
+        ...(lockedUntil === undefined ? {} : { lockedUntil }),
+      });
+      return true;
+    }
+
+    if (path === ACCESS_SIGN_IN_PATH) {
+      if (method !== 'POST') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const payload = await jsonBodyOf(request, response);
+      if (payload === undefined) return true;
+      const parsed = accessSignInSchema.safeParse(payload);
+      if (!parsed.success) {
+        sendJson(response, 400, { error: 'request-invalid' });
+        return true;
+      }
+      if (parsed.data.method === 'passkey') {
+        sendJson(response, 503, { error: 'passkey-verifier-missing' });
+        return true;
+      }
+      if (parsed.data.method === 'totp') {
+        sendJson(response, 503, { error: 'totp-library-missing' });
+        return true;
+      }
+      if (parsed.data.method === 'recovery-code') {
+        const ticket = store.consumeTicket('second-factor', accessTicketHash(parsed.data.partialTicket), now);
+        if (ticket === undefined) {
+          sendJson(response, 401, { error: 'ticket-expired' });
+          return true;
+        }
+        if (!consumeRecoveryCode(store, parsed.data.code, now)) {
+          sendJson(response, 401, { error: 'recovery-code-invalid' });
+          return true;
+        }
+        sendAuthenticated(response, startSession(request, response, now));
+        return true;
+      }
+      const decision = limiter.guard(source, now);
+      if (!decision.allowed) {
+        response.setHeader('Cache-Control', 'no-store');
+        sendJson(response, 429, {
+          error: decision.code,
+          attemptsLeft: decision.attemptsLeft,
+          ...(decision.code === 'auth-locked' ? { lockedUntil: decision.lockedUntil } : {}),
+        });
+        return true;
+      }
+      const credential = store.credential('password');
+      const matches = credential === undefined
+        ? (await burnPasswordTime(parsed.data.password), false)
+        : await verifyAccessPassword(parsed.data.password, credential.digest);
+      if (!matches) {
+        const failure = limiter.fail(source, now);
+        response.setHeader('Cache-Control', 'no-store');
+        sendJson(response, 401, {
+          error: 'auth-invalid',
+          attemptsLeft: failure.attemptsLeft,
+          ...(failure.lockedUntil === undefined ? {} : { lockedUntil: failure.lockedUntil }),
+        });
+        return true;
+      }
+      limiter.succeed(source, now);
+      if (totpEnrolled(store)) {
+        const ticket = randomBytes(16).toString('base64url');
+        store.insertTicket('second-factor', accessTicketHash(ticket), now + 5 * 60 * 1000, now);
+        sendJson(response, 200, {
+          outcome: 'second-factor-required',
+          partialTicket: ticket,
+          methods: ['recovery-code'],
+          expiresAt: now + 5 * 60 * 1000,
+        });
+        return true;
+      }
+      sendAuthenticated(response, startSession(request, response, now));
+      return true;
+    }
+
+    if (path === ACCESS_SESSIONS_PATH) {
+      if (method !== 'GET') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const session = requiredSession(request, response, now);
+      if (session === undefined) return true;
+      response.setHeader('Cache-Control', 'no-store');
+      sendJson(response, 200, {
+        items: store.sessions().map((row) => accessSessionView(row, { currentSessionId: session.sessionId })),
+        currentSessionId: session.sessionId,
+      });
+      return true;
+    }
+
+    if (path === ACCESS_SESSION_REVOKE_PATH) {
+      if (method !== 'POST') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const session = requiredSession(request, response, now);
+      if (session === undefined) return true;
+      const rejection = writeRejectionOf(request, session);
+      if (rejection !== undefined) {
+        sendJson(response, rejection === 'csrf-rejected' ? 403 : 401, { error: rejection });
+        return true;
+      }
+      const payload = await jsonBodyOf(request, response);
+      if (payload === undefined) return true;
+      const sessionId = payload.sessionId;
+      if (typeof sessionId !== 'string' || sessionId === '') {
+        sendJson(response, 400, { error: 'request-invalid' });
+        return true;
+      }
+      if (!store.revokeSession(sessionId, now)) {
+        sendJson(response, 404, { error: 'object-not-found' });
+        return true;
+      }
+      store.clearReauth(sessionId);
+      sendJson(response, 200, { revokedAt: now });
+      return true;
+    }
+
+    if (path === ACCESS_SESSIONS_REVOKE_ALL_PATH) {
+      if (method !== 'POST') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const session = requiredSession(request, response, now);
+      if (session === undefined) return true;
+      const rejection = writeRejectionOf(request, session);
+      if (rejection !== undefined) {
+        sendJson(response, rejection === 'csrf-rejected' ? 403 : 401, { error: rejection });
+        return true;
+      }
+      const payload = await jsonBodyOf(request, response);
+      if (payload === undefined) return true;
+      if (payload.keepCurrent !== undefined && typeof payload.keepCurrent !== 'boolean') {
+        sendJson(response, 400, { error: 'request-invalid' });
+        return true;
+      }
+      const revokedCount = store.revokeAllSessions(now, payload.keepCurrent === true ? session.sessionId : undefined);
+      sendJson(response, 200, { revokedCount });
+      return true;
+    }
+
+    if (path === ACCESS_REAUTH_PATH) {
+      if (method !== 'POST') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const session = requiredSession(request, response, now);
+      if (session === undefined) return true;
+      const rejection = writeRejectionOf(request, session);
+      if (rejection !== undefined) {
+        sendJson(response, rejection === 'csrf-rejected' ? 403 : 401, { error: rejection });
+        return true;
+      }
+      const payload = await jsonBodyOf(request, response);
+      if (payload === undefined) return true;
+      const outcome = await reauthOf(payload, source, now);
+      if (outcome.outcome === 'authorized') {
+        store.recordReauth(session.sessionId, String(payload.action), now);
+        sendJson(response, 200, { outcome: 'authorized', validUntil: outcome.validUntil });
+        return true;
+      }
+      sendJson(response, 401, { outcome: 'rejected', code: outcome.code });
+      return true;
+    }
+
+    if (path === ACCESS_TOTP_ENROLL_PATH || path === ACCESS_TOTP_CONFIRM_PATH) {
+      sendJson(response, 503, { error: 'totp-library-missing' });
+      return true;
+    }
+
+    if (path === ACCESS_RECOVERY_PATH) {
+      const session = requiredSession(request, response, now);
+      if (session === undefined) return true;
+      if (method === 'GET') {
+        sendJson(response, 200, store.recoveryCodeStats());
+        return true;
+      }
+      if (method !== 'POST') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const rejection = writeRejectionOf(request, session);
+      if (rejection !== undefined) {
+        sendJson(response, rejection === 'csrf-rejected' ? 403 : 401, { error: rejection });
+        return true;
+      }
+      const codes = generateRecoveryCodes(store, now);
+      store.writeCredential('recovery-codes', JSON.stringify({ generatedAt: now, savedConfirmed: false }), now);
+      response.setHeader('Cache-Control', 'no-store');
+      sendJson(response, 200, { codes, generatedAt: now, savedConfirmed: false });
+      return true;
+    }
+
+    if (path === ACCESS_RECOVERY_SAVED_PATH) {
+      if (method !== 'POST') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const session = requiredSession(request, response, now);
+      if (session === undefined) return true;
+      const rejection = writeRejectionOf(request, session);
+      if (rejection !== undefined) {
+        sendJson(response, rejection === 'csrf-rejected' ? 403 : 401, { error: rejection });
+        return true;
+      }
+      if (store.credential('recovery-codes') === undefined) {
+        sendJson(response, 404, { error: 'object-not-found' });
+        return true;
+      }
+      store.writeCredential('recovery-codes', JSON.stringify({ generatedAt: now, savedConfirmed: true }), now);
+      sendJson(response, 200, { savedConfirmed: true });
+      return true;
+    }
+
+    if (path === ACCESS_PASSKEY_CHALLENGE_PATH) {
+      sendJson(response, 503, { error: 'passkey-verifier-missing' });
+      return true;
+    }
+
+    sendJson(response, 404, { error: 'object-not-found' });
+    return true;
+  };
+}
+
+/** 读一个 JSON 对象请求体；结构不符时回稳定错误码并返回空。 */
+async function jsonObjectOf(
+  request: IncomingMessage,
+  response: ServerResponse,
+  limit: number,
+): Promise<Record<string, unknown> | undefined> {
+  const text = await readLimitedBody(request, limit);
+  if (text === undefined) {
+    sendJson(response, 413, { error: 'payload-too-large' });
+    return undefined;
+  }
+  if (text.trim() === '') return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    sendJson(response, 400, { error: 'request-invalid' });
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    sendJson(response, 400, { error: 'request-invalid' });
+    return undefined;
+  }
+  return parsed as Record<string, unknown>;
+}
+
+/** 备份集目录名：只允许字母数字与点线，解析之后必须落在备份根下面。 */
+const BACKUP_SET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+
+/** 备份接口的构造输入。 */
+interface BackupHandlerOptions {
+  readonly config: GatewayConfig;
+  readonly telemetry: ChatdshTelemetry;
+  /** 备份主密钥文件路径；由部署提供，模块不创建它。 */
+  readonly keyPath: string;
+  /** 控制平面数据根，备份的源。 */
+  readonly sourceRoot: string;
+  /** 写动作的授权：按访问会话或单账号边界判定。 */
+  readonly authorize: (request: IncomingMessage) => boolean;
+}
+
+/** 备份错误码到 HTTP 状态码：缺失、冲突、格式与内部错误分开。 */
+function backupStatusOf(code: string): number {
+  if (code === 'backup-source-missing' || code === 'backup-key-missing' || code === 'backup-manifest-missing'
+    || code === 'backup-object-missing' || code === 'restore-target-unusable') {
+    return 404;
+  }
+  if (code === 'restore-target-exists' || code === 'restore-live-root-present' || code === 'restore-switch-not-confirmed'
+    || code === 'restore-version-incompatible' || code === 'backup-external-scope-incomplete'
+    || code === 'backup-checkpoint-mismatch' || code === 'backup-disk-space-insufficient'
+    || code === 'backup-key-mismatch') {
+    return 409;
+  }
+  if (code === 'backup-format-unsupported' || code === 'backup-source-entry-unsupported' || code === 'backup-checkpoint-corrupt'
+    || code === 'backup-manifest-corrupt' || code === 'backup-manifest-digest-mismatch' || code === 'backup-object-corrupt'
+    || code === 'backup-object-digest-mismatch' || code === 'backup-key-undecryptable'
+    || code === 'restore-ownership-invalid' || code === 'restore-event-gap' || code === 'restore-attachment-mismatch'
+    || code === 'restore-credential-undecryptable' || code === 'restore-disposition-incomplete') {
+    return 400;
+  }
+  return 500;
+}
+
+/** 把一次备份失败写进应答：错误码、细节与恢复建议都带出去。 */
+function sendBackupFailure(response: ServerResponse, error: unknown): void {
+  if (error instanceof BackupError) {
+    sendJson(response, backupStatusOf(error.code), { error: error.code, details: error.details, recovery: error.recovery });
+    return;
+  }
+  throw error;
+}
+
+/**
+ * 装配备份、校验、恢复、切换与保留策略的接口。
+ *
+ * 路径参数只接受备份集目录名，解析结果必须落在配置的备份根下面；恢复与切换的目标目录同样
+ * 按备份根解析，切换的正式根固定为控制平面自己的数据根。
+ */
+function createBackupHandler(options: BackupHandlerOptions): EntryHandler {
+  const setsRoot = options.config.backupRoot;
+  const now = (): number => Date.now();
+
+  /** 取一个备份集目录名；缺省按当前时刻命名。 */
+  const setNameOf = (raw: unknown, fallbackPrefix: string): string => {
+    if (raw === undefined) return `${fallbackPrefix}-${new Date(now()).toISOString().replace(/[:.]/gu, '-')}`;
+    if (typeof raw !== 'string' || !BACKUP_SET_NAME.test(raw)) throw new ChatdshError('request-invalid', '备份集目录名不合法');
+    return raw;
+  };
+
+  return async (request, response) => {
+    const path = (request.url ?? '/').split('?')[0] ?? '/';
+    if (path !== BACKUP_PREFIX && !path.startsWith(`${BACKUP_PREFIX}/`)) return false;
+    const suffix = path.slice(BACKUP_PREFIX.length);
+    const method = request.method ?? 'GET';
+
+    if (suffix === '/sets') {
+      if (method !== 'GET') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      try {
+        sendJson(response, 200, { setsRoot, sets: listBackupSets(setsRoot) });
+      } catch (error) {
+        sendBackupFailure(response, error);
+      }
+      return true;
+    }
+
+    if (method !== 'POST') {
+      sendJson(response, 405, { error: 'request-invalid' });
+      return true;
+    }
+    if (!options.authorize(request)) {
+      sendJson(response, 401, { error: 'auth-required' });
+      return true;
+    }
+    const payload = await jsonObjectOf(request, response, 64 * 1024);
+    if (payload === undefined) return true;
+
+    try {
+      if (suffix === '/create') {
+        const setName = setNameOf(payload.set, 'set');
+        const external: ExternalServiceInput[] = Array.isArray(payload.external)
+          ? payload.external.map((item) => {
+            const record = item as Record<string, unknown>;
+            if (record.service !== 'hindsight' && record.service !== 'hermes') {
+              throw new ChatdshError('request-invalid', 'external.service 只能取 hindsight 或 hermes');
+            }
+            if (typeof record.configured !== 'boolean') {
+              throw new ChatdshError('request-invalid', 'external.configured 必须是布尔值');
+            }
+            if (record.reference !== undefined && typeof record.reference !== 'string') {
+              throw new ChatdshError('request-invalid', 'external.reference 必须是字符串');
+            }
+            return {
+              service: record.service,
+              configured: record.configured,
+              ...(record.reference === undefined ? {} : { reference: record.reference }),
+            };
+          })
+          : [];
+        const requiredFreeBytes = typeof payload.requiredFreeBytes === 'number' ? payload.requiredFreeBytes : undefined;
+        const result = await createBackup({
+          sourceRoot: options.sourceRoot,
+          backupRoot: join(setsRoot, setName),
+          software: { version: options.config.version },
+          keyPath: options.keyPath,
+          external,
+          telemetry: options.telemetry,
+          ...(requiredFreeBytes === undefined ? {} : { requiredFreeBytes }),
+        });
+        sendJson(response, 200, {
+          setName,
+          manifestId: result.manifestId,
+          backupRoot: result.backupRoot,
+          resumedObjects: result.resumedObjects,
+          elapsedMs: result.elapsedMs,
+          objects: result.manifest.totals.objects,
+          plaintextBytes: result.manifest.totals.plaintextBytes,
+          cipherBytes: result.manifest.totals.cipherBytes,
+        });
+        return true;
+      }
+
+      if (suffix === '/verify') {
+        const setName = setNameOf(payload.set, 'set');
+        const requiredFreeBytes = typeof payload.requiredFreeBytes === 'number' ? payload.requiredFreeBytes : undefined;
+        const report = await verifyBackup({
+          backupRoot: join(setsRoot, setName),
+          keyPath: options.keyPath,
+          telemetry: options.telemetry,
+          ...(requiredFreeBytes === undefined ? {} : { requiredFreeBytes }),
+        });
+        sendJson(response, 200, report);
+        return true;
+      }
+
+      if (suffix === '/restore') {
+        const setName = setNameOf(payload.set, 'set');
+        const targetName = setNameOf(payload.target, `restore-${setName}`);
+        const report = await restoreBackup({
+          backupRoot: join(setsRoot, setName),
+          targetRoot: join(setsRoot, targetName),
+          keyPath: options.keyPath,
+          currentSoftware: { version: options.config.version, schemaVersion: readSchemaVersion(options.config.databasePath) },
+          telemetry: options.telemetry,
+        });
+        sendJson(response, 200, report);
+        return true;
+      }
+
+      if (suffix === '/switch/plan') {
+        const setName = setNameOf(payload.set, 'set');
+        const plan = planRestoreSwitch({ restoredRoot: join(setsRoot, setName), liveRoot: options.sourceRoot });
+        sendJson(response, 200, plan);
+        return true;
+      }
+
+      if (suffix === '/switch') {
+        const setName = setNameOf(payload.set, 'set');
+        if (payload.confirmed !== true) {
+          sendJson(response, 400, { error: 'restore-switch-not-confirmed' });
+          return true;
+        }
+        const result = await activateRestoredRoot({
+          restoredRoot: join(setsRoot, setName),
+          liveRoot: options.sourceRoot,
+          confirmation: { confirmed: true, ...(payload.vacateLiveRoot === true ? { vacateLiveRoot: true } : {}) },
+          telemetry: options.telemetry,
+        });
+        sendJson(response, 200, result);
+        return true;
+      }
+
+      if (suffix === '/retention/plan') {
+        const plan = planRetention({ setsRoot, ...(typeof payload.now === 'number' ? { now: payload.now } : {}) });
+        sendJson(response, 200, plan);
+        return true;
+      }
+
+      if (suffix === '/retention/prune') {
+        const outcome = await pruneBackups({ setsRoot, ...(typeof payload.now === 'number' ? { now: payload.now } : {}), telemetry: options.telemetry });
+        sendJson(response, 200, outcome);
+        return true;
+      }
+
+      sendJson(response, 404, { error: 'object-not-found' });
+      return true;
+    } catch (error) {
+      sendBackupFailure(response, error);
+      return true;
+    }
+  };
+}
+
+/** 迁移接口的构造输入。 */
+interface MigrationHandlerOptions {
+  readonly config: GatewayConfig;
+  readonly telemetry: ChatdshTelemetry;
+  /** 控制平面的 SQLite 连接，迁移任务与检查点写在同一张库里。 */
+  readonly database: DatabaseSync;
+  /** 写动作的授权：按访问会话或单账号边界判定。 */
+  readonly authorize: (request: IncomingMessage) => boolean;
+}
+
+/** 存储错误码到 HTTP 状态码。 */
+function migrationStatusOf(code: string): number {
+  if (code === 'preflight-failed' || code === 'switch-not-allowed' || code === 'switch-conflict'
+    || code === 'source-not-readonly' || code === 'verification-failed') {
+    return 409;
+  }
+  if (code === 'migration-lock-held' || code === 'migration-lock-stale' || code === 'migration-lock-mismatch'
+    || code === 'batch-digest-mismatch' || code === 'checkpoint-mismatch' || code === 'checkpoint-corrupt') {
+    return 409;
+  }
+  if (code === 'schema-version-unknown' || code === 'schema-version-pending' || code === 'schema-checksum-mismatch') return 400;
+  return 500;
+}
+
+/** 把一次迁移失败写进应答。 */
+function sendMigrationFailure(response: ServerResponse, error: unknown): void {
+  if (error instanceof StorageError) {
+    sendJson(response, migrationStatusOf(error.code), { error: error.code, details: error.details });
+    return;
+  }
+  if (error instanceof ChatdshError) {
+    sendJson(response, 400, { error: error.code });
+    return;
+  }
+  throw error;
+}
+
+/** 分批复制的批大小。 */
+const MIGRATION_BATCH_ROWS = 200;
+
+/** 控制平面数据表的复制顺序。 */
+const MIGRATION_TABLES = [
+  'sessions',
+  'devices',
+  'replica_events',
+  'replica_watermarks',
+  'shares',
+  'push_queue',
+  'read_receipts',
+  'mobile_devices',
+  'node_devices',
+  'automations',
+  'automation_deliveries',
+  'llm_quota',
+  'mcp_servers',
+  'mcp_endpoints',
+  'settings',
+] as const;
+
+/** 一行的规范化 JSON：二进制按十六进制写出，键序固定，摘要因此稳定。 */
+function canonicalRowOf(row: Record<string, unknown>): string {
+  const names = Object.keys(row).sort();
+  return `{${names.map((name) => {
+    const value = row[name];
+    const text = value instanceof Uint8Array ? `hex:${Buffer.from(value).toString('hex')}` : JSON.stringify(value);
+    return `${JSON.stringify(name)}:${text ?? 'null'}`;
+  }).join(',')}}`;
+}
+
+/** 一批复制结果的摘要。 */
+function digestOfRows(rows: readonly Record<string, unknown>[]): string {
+  return createHash('sha256').update(rows.map(canonicalRowOf).join('\n'), 'utf8').digest('hex');
+}
+
+/**
+ * 建立控制平面数据表的分批复制：源库只读打开，目标库按行搬移，每批读回目标行再算摘要。
+ * @param sourcePath - 源 SQLite 文件。
+ * @param targetPath - 目标 SQLite 文件。
+ */
+function createControlPlaneCopy(sourcePath: string, targetPath: string): {
+  copy: (input: MigrationCopyBatchInput) => MigrationCopyBatchResult | undefined;
+  close: () => void;
+} {
+  const source = new DatabaseSync(sourcePath, { readOnly: true });
+  const target = new DatabaseSync(targetPath);
+  let tableIndex = 0;
+  let offset = 0;
+  let position = 0;
+  return {
+    copy(): { position: number; records: number; sourceDigest: string; targetDigest: string } | undefined {
+      while (tableIndex < MIGRATION_TABLES.length) {
+        const table = MIGRATION_TABLES[tableIndex] as string;
+        const sourceTable = source
+          .prepare("select sql from sqlite_master where type = 'table' and name = ?")
+          .get(table) as { sql: string } | undefined;
+        if (sourceTable === undefined) {
+          tableIndex += 1;
+          offset = 0;
+          continue;
+        }
+        const targetTable = target
+          .prepare("select name from sqlite_master where type = 'table' and name = ?")
+          .get(table) as { name: string } | undefined;
+        if (targetTable === undefined) target.exec(sourceTable.sql);
+        const rows = source
+          .prepare(`select * from "${table}" order by rowid limit ? offset ?`)
+          .all(MIGRATION_BATCH_ROWS, offset) as Record<string, unknown>[];
+        if (rows.length === 0) {
+          tableIndex += 1;
+          offset = 0;
+          continue;
+        }
+        const names = Object.keys(rows[0] ?? {}).sort();
+        const placeholders = names.map(() => '?').join(', ');
+        const insert = target.prepare(
+          `insert or replace into "${table}" (${names.map((name) => `"${name}"`).join(', ')}) values (${placeholders})`,
+        );
+        target.exec('begin immediate');
+        try {
+          for (const row of rows) insert.run(...names.map((name) => row[name] as SqlParameter));
+          target.exec('commit');
+        } catch (error) {
+          target.exec('rollback');
+          throw error;
+        }
+        const written = target
+          .prepare(`select * from "${table}" order by rowid limit ? offset ?`)
+          .all(rows.length, offset) as Record<string, unknown>[];
+        offset += rows.length;
+        position += rows.length;
+        return {
+          position,
+          records: rows.length,
+          sourceDigest: digestOfRows(rows),
+          targetDigest: digestOfRows(written),
+        };
+      }
+      return undefined;
+    },
+    close(): void {
+      source.close();
+      target.close();
+    },
+  };
+}
+
+/**
+ * 装配存储迁移的预检查、分批复制与切换接口。
+ *
+ * 复制按控制平面数据表分批搬移，每批把源行与目标读回的行各算一次摘要，摘要不同立即失败。
+ * 复制与切换是同步实现，接口在完成之后才回写应答。
+ */
+function createMigrationHandler(options: MigrationHandlerOptions): EntryHandler {
+  const migrationRoot = join(options.config.backupRoot, 'migration');
+
+  return async (request, response) => {
+    const path = (request.url ?? '/').split('?')[0] ?? '/';
+    if (path !== MIGRATION_PREFIX && !path.startsWith(`${MIGRATION_PREFIX}/`)) return false;
+    const suffix = path.slice(MIGRATION_PREFIX.length);
+    const method = request.method ?? 'GET';
+
+    if (suffix === '/report') {
+      if (method !== 'GET') {
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+      const url = new URL(request.url ?? '/', 'http://gateway');
+      const reportPath = url.searchParams.get('path');
+      if (reportPath === null || reportPath === '') {
+        sendJson(response, 400, { error: 'request-invalid' });
+        return true;
+      }
+      try {
+        sendJson(response, 200, readVerificationReport(reportPath));
+      } catch (error) {
+        sendMigrationFailure(response, error);
+      }
+      return true;
+    }
+
+    if (method !== 'POST') {
+      sendJson(response, 405, { error: 'request-invalid' });
+      return true;
+    }
+    if (!options.authorize(request)) {
+      sendJson(response, 401, { error: 'auth-required' });
+      return true;
+    }
+    const payload = await jsonObjectOf(request, response, 64 * 1024);
+    if (payload === undefined) return true;
+
+    try {
+      if (suffix === '/preflight') {
+        const sourcePath = typeof payload.sourcePath === 'string' && payload.sourcePath !== ''
+          ? payload.sourcePath
+          : options.config.databasePath;
+        const sourceFormat = payload.sourceFormat ?? 'sqlite';
+        if (sourceFormat !== 'sqlite' && sourceFormat !== 'jsonl') {
+          throw new ChatdshError('request-invalid', 'sourceFormat 只能取 sqlite 或 jsonl');
+        }
+        const targetRoot = typeof payload.targetRoot === 'string' && payload.targetRoot !== ''
+          ? payload.targetRoot
+          : join(migrationRoot, 'target');
+        const requiredFreeBytes = payload.requiredFreeBytes;
+        if (typeof requiredFreeBytes !== 'number' || !Number.isInteger(requiredFreeBytes) || requiredFreeBytes < 0) {
+          throw new ChatdshError('request-invalid', 'requiredFreeBytes 必须是非负整数');
+        }
+        // 目标目录由维护窗口准备：预检查随后核对它可写，并把探测文件写在它下面。
+        mkdirSync(targetRoot, { recursive: true });
+        const report = await preflightMigration({ sourcePath, sourceFormat, targetRoot, requiredFreeBytes, telemetry: options.telemetry });
+        sendJson(response, 200, report);
+        return true;
+      }
+
+      if (suffix === '/copy') {
+        const jobId = payload.jobId;
+        const sourcePath = payload.sourcePath;
+        const targetPath = payload.targetPath;
+        const schemaVersion = payload.schemaVersion;
+        const sourceDigest = payload.sourceDigest;
+        const targetDigest = payload.targetDigest;
+        if (typeof jobId !== 'string' || jobId === '' || typeof sourcePath !== 'string' || sourcePath === ''
+          || typeof targetPath !== 'string' || targetPath === '' || typeof schemaVersion !== 'number'
+          || typeof sourceDigest !== 'string' || sourceDigest === ''
+          || typeof targetDigest !== 'string' || targetDigest === '') {
+          throw new ChatdshError('request-invalid', '复制请求缺少任务标识、路径或摘要');
+        }
+        const lock = new MigrationLock({ targetRoot: dirname(targetPath), telemetry: options.telemetry });
+        const jobStore = new MigrationJobStore({ database: sqlExecutorOf(options.database) });
+        const runner = new MigrationJobRunner({ lock, store: jobStore, telemetry: options.telemetry });
+        const copy = createControlPlaneCopy(sourcePath, targetPath);
+        try {
+          const result = runner.run({ jobId, schemaVersion, sourceDigest, targetDigest, sourcePath, copy: copy.copy });
+          sendJson(response, 200, result);
+        } finally {
+          copy.close();
+        }
+        return true;
+      }
+
+      if (suffix === '/switch') {
+        const jobId = payload.jobId;
+        const reportPath = payload.reportPath;
+        const sourcePath = payload.sourcePath;
+        const targetPath = payload.targetPath;
+        const activePath = payload.activePath;
+        if (typeof jobId !== 'string' || jobId === '' || typeof reportPath !== 'string' || reportPath === ''
+          || typeof sourcePath !== 'string' || sourcePath === '' || typeof targetPath !== 'string' || targetPath === ''
+          || typeof activePath !== 'string' || activePath === '') {
+          throw new ChatdshError('request-invalid', '切换请求缺少任务标识或路径');
+        }
+        if (payload.sourceReadOnly !== true) {
+          sendJson(response, 409, { error: 'source-not-readonly' });
+          return true;
+        }
+        const lock = new MigrationLock({ targetRoot: dirname(activePath), telemetry: options.telemetry });
+        const jobStore = new MigrationJobStore({ database: sqlExecutorOf(options.database) });
+        const result = switchToTarget({
+          store: jobStore,
+          lock,
+          telemetry: options.telemetry,
+          jobId,
+          reportPath,
+          sourcePath,
+          targetPath,
+          activePath,
+          sourceReadOnly: true,
+        });
+        sendJson(response, 200, result);
+        return true;
+      }
+
+      sendJson(response, 404, { error: 'object-not-found' });
+      return true;
+    } catch (error) {
+      sendMigrationFailure(response, error);
+      return true;
+    }
+  };
+}
+
+/** 数据管理接口的路径。 */
+const DATA_USAGE_PATH = `${DATA_PREFIX}/usage`;
+const DATA_RETENTION_PATH = `${DATA_PREFIX}/retention`;
+const DATA_CLEANUP_ESTIMATE_PATH = `${DATA_PREFIX}/cleanup/estimate`;
+const DATA_CLEANUP_EXECUTE_PATH = `${DATA_PREFIX}/cleanup/execute`;
+const DATA_INBOX_PATH = `${DATA_PREFIX}/deletion/inbox`;
+const DATA_RESTORE_PATH = `${DATA_PREFIX}/deletion/restore`;
+const DATA_PERMANENT_DELETE_PATH = `${DATA_PREFIX}/deletion/permanent`;
+const DATA_LINEAGE_PREFIX = `${DATA_PREFIX}/lineage/`;
+const DATA_REPLICA_PREFIX = `${DATA_PREFIX}/replica/`;
+const DATA_PERMANENT_SCOPE_PREFIX = `${DATA_PREFIX}/deletion/scope/`;
+
+/** 数据管理接口的构造输入。 */
+interface DataHandlerOptions {
+  /** 数据维护服务集合。 */
+  readonly maintenance: DataMaintenance;
+  /** 控制平面的副本读取。 */
+  readonly replica: ReplicaStore;
+  /** 本机设备标识，用量行与副本归属都用它。 */
+  readonly deviceId: string;
+  /** 控制平面的数据根。 */
+  readonly root: string;
+  /** 写动作的授权：按访问会话或单账号边界判定。 */
+  readonly authorize: (request: IncomingMessage) => boolean;
+}
+
+/** 数据管理的错误码到 HTTP 状态码。 */
+function dataStatusOf(code: string): number {
+  if (code === 'session-not-found' || code === 'object-not-found' || code === 'replica-unavailable') return 404;
+  if (code === 'already-handled' || code === 'revision-conflict' || code === 'restore-expired') return 409;
+  if (code === 'request-invalid' || code === 'cursor-invalid') return 400;
+  return 500;
+}
+
+/**
+ * 装配数据管理的用量、保留策略、清理、血缘、副本与删除接口。
+ *
+ * 用量在控制平面自己的数据根上清点，副本字节取控制平面库里的真实读数；清理执行按预估标识
+ * 生效，永久删除要求两级确认。
+ */
+function createDataHandler(options: DataHandlerOptions): EntryHandler {
+  const { maintenance } = options;
+
+  return async (request, response) => {
+    const path = (request.url ?? '/').split('?')[0] ?? '/';
+    if (path !== DATA_PREFIX && !path.startsWith(`${DATA_PREFIX}/`)) return false;
+    const method = request.method ?? 'GET';
+    if (method !== 'GET' && !options.authorize(request)) {
+      sendJson(response, 401, { error: 'auth-required' });
+      return true;
+    }
+    const tailOf = (prefix: string): string | undefined => {
+      if (!path.startsWith(prefix)) return undefined;
+      const value = path.slice(prefix.length);
+      return value === '' ? undefined : decodeURIComponent(value);
+    };
+
+    try {
+      if (path === DATA_USAGE_PATH) {
+        if (method !== 'GET') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        const report = await maintenance.usage.report({ root: options.root, deviceId: options.deviceId });
+        sendJson(response, 200, report);
+        return true;
+      }
+
+      if (path === DATA_RETENTION_PATH) {
+        if (method === 'GET') {
+          sendJson(response, 200, await maintenance.retention.read());
+          return true;
+        }
+        if (method === 'POST') {
+          const payload = await jsonObjectOf(request, response, 16 * 1024);
+          if (payload === undefined) return true;
+          if (typeof payload.days !== 'number' || !Number.isInteger(payload.days)) {
+            sendJson(response, 400, { error: 'request-invalid' });
+            return true;
+          }
+          sendJson(response, 200, await maintenance.retention.write(payload.days));
+          return true;
+        }
+        sendJson(response, 405, { error: 'request-invalid' });
+        return true;
+      }
+
+      if (path === DATA_CLEANUP_ESTIMATE_PATH) {
+        if (method !== 'POST') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        const payload = await jsonObjectOf(request, response, 16 * 1024);
+        if (payload === undefined) return true;
+        const estimate = await maintenance.cleanup.estimate({
+          ...(typeof payload.retentionDays === 'number' ? { retentionDays: payload.retentionDays } : {}),
+          ...(typeof payload.deviceId === 'string' ? { deviceId: payload.deviceId } : {}),
+          ...(typeof payload.workspaceId === 'string' ? { workspaceId: payload.workspaceId } : {}),
+        });
+        sendJson(response, 200, estimate);
+        return true;
+      }
+
+      if (path === DATA_CLEANUP_EXECUTE_PATH) {
+        if (method !== 'POST') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        const payload = await jsonObjectOf(request, response, 16 * 1024);
+        if (payload === undefined) return true;
+        if (typeof payload.estimateId !== 'string' || payload.estimateId === '') {
+          sendJson(response, 400, { error: 'request-invalid' });
+          return true;
+        }
+        const outcome = await maintenance.cleanup.execute({
+          estimateId: payload.estimateId,
+          confirmDependencies: payload.confirmDependencies === true,
+        });
+        sendJson(response, 200, outcome);
+        return true;
+      }
+
+      if (path === DATA_INBOX_PATH) {
+        if (method !== 'GET') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        sendJson(response, 200, { items: await maintenance.deletion.inbox() });
+        return true;
+      }
+
+      if (path === DATA_RESTORE_PATH) {
+        if (method !== 'POST') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        const payload = await jsonObjectOf(request, response, 16 * 1024);
+        if (payload === undefined) return true;
+        const result = await maintenance.deletion.restore({
+          sessionId: String(payload.sessionId ?? ''),
+          operationId: String(payload.operationId ?? ''),
+          requestDigest: String(payload.requestDigest ?? ''),
+        });
+        sendJson(response, 200, result);
+        return true;
+      }
+
+      if (path === DATA_PERMANENT_DELETE_PATH) {
+        if (method !== 'POST') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        const payload = await jsonObjectOf(request, response, 16 * 1024);
+        if (payload === undefined) return true;
+        if (payload.confirm !== true) {
+          sendJson(response, 400, { error: 'request-invalid' });
+          return true;
+        }
+        const outcome = await maintenance.deletion.permanentDelete({
+          sessionId: String(payload.sessionId ?? ''),
+          confirm: true,
+          confirmDependencies: payload.confirmDependencies === true,
+        });
+        sendJson(response, 200, outcome);
+        return true;
+      }
+
+      const lineageId = tailOf(DATA_LINEAGE_PREFIX);
+      if (lineageId !== undefined) {
+        if (method !== 'GET') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        sendJson(response, 200, await maintenance.lineage.chain(lineageId));
+        return true;
+      }
+
+      const replicaId = tailOf(DATA_REPLICA_PREFIX);
+      if (replicaId !== undefined) {
+        if (method !== 'GET') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        sendJson(response, 200, {
+          sessionId: replicaId,
+          watermark: options.replica.watermarkOf(replicaId) ?? null,
+          events: options.replica.read(replicaId),
+        });
+        return true;
+      }
+
+      const scopeId = tailOf(DATA_PERMANENT_SCOPE_PREFIX);
+      if (scopeId !== undefined) {
+        if (method !== 'GET') {
+          sendJson(response, 405, { error: 'request-invalid' });
+          return true;
+        }
+        sendJson(response, 200, await maintenance.deletion.permanentScope(scopeId));
+        return true;
+      }
+
+      sendJson(response, 404, { error: 'object-not-found' });
+      return true;
+    } catch (error) {
+      if (error instanceof ChatdshError) {
+        sendJson(response, dataStatusOf(error.code), { error: error.code });
+        return true;
+      }
+      throw error;
+    }
+  };
+}
+
+/** 连续副本保留策略接口的构造输入。 */
+interface ContinuityHandlerOptions {
+  /** 控制平面的设备与令牌表。 */
+  readonly store: GatewayStore;
+  /** 连续副本存储。 */
+  readonly continuity: ReplicaContinuityStore;
+}
+
+/**
+ * 装配连续副本的保留策略接口。
+ *
+ * 上报与游标仍由 `/chatdsh/gateway/replica` 上的既有分支服务浏览器侧的读取与上报；这里补上
+ * 保留策略的清理与重新获取，鉴权与那条分支一致：节点令牌按摘要核对，撤销后立即拒绝。
+ */
+function createContinuityHandler(options: ContinuityHandlerOptions): EntryHandler {
+  return async (request, response) => {
+    const path = (request.url ?? '/').split('?')[0] ?? '/';
+    if (path !== REPLICA_RETENTION_PATH) return false;
+    if (request.method !== 'POST') {
+      sendJson(response, 405, { error: 'request-invalid' });
+      return true;
+    }
+    const token = nodeTokenOf(request);
+    const node = token === '' ? undefined : options.store.nodeByTokenHash(deviceTokenHash(token));
+    const headerId = request.headers[NODE_HEADERS.id];
+    const deviceId = typeof headerId === 'string' && headerId !== '' ? headerId : node?.id;
+    if (node === undefined || deviceId === undefined || deviceId !== node.id) {
+      sendJson(response, 401, { error: 'device-token-invalid' });
+      return true;
+    }
+    const payload = await jsonObjectOf(request, response, 16 * 1024);
+    if (payload === undefined) return true;
+    if (typeof payload.sessionId !== 'string' || payload.sessionId === ''
+      || (payload.action !== 'clear' && payload.action !== 'reacquire')) {
+      sendJson(response, 400, { error: 'request-invalid' });
+      return true;
+    }
+    const state = payload.action === 'clear'
+      ? options.continuity.clear(payload.sessionId)
+      : options.continuity.reacquire(payload.sessionId);
+    sendJson(response, 200, state);
+    return true;
+  };
+}
+
+/** PWA 静态内容的形状；内容由客户端包生成，控制平面只负责下发。 */
+interface PwaContent {
+  readonly manifestJson: string;
+  readonly manifestContentType: string;
+  readonly serviceWorkerSource: string;
+  readonly offlineHtml: string;
+}
+
+/** PWA 图标的文件名形状。 */
+const PWA_ICON_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.png$/u;
+
+/**
+ * 装配 PWA 的应用清单、Service Worker、离线页与图标。
+ * @param content - 客户端包生成的静态内容。
+ * @param iconRoot - 图标目录的地址。
+ */
+function createPwaHandler(content: PwaContent, iconRoot: URL): EntryHandler {
+  return async (request, response) => {
+    const path = (request.url ?? '/').split('?')[0] ?? '/';
+    const method = request.method ?? 'GET';
+    if (method !== 'GET' && method !== 'HEAD') return false;
+    if (path === PWA_MANIFEST_PATH) {
+      response.writeHead(200, {
+        'Content-Type': content.manifestContentType,
+        'Content-Length': String(Buffer.byteLength(content.manifestJson)),
+        'Cache-Control': 'no-cache',
+      });
+      response.end(method === 'HEAD' ? undefined : content.manifestJson);
+      return true;
+    }
+    if (path === PWA_SERVICE_WORKER_PATH) {
+      response.writeHead(200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Content-Length': String(Buffer.byteLength(content.serviceWorkerSource)),
+        'Cache-Control': 'no-cache',
+      });
+      response.end(method === 'HEAD' ? undefined : content.serviceWorkerSource);
+      return true;
+    }
+    if (path === PWA_OFFLINE_PATH) {
+      response.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': String(Buffer.byteLength(content.offlineHtml)),
+        'Cache-Control': 'public, max-age=86400',
+      });
+      response.end(method === 'HEAD' ? undefined : content.offlineHtml);
+      return true;
+    }
+    if (!path.startsWith(PWA_ICON_PREFIX)) return false;
+    const name = path.slice(PWA_ICON_PREFIX.length);
+    if (!PWA_ICON_NAME.test(name)) {
+      sendJson(response, 404, { error: 'object-not-found' });
+      return true;
+    }
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(new URL(name, iconRoot));
+    } catch {
+      sendJson(response, 404, { error: 'object-not-found' });
+      return true;
+    }
+    response.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': String(bytes.length),
+      'Cache-Control': 'public, max-age=86400, immutable',
+    });
+    response.end(method === 'HEAD' ? undefined : bytes);
+    return true;
+  };
+}
+
+/** 按构建产物路径加载同级包的模块：控制平面不把客户端与宿主包的源码编进自身产物。 */
+async function loadWorkspaceModule(relative: string): Promise<Record<string, unknown>> {
+  return await import(new URL(relative, import.meta.url).href) as Record<string, unknown>;
+}
+
+/**
  * 建立控制平面服务。
  * @param context - 配置、存储与遥测。
  */
 export function createGatewayServer(context: HandlerContext): GatewayServer {
-  const { config, store, replica, share, receipts, settings, push, telemetry } = context;
+  const { config: rawConfig, store, replica, receipts, settings, push, telemetry } = context;
+  // 手写配置可能只给必填项：访问模式、备份根与 PWA 版本按配置模块的缺省约定补齐。
+  const config: GatewayConfig = {
+    ...rawConfig,
+    accessMode: rawConfig.accessMode ?? 'disabled',
+    backupRoot: rawConfig.backupRoot ?? join(dataRoot(), 'backups'),
+    pwaVersion: rawConfig.pwaVersion ?? rawConfig.version,
+  };
+  if (config.publicUrl === undefined && (config.host === '0.0.0.0' || config.host === '::')) {
+    throw new Error('监听通配地址时必须配置 CHATDSH_PUBLIC_URL，公共入口按精确 origin 校验来源');
+  }
+  if (config.publicUrl !== undefined) validateClientOrigin(config.publicUrl);
   const mobileRelay = new MobileTelemetryRelay(telemetry);
-  const automations = new AutomationStore(store.handle());
+  const automations = new AutomationStore(store.handle(), {
+    online: (deviceId) => context.deviceLink.online(deviceId),
+  });
+  automations.attachDispatcher({ start: (request) => dispatchAutomationSession(request) });
   const llmLedger = new LlmQuotaLedger(store, config.llmGateway.quota);
   const mcpRegistry = new McpRegistry(store.handle());
   const upgradedSockets = new Set<Duplex>();
+  /** 公共入口处理器的装配结果。 */
+  let entryHandlers: readonly EntryHandler[] | undefined;
+  /** 接入页的存储、主密钥与游标签名密钥。 */
+  const accessStore = new AccessStore(store.handle());
+  const accessMasterKey = loadAccessMasterKey(join(dataRoot(), 'access', 'master.key'));
+  const accessCsrfKey = deriveAccessKey(accessMasterKey, 'csrf');
+  const cursorKey = createHmac('sha256', accessMasterKey).update('chatdsh/gateway/cursor/v1', 'utf8').digest();
+  /** 连续副本存储：与控制平面共用同一个连接。 */
+  const continuityStore = new ReplicaContinuityStore(sqlExecutorOf(store.handle()));
+  /** 通知宿主：记录、已读、设置、订阅与验证通知。 */
+  const notifications: NotificationHost = createNotificationHost({ database: store.handle(), push, telemetry });
+  /** PWA 静态内容与设备侧字节清点来自同级包的构建产物，启动时一次装配。 */
+  const pwaModule = loadWorkspaceModule('../../packages/client/pwa/lib/index.js');
+  const usageModule = loadWorkspaceModule('../../packages/host/usage/lib/index.js');
+  const pwaIconRoot = new URL('../../packages/client/pwa/assets/icons/', import.meta.url);
+  let pwaContent: PwaContent | undefined;
+  let measureStorage: StorageMeasurement | undefined;
+  let deviceHost: DeviceHost | undefined;
+
+  /** 对外的同源地址：配置优先，缺省取监听地址与实际端口。 */
+  function publicOrigin(): string {
+    if (config.publicUrl !== undefined) return config.publicUrl;
+    const address = server.address();
+    const port = address !== null && typeof address === 'object' ? address.port : config.port;
+    return `http://${config.host}:${port}`;
+  }
+
+  /** 请求者设备标识：浏览器设备 cookie；没有时按所有者本机。 */
+  function callerIdOf(request: IncomingMessage): string {
+    return cookieOf(request.headers.cookie, DEVICE_COOKIE) ?? OWNER_CLIENT_ID;
+  }
+
+  /**
+   * 请求者身份。
+   *
+   * 这一版控制平面没有应用级登录：部署边界由监听地址与反代决定，浏览器设备标识区分读请求
+   * 来自哪台设备。访问认证接入之后，这里改为校验会话令牌，其余请求一律拒绝。
+   */
+  function authenticateClient(request: IncomingMessage): ClientPrincipal {
+    return {
+      clientId: callerIdOf(request),
+      authentication: 'cookie',
+      expiresAt: Date.now() + CLIENT_SESSION_WINDOW_MS,
+      deviceIds: 'all',
+    };
+  }
+
+  /**
+   * 写动作的身份校验。
+   *
+   * 请求带访问会话时按会话校验：会话必须有效，写入还要通过该会话的 CSRF 令牌。没有会话时，
+   * 访问认证未启用则沿用单账号边界（精确来源加写令牌），启用访问时一律拒绝。读动作不做这一
+   * 层校验，仍按浏览器设备标识区分来源。
+   */
+  function authorizedCallerOf(request: IncomingMessage, action: 'read' | 'write'): string | undefined {
+    if (action === 'read') return callerIdOf(request);
+    const session = accessSessionRow(accessStore, request, Date.now());
+    if (session !== undefined) {
+      const supplied = request.headers[ACCESS_SECURITY.csrfHeader];
+      const expected = issueCsrfToken(accessCsrfKey, session.tokenHash);
+      if (!verifyCsrfToken(Array.isArray(supplied) ? supplied[0] : supplied, expected)) return undefined;
+      return callerIdOf(request);
+    }
+    if (config.accessMode === 'required') return undefined;
+    if (request.headers.origin !== publicOrigin()) return undefined;
+    if (request.headers[AUTOMATION_CSRF_HEADER] !== '1') return undefined;
+    return callerIdOf(request);
+  }
+
+  /** 本机设备标识；没有登记本机节点时用 `local`。 */
+  function localDeviceIdOf(): string {
+    return store.listNodes().find((node) => node.role === 'host' || node.role === 'both')?.id ?? 'local';
+  }
+
+  /**
+   * 自动化派发：沿目标设备的长连接调它运行时的 `/chatdsh/sessions` 建立会话。
+   *
+   * 链路超时与设备的 504 表示投递结果尚未确认；设备的 5xx 表示后端不可达；4xx 表示目标
+   * 不受理这次建立。应答里没有会话标识属于协议错误，按后端不可达记录。
+   */
+  async function dispatchAutomationSession(request: AutomationSessionRequest): Promise<{ readonly sessionId: string }> {
+    const carrier = telemetry.inject({});
+    const body = JSON.stringify({
+      automationId: request.automationId,
+      eventId: request.eventId,
+      prompt: request.prompt,
+      ...(request.target.workspaceId === undefined ? {} : { workspaceId: request.target.workspaceId }),
+      ...(request.target.cwd === undefined ? {} : { cwd: request.target.cwd }),
+      ...(request.target.presetId === undefined ? {} : { presetId: request.target.presetId }),
+      ...(request.target.model === undefined ? {} : { model: request.target.model }),
+    });
+    let reply;
+    try {
+      reply = await context.deviceLink.sendRequest(request.target.deviceId, {
+        method: 'POST',
+        path: '/chatdsh/sessions',
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          ...(carrier.traceparent === undefined ? {} : { traceparent: carrier.traceparent }),
+          ...(carrier.tracestate === undefined ? {} : { tracestate: carrier.tracestate }),
+        },
+        body: Buffer.from(body, 'utf8'),
+      }, AUTOMATION_DISPATCH_TIMEOUT_MS);
+    } catch (error) {
+      if (error instanceof DeviceLinkError && error.code === 'device-timeout') {
+        throw new ChatdshError('automation-delivery-unconfirmed', '目标设备没有在时限内确认会话建立');
+      }
+      throw new ChatdshError('chat-backend-unreachable', '目标设备的长连接不可用', {
+        'error.code': error instanceof DeviceLinkError ? error.code : 'device-link-failed',
+      });
+    }
+    if (reply.status === 504) {
+      throw new ChatdshError('automation-delivery-unconfirmed', '目标设备没有在时限内确认会话建立');
+    }
+    if (reply.status >= 500) {
+      throw new ChatdshError('chat-backend-unreachable', '目标设备拒绝了会话建立', { 'http.status': reply.status });
+    }
+    if (reply.status >= 400) {
+      throw new ChatdshError('request-invalid', '目标设备不受理这次会话建立', { 'http.status': reply.status });
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(reply.body.toString('utf8')) as unknown;
+    } catch {
+      throw new ChatdshError('chat-backend-unreachable', '目标设备的会话建立应答不是 JSON');
+    }
+    const sessionId = typeof parsed === 'object' && parsed !== null ? (parsed as { sessionId?: unknown }).sessionId : undefined;
+    if (typeof sessionId !== 'string' || sessionId === '') {
+      throw new ChatdshError('chat-backend-unreachable', '目标设备的会话建立应答缺少会话标识');
+    }
+    return { sessionId };
+  }
+
+  /** 装配公共入口处理器；同源地址取首次请求时的实际监听端口。 */
+  function entryHandlersOf(): readonly EntryHandler[] {
+    if (entryHandlers !== undefined) return entryHandlers;
+    const origin = publicOrigin();
+    const root = dataRoot();
+    const content = pwaContent;
+    const measure = measureStorage;
+    if (content === undefined || measure === undefined) {
+      throw new Error('公共入口在启动装配完成之前被请求');
+    }
+    const shareService = new ShareService({
+      repository: new ShareRepository(store.handle()),
+      replica,
+      attachments: createDirectoryAttachmentSource({ root: join(root, 'attachments') }),
+      telemetry,
+      sharesRoot: join(root, 'shares'),
+    });
+    const exports = createExports({
+      database: store.handle(),
+      telemetry,
+      dataRoot: root,
+      exportsRoot: join(root, 'exports'),
+      localDeviceId: localDeviceIdOf(),
+      authorize: (request, action) => {
+        const deviceId = authorizedCallerOf(request, action);
+        return deviceId === undefined ? undefined : { deviceId, privateExport: true };
+      },
+    });
+    const transports = new DeviceTransportRegistry();
+    const lifecycle = new DeviceLifecycle({
+      store,
+      telemetry,
+      deviceLink: context.deviceLink,
+      transports,
+      pairing: new PairingService(),
+      controlUrl: origin,
+      currentExecutorId: localDeviceIdOf(),
+    });
+    deviceHost = createDeviceHost({ lifecycle, telemetry, transports, controlUrl: origin });
+    const maintenance = new DataMaintenance({ database: store.handle(), measure, telemetry, dataRoot: root });
+    const authorizeWrite = (request: IncomingMessage): boolean => authorizedCallerOf(request, 'write') !== undefined;
+    entryHandlers = [
+      // 设备：配对码签发、撤销、链路检查与活动通道。
+      deviceHost.handle,
+      // 通知：记录、已读、已处理、设置、订阅、验证与聚焦。
+      notifications.handle,
+      // 访问：状态、登录、通行密钥、双因素、恢复码、会话与再认证。
+      createAccessHandler({ origin, mode: config.accessMode, store: accessStore, csrfKey: accessCsrfKey }),
+      // 备份：创建、校验、恢复、切换与保留策略。
+      createBackupHandler({ config, telemetry, keyPath: join(root, 'backup-master.key'), sourceRoot: root, authorize: authorizeWrite }),
+      // 数据管理：用量、保留策略、清理、血缘、副本与删除。
+      createDataHandler({ maintenance, replica, deviceId: localDeviceIdOf(), root, authorize: authorizeWrite }),
+      // 连续副本：保留策略的清理与重新获取。
+      createContinuityHandler({ store, continuity: continuityStore }),
+      // SYS01 迁移：预检查、分批复制与切换。
+      createMigrationHandler({ config, telemetry, database: store.handle(), authorize: authorizeWrite }),
+      // PWA 静态资源：清单、Service Worker、离线页与图标。
+      createPwaHandler(content, pwaIconRoot),
+      // 私有客户端读取、分享、自动化与导出。
+      createClientHttpHandler({
+        origin,
+        authenticate: authenticateClient,
+        store,
+        replica,
+        receipts,
+        telemetry,
+        cursorKey,
+        online: (deviceId) => context.deviceLink.online(deviceId),
+      }),
+      createShareHttpHandler({
+        service: shareService,
+        authorize: (request, action) => {
+          const deviceId = authorizedCallerOf(request, action);
+          return deviceId === undefined ? undefined : { deviceId };
+        },
+        telemetry,
+      }),
+      createAutomationRoutes({ automations, telemetry, origin, authenticate: authenticateClient }),
+      exports.handler,
+    ];
+    return entryHandlers;
+  }
 
   /**
    * 解析请求代表的设备。
    *
    * 执行节点用节点令牌证明身份，令牌无效时拒绝；没有令牌时接受普通节点标识头与浏览器
-   * cookie。这个结果只决定记录归属的设备，不再用于账号维度的归属判定。
+   * cookie。这个结果只决定记录归属的设备，单用户部署下没有账号这一层。
    * @param request - 入站请求。
    * @param browserDeviceId - 浏览器设备标识。
    * @returns 设备标识；令牌无效时返回错误码。
@@ -719,33 +2367,6 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
           return outcome;
         });
         sendJson(response, result.status, result.body);
-        return;
-      }
-
-      // 分享快照匿名可读：令牌本身就是访问凭据，因此这一步在身份解析之前。
-      if (route === 'snapshot') {
-        const token = path.slice('/s/'.length);
-        const record = share.get(token);
-        if (record === undefined) {
-          sendJson(response, 404, { error: CHATDSH_ERROR_CODES.shareUnavailable });
-          return;
-        }
-        if (record.revokedAt !== undefined || (record.expiresAt !== undefined && record.expiresAt <= Date.now())) {
-          sendJson(response, 410, { error: CHATDSH_ERROR_CODES.shareUnavailable });
-          return;
-        }
-        share.touch(token);
-        const events = replica.read(record.sessionId, record.upToSeq);
-        const html = telemetry.runSpanSync('chatdsh.gateway.share.render', {
-          'share.id': token,
-          up_to_seq: record.upToSeq,
-        }, () => renderSharePage(record, events));
-        response.writeHead(200, {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Content-Length': Buffer.byteLength(html),
-          'X-Robots-Tag': 'noindex',
-        });
-        response.end(html);
         return;
       }
 
@@ -1224,40 +2845,6 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
         return;
       }
 
-      if (route === 'automations') {
-        if (request.method === 'GET') {
-          sendJson(response, 200, { automations: automations.list() });
-          return;
-        }
-        if (request.method === 'PATCH') {
-          if (request.headers['x-chatdsh-csrf'] !== '1') {
-            sendJson(response, 403, { error: 'csrf-required' });
-            return;
-          }
-          const body = await readBody(request, 64 * 1024);
-          let payload: { id?: unknown; enabled?: unknown };
-          try {
-            payload = JSON.parse(body) as { id?: unknown; enabled?: unknown };
-          } catch {
-            sendJson(response, 400, { error: 'invalid-json' });
-            return;
-          }
-          if (typeof payload.id !== 'string' || typeof payload.enabled !== 'boolean') {
-            sendJson(response, 400, { error: 'invalid-payload' });
-            return;
-          }
-          const record = automations.setEnabled(payload.id, payload.enabled);
-          if (record === undefined) {
-            sendJson(response, 404, { error: 'automation-not-found' });
-            return;
-          }
-          sendJson(response, 200, record);
-          return;
-        }
-        sendJson(response, 405, { error: 'method-not-allowed' });
-        return;
-      }
-
       if (route === 'replica') {
         const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'gateway'}`);
         if (request.method === 'POST') {
@@ -1333,53 +2920,6 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
           watermark: replica.watermarkOf(sessionId) ?? null,
           events: replica.read(sessionId, upToSeq === null ? undefined : Number.parseInt(upToSeq, 10)),
         });
-        return;
-      }
-
-      if (route === 'share' || route === 'share-list') {
-        const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'gateway'}`);
-        if (route === 'share-list') {
-          sendJson(response, 200, { shares: share.list() });
-          return;
-        }
-        if (request.method === 'POST') {
-          const body = await readBody(request, 1024 * 1024);
-          let payload: { sessionId?: unknown; upToSeq?: unknown; ttlMs?: unknown };
-          try {
-            payload = JSON.parse(body) as { sessionId?: unknown; upToSeq?: unknown; ttlMs?: unknown };
-          } catch {
-            sendJson(response, 400, { error: 'invalid-json' });
-            return;
-          }
-          if (typeof payload.sessionId !== 'string') {
-            sendJson(response, 400, { error: 'invalid-payload' });
-            return;
-          }
-          const record = share.create({
-            sessionId: payload.sessionId,
-            upToSeq: typeof payload.upToSeq === 'number' ? payload.upToSeq : undefined,
-            ttlMs: typeof payload.ttlMs === 'number' ? payload.ttlMs : undefined,
-          }, replica.watermarkOf(payload.sessionId) ?? 0);
-          sendJson(response, 200, {
-            token: record.token,
-            path: `/s/${record.token}`,
-            sessionId: record.sessionId,
-            upToSeq: record.upToSeq,
-            expiresAt: record.expiresAt ?? null,
-          });
-          return;
-        }
-        if (request.method === 'DELETE') {
-          const token = url.searchParams.get('token');
-          if (token === null) {
-            sendJson(response, 400, { error: 'invalid-payload' });
-            return;
-          }
-          const revoked = share.revoke(token);
-          sendJson(response, revoked ? 200 : 404, { revoked });
-          return;
-        }
-        sendJson(response, 405, { error: 'method-not-allowed' });
         return;
       }
 
@@ -1502,6 +3042,14 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
           imported: events.length,
         });
         return;
+      }
+
+      // 公共入口：客户端读取、分享、自动化与导出。每个领域处理器只接管自己路由的请求，
+      // 未接管时返回 false，继续走下面的默认反代与静态资源。
+      if (ENTRY_ROUTES.has(route)) {
+        for (const handler of entryHandlersOf()) {
+          if (await handler(request, response)) return;
+        }
       }
 
       // 默认反代：指到配置的运行时地址（配置托管时用托管进程的地址）。
@@ -1712,15 +3260,23 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
   });
 
   return {
-    start(): Promise<void> {
-      return new Promise((resolve, reject) => {
+    async start(): Promise<void> {
+      // 客户端 PWA 与宿主用量清点的构建产物在启动时装配一次，缺失就在监听之前失败。
+      const pwa = await pwaModule;
+      const buildPwa = pwa.pwaStaticContent as (options: { version: string; serviceWorkerVersion: string }) => PwaContent;
+      pwaContent = buildPwa({ version: config.pwaVersion, serviceWorkerVersion: config.pwaVersion });
+      const usage = await usageModule;
+      measureStorage = usage.measureStorageUsage as StorageMeasurement;
+      notifications.start();
+      await new Promise<void>((resolve, reject) => {
         server.once('error', reject);
         server.listen(config.port, config.host, () => resolve());
       });
     },
-    stop(): Promise<void> {
+    async stop(): Promise<void> {
+      deviceHost?.stop();
       for (const socket of upgradedSockets) socket.destroy();
-      return new Promise((resolve) => {
+      await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, 2000);
         timer.unref();
         server.close(() => {
@@ -1729,6 +3285,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
         });
         server.closeAllConnections();
       });
+      await notifications.close();
     },
     url(): string {
       const address = server.address();

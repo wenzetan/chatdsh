@@ -8,6 +8,8 @@
   "references": [
     { "path": "../packages/core/contracts" },
     { "path": "../packages/core/diagnostics" },
+    { "path": "../packages/core/deployment" },
+    { "path": "../packages/core/limits" },
     { "path": "../../forge-bridge" }
   ]
 }
