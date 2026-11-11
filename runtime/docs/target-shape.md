@@ -1,6 +1,6 @@
 # 目标形态
 
-本文件规定 ChatDSH 的单用户、多设备、设备权威日志与客户端载体形态。完整系统细节使用[系统完成设计](<system-completion-design.md>)，客户端页面与状态使用[完整交互规格](<client-complete-spec.md>)和[完整设计稿](<ui-design/complete.html>)，实施验收使用[工作包](<implementation-work-packages.md>)。上述完整设计规定离线仅保留草稿、单用户访问认证、连续副本与 Hermes 全历史运行桥接的最终契约；本文件现状表继续记录实际实现程度。
+本文件规定 ChatDSH 的单用户、多设备、设备权威日志与客户端载体形态。产品能力以 DSH 原生服务和用户选择的插件组成，通过[标准能力接口](plugin-platform.md)提供给各端。设备通信与数据使用[系统完成设计](system-completion-design.md)，客户端行为使用[完整交互规格](client-complete-spec.md)。现状表继续记录实际实现程度。
 
 ## 一、形态
 
@@ -12,7 +12,7 @@
 | 设备 | N | 每台一个运行时进程，各自装一份，按用途选 profile |
 | 控制平面 | 1 | 跨设备中枢：设备表、会话副本、推送、webhook、分享、额度、运行时编排 |
 | Hermes | 1 | 承载聊天，地址可配置，控制平面可选托管 |
-| Hindsight | 1 | 记忆存储，用户自行部署，地址可配置 |
+| 记忆提供方 | 用户选择 | 原生 DSH 插件与提供方适配器，数据按插件自身方式存储 |
 | 客户端 | 任意 | 外壳加单 iframe 轮换：左栏聚合全部设备的会话，右栏按选中会话指向那台设备；移动端是同一份外壳的 PWA |
 
 ```mermaid
@@ -23,7 +23,7 @@ flowchart LR
   RA["运行时 A：chatdsh-desktop"]
   RB["运行时 B：chatdsh-web"]
   HM["Hermes：单实例"]
-  HS["Hindsight：单实例"]
+  HS["用户选择的记忆插件与原生存储"]
   WA[("设备 A 的工作区与本地日志")]
   WB[("设备 B 的工作区与本地日志")]
   CL -->|"列表、副本、推送"| GW
@@ -41,17 +41,15 @@ flowchart LR
 
 ### 1.1 与官方路线图的边界
 
-官方 v0.2 公告把「个性化长期记忆」「支持远程与移动端使用」「探索会话分享与多人协作」写入公开路线图，与本项目现有的记忆接入、移动端、分享三处重叠。本项目的取舍是继续自建，但全部做成可装卸的独立插件，不并入宿主平面：
+上游和社区已有能力通过原生插件、提供方适配器与标准能力接口集成。ChatDSH 维护设备访问、能力选择和产品交互，具体职责见[插件平台架构](plugin-platform.md)。
 
 | 方向 | 本项目的做法 | 与官方的关系 |
 |---|---|---|
-| 记忆 | `@chatdsh/host-memory` 加 `bundle-memory-*` 组合包，只在 `memoryBackend` 非 `none` 时加载；实现走 `MemoryBackend` 契约，Hindsight 只是其中一个实现 | 官方若推出内置记忆，替换的是这一个实现与两处挂接点（`agent/pre-step`、`turn/end`），业务代码与聊天后端不动 |
+| 记忆 | 用户选择社区或原生插件，适配器提供标准操作与原生范围映射 | 新提供方通过适配器加入，消费者继续使用统一接口 |
 | 远程访问与移动端 | 移动端做 PWA，复用官方发布的前端产物与同一套外壳，加移动布局与配对接入 | 官方出移动端后，替换的是外壳这一层，控制平面的设备归属、`/ws/mobile` 通道与会话副本不动 |
 | 分享 | 只做控制平面的只读快照（签名令牌、匿名可访问、`upToSeq` 固定） | 多人协作不做 |
 
-判断依据是分层而不是猜测官方覆盖哪一层。聊天与记忆在本项目里已经是两个独立开关（`chatBackend` 与 `memoryBackend`），四种组合都成立；聊天会话读写 `acct`、有工作区时召回 `ws:<memoryGroupId>`，bank 名由 `runtime/packages/host/memory/src/rules.ts` 的 `banksFor` 一处算出。官方最终只做项目记忆或只做对话记忆，落到这个设计里都是 bank 覆盖范围的差异，不需要两套实现。
-
-插件化的具体界线：三项能力各自成仓内独立包，声明标准 `dsh.bundle.patch`，在本项目自己的 profile 里可装卸开关；不发布到公共登记处，不承诺外部 dsh 用户使用。
+执行体与记忆提供方独立绑定。插件的数据范围、自动生命周期和可支持操作按原生能力声明，标准接口不强制所有提供方采用相同 bank 命名。组合包复用 `dsh.bundle.patch`，原生插件与平台适配器分别维护，用户可以按设备选择。
 
 ## 二、数据位置
 
@@ -60,7 +58,7 @@ flowchart LR
 | 会话日志 | 设备本地 | JSONL 在设备 `$DSH_HOME`。设备离线仍可读写自己的会话 |
 | 会话副本 | 控制平面 | 只读镜像，按 `seq` 追加，记水位。用于跨设备浏览、导入、设备损毁恢复 |
 | 工作区 | 设备本地 | 绑定 `deviceId`，工具在那台设备上执行 |
-| 记忆 | Hindsight | bank 名不含设备与账号维度，天然跨设备共享 |
+| 记忆 | 所选插件的原生数据 | 共享依赖提供方远程存储或同步能力，平台保存授权范围与映射 |
 | 聊天（Hermes 承载） | Hermes 的 `state.db` | 会话键是 ChatDSH 会话编号 |
 | 聊天（DSH 承载） | 设备本地 | 与工作会话同一套存储 |
 | 设备与订阅 | 控制平面 | 设备令牌、送达档位 |
@@ -68,6 +66,8 @@ flowchart LR
 | 定时任务 | 设备本地 `$DSH_HOME` | `ctx.schedule`，与会话同处；详见第七章 |
 
 ## 三、会话与执行
+
+项目执行模式支持常规会话和项目共享 Router 的 Super-Agent。完整目标、Git 工作目录及空仓库条件、独立 Worker、实时只读参考资料和人工应用使用[Super-Agent 开发设计](superagent/README.md)。当前创建入口尚未实现该模式。每项目一个逻辑主会话；普通会话继续独立执行，其内容不自动提供给 Router。
 
 会话创建时确定 `cwd` 与 `deviceId`，之后不可修改。`SessionOwnership` 的两个字段已经声明了这条约束。
 
@@ -137,7 +137,7 @@ flowchart LR
 
 **工作区列表按名字合并。** 两台设备上有同一个仓库的两份克隆时，`cwd` 不同、DSH 的 `Workspace` 记录也不同。左栏按工作区显示名合并成一条，点开时列出该名字下的全部设备与路径，由用户选一个。
 
-这条与记忆组的关联是同一件事的两种表达：记忆组决定召回与写入用哪个 bank，工作区合并只影响列表的呈现。两者独立设置。
+记忆组决定提供方的原生共享范围，工作区合并只影响列表呈现。两者独立设置，相同显示名不会自动共享记忆。
 
 **设备加入统一走配对码。** 移动端 PWA 已经有配对码流程（`gateway/src/mobile-http.ts` 与 `mobile-channel.ts`）。桌面与 Linux 执行节点复用同一套：控制宿主生成配对码，新设备输入后换取节点令牌，之后以节点令牌建立长连接。不区分平台。
 
@@ -149,14 +149,14 @@ flowchart LR
 
 ## 四、Hermes 承载聊天
 
-`chatBackend: hermes` 时聊天由 Hermes 执行。分支在运行时内做，不切换 profile，不需要热重载，不需要重启。
+选择 Hermes 时聊天由其执行，原生装载和标准能力绑定分别验证。运行期变更依照适配器的实际支持，新回合采用新绑定，进行中操作使用原快照。
 
 **每次发送的判定与全历史运行桥接。**
 
 发送时由原会话所属设备判定执行体，完整运行契约见[系统完整设计](<system-completion-design.md>)第六、七节：
 
 1. 验证目标设备在线、会话写入权限与业务操作标识。目标设备离线时明确失败并保留客户端草稿，不转交其他设备，不建立自动重发任务。
-2. 在本次发送时判断 Hermes 是否可用；不轮询，不建立周期性健康探测。仅在确定 Hermes 尚未受理且不可达时，在同一会话运行一轮 DSH，并持久记录该会话后续需要完整历史输入。
+2. 在发送准备阶段检查已绑定执行体。Hermes 不可达时返回错误并保留输入，不自动更换执行体。
 3. Hermes 已经受理时继续观察同一个运行；超时或断线导致受理结果不确定时，按操作标识查询实际状态。禁止向 DSH 或 Hermes 重放同一条未确认请求，禁止切换执行体重复运行。
 4. Hermes 可用时通过完整历史运行桥接发起当前回合。桥接必须同时支持历史输入、实时事件、稳定运行标识、精确审批关联和取消，事件到达即更新会话，审批在运行结束前可见并可应答；取消等待真实执行体确认。所需能力缺失时明确拒绝执行。
 
@@ -170,18 +170,7 @@ DSH 承载过的轮次以设备权威会话日志为依据。会话持久保存�
 
 **Hermes 的位置与单实例。** 一个控制平面只对应一个 Hermes 实例，地址可配置（同机、另一台机器、容器均可）。控制平面托管进程是可选的：托管时自己拉起并分配端口，不托管时用配置地址并只做探活。`docs/bundle-chat-hermes/cordis.patch.yml` 里的 `baseUrl` 由环境变量下发，与 `llm-pi-ai` 的 `process.env.CHATDSH_PROVIDER_URL` 同一模式。
 
-**profile 的变化。** 回退是运行期判断，Hermes 支持不能绑在 profile 上：`dsh.profile.bundles` 在启动期读一次，改它要重启或热重载，与「每次发送探测」冲突。
-
-| 现在 | 之后 |
-|---|---|
-| `bundle-chat-hermes` 由 `chatdsh-hermes` profile 选择 | 并入 `bundle-hosted`，由配置行的 `enabled` 与 `baseUrl` 控制 |
-| `chatdsh-hermes` 是独立 profile | 删除 |
-| `chatdsh-worker` 是独立 profile | 删除，代码一并删除；设计意图保留在第五节 |
-| 审批的 `takeOver` 随 profile 切换 | 恒为 `true`，两种承载的审批都由自建卡片呈现 |
-
-`profiles/` 的目标是三个：`chatdsh-web`、`chatdsh-desktop`、`chatdsh-cli`。现状是四个，`chatdsh-hermes` 仍在，因为 `chatBackend` 目前还是 profile 级选择，尚未改成运行期分支。
-
-`chatdsh-hermes` 与 `chatdsh-web` 的行集合高度重叠：12 条客户端行完全一致，`chatdsh-web` 多一条主题行。并进 `bundle-hosted` 之后不再需要单独一份。
+profile 按 Web、桌面和 CLI 载体组织，提供方插件及适配器按需加入。能力选择采用绑定配置，插件要求重启时显示等待重启。现有部署清单继续以实际 profile 文件登记，转换由发行工作包验收。审批显示实际来源，并使用各自精确的审批关联标识。
 
 **DSH 承载那一轮的界面标记。** Hermes 不可达时由 DSH 跑的那几轮，在界面上标一条「本地执行」。
 
@@ -228,55 +217,13 @@ DSH 承载过的轮次以设备权威会话日志为依据。会话持久保存�
 
 **`buildForkSeed` 的切点。** 切点落在回合中间、有未闭合的工具调用时，`openTurnClosers` 会补合成的 `tool/result`（`dsh-session/lib/index.js` 的 `openTurnClosers`）。那是表面事件，会进入请求，前缀因此改变。切点取在 `turn/end` 之后可以避免。
 
-## 六、Hindsight、bank 命名与记忆召回
+## 六、记忆提供方与标准调用
 
-bank 名去掉账号维度：
+记忆采用[标准记忆契约](plugin-platform.md#6-记忆标准接口)。用户选择插件，平台适配器映射召回、管理、写入和异步状态。数据、抽取与整理由插件负责，平台保存绑定、授权与原生范围映射。
 
-| 会话场景 | 召回 | 写入 |
-|---|---|---|
-| 聊天 | `acct` | `acct` |
-| 工作区 | `ws:<memoryGroupId>`、`acct` | `acct` |
-| 关联成记忆组的多个工作区 | 共用 `ws:<memoryGroupId>`、`acct` | `acct` |
+自动召回和自动写入各自保持唯一负责人。使用插件原生生命周期时，平台不再生成另一份摘要或注入。平台安排生命周期时，只调用插件公开的原生操作，并验证其对应后台行为已经关闭。每个回合保存绑定版本，进行中操作不随默认配置改变。
 
-`memoryGroupId` 默认等于 `workspaceId`。显式关联记忆组之后，同一个仓库在不同设备上的两份克隆共用一份记忆。这个能力与账号无关，与设备无关，与多形态无关。
-
-`packages/host/memory/src/rules.ts` 的 `banksFor` 直接算出这两个名字，没有账号或租户字段参与。
-
-Hindsight 的地址与凭据同样由环境变量下发。它由用户自行部署，可以同机或分机，分机时真的会独立离线，因此「召回返回空、回合继续」的降级保留。
-
-**召回的时机。** 每个回合开始时查一次，目标是补齐用户没有写进消息里的已知事实。工具调用期间不再召回：查询文本不变时，Hindsight 返回的是同一批结果，没有信息增量。
-
-判据取 payload 的结构。`agent/pre-step` 的 payload 带 `turn` 与 `step`：回合开始的 `step === 1`；工具调用之后的 step 里 `messages` 只有工具结果。用户中途插话时 `messages` 里会出现新的 user 消息，那种情况也要召回。
-
-```
-step === 1   或   messages 里有 user 消息   → 召回
-其余                                       → 跳过
-```
-
-现在实现在 `packages/host/memory/src/index.ts:296-299` 用五秒时间窗口界定同一回合，改成上面的结构判据之后这个窗口可以删掉。
-
-**注入方式。** 追加一条 `UserMessage`，不用 system prompt 席位，不用 developer 角色。
-
-```
-this.ctx.on(AGENT_EVENTS.preStep, async (payload, next) => {
-  const decision = await next();
-  if (decision.kind === 'reject') return decision;
-  if (payload.step !== 1 && noUserMessage(payload.messages)) return decision;
-  const hits = await this.recallFor(payload.agent, lastUserText(payload.messages));
-  if (hits.length === 0) return decision;
-  return { ...decision, messages: [...decision.messages, createRecallMessage(hits)] };
-});
-```
-
-`createRecallMessage` 用 `createUserMessage({ content: [...], source: { kind: 'memory-recall' } })`。`MessageSourceMap` 是可合并接口，注释写明「each producer declares its own `kind` in its own module」；`spill-policy` 用 `{ kind: 'ptc-mode' }` 是同一模式。在 `@chatdsh/core-contracts` 里声明 `memory-recall`。
-
-不用 `developer` 角色的原因：`dsh-llm-pi-ai/lib/index.js` 的 `appendDeveloper`（`:1297-1316`）把它压成 `role: "system"` 并 push 到 messages 的当前位置，也就是历史中间的 system 消息。`supportsMidConvoSystemMessages` 在所有 wire protocol 的 `COMPAT_GATES` 里都是 `withhold`（`:422`、`:437`、`:466`），`assertOfferedCompatFields`（`:540-548`）对 withhold 字段直接报错，部署侧无法打开。user 角色没有 provider 依赖。
-
-**历史的增长。** 追加的召回消息进入持久化转录，每回合多一条。选择不清理：召回内容通常只有几条 bullet，增长慢，而旧记忆在后续轮次仍然相关。备选是每轮用表面 `replace` 覆盖上一条，历史恒定但从改写点开始缓存失效，放弃缓存收益。
-
-**可见性。** 追加的是表面事件，界面显示为「相关记忆」一段。用户能看到模型依据了什么背景。要做到「入上下文但不进转录」在现在的接口里做不到：`agent/pre-step` 的 `messages` 会写入日志，`additionalContexts` 只在 `tools/post-execute` 上出现。
-
-**结果比较。** 召回结果带稳定的 `id` 与 `text`（`packages/host/memory/src/rules.ts:10-16`），`dedupeHits` 按 `text` 去重（`:33-43`）。新结果的 id 序列与上一次相同就不追加，避免同一批记忆重复进入历史。这一条在「工具结果变化」尚未触发的当前实现里不会生效，但与上面的结构判据一起写下来，避免将来加触发方式时忘记。
+项目共享通过显式范围映射及提供方同步实现。普通会话、Router、Worker 与子代理按真实角色限定读取和写入，未应用成果不进入共享记忆。不可用、未支持、查询为空和受理结果未确认分别呈现。
 
 ## 七、设置与插件
 
@@ -353,9 +300,7 @@ this.ctx.on(AGENT_EVENTS.preStep, async (payload, next) => {
 | 跨设备会话只读这条限制 | 架构设计 7.6 节与其验收项；改为第三节的两个显式选项 |
 | `syncScope` 三档与 `syncOverride` 三档 | 架构设计的推送与送达一节；单用户部署下没有不同步的理由，全部会话都同步 |
 | `chatdshIdentity` 的唯一消费者 | `packages/host/llm-router/src/index.ts:207-208`，额度键改用常量 |
-| Hermes 的 `health` 探测 | `hermes-adapter/src/client.ts:196-207`、`packages/host/chat-hermes/src/index.ts:95-98`；同机部署下它的返回值与整体可用性高度相关，回退判定已经表达同一件事 |
-| 记忆召回的 system prompt 席位 | `packages/host/memory/src/index.ts:156-162` 的 `systemPromptOf(agent.ctx).context(...)`；它是缓存从头失效的根源，改成第六节的追加消息 |
-| 召回的五秒时间窗口 | `packages/host/memory/src/index.ts:296-299`；改成按 `step` 与 `messages` 角色判定的结构判据 |
+| 自建记忆业务循环与直接存储调用 | 与标准记忆消费者和提供方适配器转换共同交付，原生插件负责抽取、召回和整理，保留真实数据与迁移验证 |
 | 控制平面的定时任务 | `gateway/src/store.ts:655-770` 的 `TaskRecord`、`TaskInput`、`TaskAction`、`ScheduleStore` 与 `scheduled_tasks` 表；`gateway/src/scheduler.ts` 整个文件；`server.ts` 的 `/chatdsh/gateway/schedule` 路由；`main.ts` 的 `createScheduler` 与启停；`scripts/verify-schedule.mjs`；`acceptance.md` 第十一节 |
 | `chatdsh-worker` profile 与 `bundle-worker` | `profiles/chatdsh-worker/`、`packages/bundle/worker/`；设计意图保留在第五节，代码删除 |
 | Android 原生客户端 | `mobile/base`、`mobile/overlay`、`mobile/android` 三层与 `scripts/build-android.mjs`、`scripts/serve-apk.mjs`；移动端改为 PWA，保留控制平面的配对与 `/ws/mobile` 接口 |
@@ -405,14 +350,14 @@ HERMES_URL=http://127.0.0.1:50011 HERMES_API_KEY=... node deploy/scripts/hermes-
 | 设备表与节点令牌 | 已实现：`node_devices` 表与 `registerNode`、`nodeByTokenHash`、`nodeById`、`listNodes`、`touchNode` | 三 |
 | 设备离线时写操作明确失败 | 已实现：`/d/` 前缀与归属写入在设备离线时回 409 `device-offline` | 三 |
 | `postMessage` 的会话切换通道 | 未实现；不做则同一设备内切换会话也要 iframe 重载 | 三 |
-| Hermes 地址与 Hindsight 地址的环境变量下发 | 未实现，补丁层写死常量 | 四、六 |
-| Hermes 的发送时探测与回退 | 未实现，`chatBackend` 现在是 profile 级选择 | 四 |
+| 提供方连接与凭据映射 | 目标由适配器映射原生设置，凭据和设备路径保持本地 | 四、六 |
+| 外部执行体的标准绑定 | 设计目标，完整历史、实时审批、查询与真实取消同时通过后开放 | 四 |
 | `ui-conversation` 的「本地执行」标记组件 | 未实现，要读 `assistant/message` 的 `source.provider` | 四 |
 | 审批投递、撤回、移动端后台通知 | 部分实现：审批提醒与撤回已接入推送中枢；移动端后台通知仍未实现，PWA 上走 Web Push 加 Service Worker | 七 |
 | 移动端 PWA | 未实现：现有外壳与官方前端产物可复用，需加移动布局、`manifest` 安装入口、Service Worker 与 Web Push 订阅 | 三 |
-| 记忆与移动端拆成独立包 | 未实现：`@chatdsh/host-memory` 与移动端接入目前挂在 `bundle-hosted` 与 profile 补丁层，需各自成 `bundle-memory-*` 与独立客户端包，按开关加载 | 一 |
-| 记忆召回的注入方式改造 | 已实现：`agent/pre-step` 追加一条 `UserMessage`，结构判据取代时间窗口 | 六 |
-| 记忆组关联入口 | 未实现，`memoryGroupId` 从 `cwd` 算出 | 六 |
+| 标准记忆能力与提供方适配器 | 设计目标，原生插件的装载、操作与生命周期采用 PA01–PA08 验收 | 一、六 |
+| 原生记忆生命周期 | 设计目标，每个绑定明确负责人，平台不重复抽取与注入 | 六 |
+| 记忆组关联入口 | 设计目标，保存稳定项目标识与各设备提供方的原生范围映射 | 六 |
 | `memory-recall` 的 source 登记 | 已实现：`@chatdsh/core-contracts` 的 `message-sources.ts` 声明该 kind | 六 |
 | 设置同步插件 | 已实现：`@chatdsh/host-settings-sync` 监听设置变更与易变字段，按白名单命名空间上报，接收推送写本机 home 层 | 七 |
 | 控制平面的设置存储 | 已实现：`settings` 表按命名空间存值与控制平面接收时刻，`GET`/`POST /chatdsh/gateway/settings` | 七 |

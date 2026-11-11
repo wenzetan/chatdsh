@@ -2,6 +2,8 @@
 
 本机部署了 OpenObserve，遥测是这个项目的常设调试设施。本文件定下遥测的信号范围、接口清单、命名规范、上下文传播、关闭开关、内容边界与验收方式。任何能力的实现都在同一个提交里交付对应的遥测接入，规则见 [`AGENTS.md`](../AGENTS.md) 的「遥测」一节。
 
+标准能力服务和提供方适配器采用[平台遥测契约](plugin-platform.md#11-权限故障与遥测)。调用分派覆盖结果和失败，提供方内部不支持传播时标明边界，插件原生遥测也遵守部署关闭及内容限制。新信号在对应运行时实现交付时同时登记，本次设计接口不改变现有信号的实现状态。
+
 ## 一、目标与边界
 
 目标有四项：本地开发时能看清一次请求经过哪些组件；线上（自托管）出问题时能按 `trace_id` 串联客户端、控制平面、运行时与工具；性能回归能按指标趋势发现；每一条失败分支都能在 OpenObserve 里按错误码聚合。
@@ -408,6 +410,26 @@ flowchart TB
 | metric | `chatdsh_chat_hermes_approvals_total` | Hermes 审批应答数 | `outcome` |
 | metric | `chatdsh_process_resident_memory_bytes` | 常驻内存 | 无 |
 | metric | `chatdsh_process_cpu_seconds_total` | CPU 时间 | 无 |
+
+### 6.2.1 Super-Agent 设计信号
+
+以下信号属于[Super-Agent 开发设计](superagent/README.md)，当前尚未产生。SA 实施时在对应宿主、工具与客户端包的 `chatdsh.telemetry` 声明中同步登记，并完成源码、声明和文档一致检查。
+
+| 类型 | 名称 | 动作与属性 |
+|---|---|---|
+| span | `chatdsh.runtime.superagent.operation` | 每次项目、任务、授权、依赖、执行、恢复、审阅、应用或提交动作；action、role、phase、outcome、error.type、error.code |
+| event | `chatdsh.runtime.superagent.changed` | 已提交状态变化；action、role、phase、outcome、project.id、task.id、operation.id |
+| event | `chatdsh.runtime.superagent.rejected` | 权限、Git、版本、深度、容量、超时、冲突与未确认分支；action、role、phase、outcome、error.type、error.code |
+| metric | `chatdsh_superagent_operations_total` | 动作结果次数；action、role、outcome |
+| metric | `chatdsh_superagent_operation_seconds` | 动作耗时；action、role、outcome |
+| metric | `chatdsh_superagent_active` | 当前执行与等待数量；role、phase |
+| span | `chatdsh.client.superagent.action` | 创建模式、进入主会话、决定、控制、审阅和应用；action、outcome、error.type、error.code |
+| event | `chatdsh.client.superagent.rejected` | 客户端提交或状态验证失败；action、outcome、error.type、error.code |
+| metric | `chatdsh_client_superagent_actions_total` | 客户端动作结果；action、outcome |
+
+action 使用 enter/configure/send/create_task/dispatch/deliver/spawn_child/report/decide/reserve/stop/resume/seal/review/apply/commit/recover/enable/disable/cleanup/backup/replicate/read 的固定集合；role 为 router/worker/subagent/human/system。phase 仅使用 TaskState、WaitReason 与 ApplyPhase 的并集，其他动作省略 phase，每项指标属性保持第五节基数限制；project.id、task.id、operation.id 仅进入事件与 span，必须登记到各端属性允许清单。
+
+Router 到 Worker、Worker 到子代理、持久 outbox 到执行器传播当前有效的 traceparent。遥测关闭后不从历史 outbox 恢复或传播旧链路；任务关联使用业务 ID，不依赖 trace ID。日志、提示词、工具参数与结果、文件路径、Git 原文和参考资料内容均不进入这些信号。
 
 ### 6.3 会话平面与工具
 

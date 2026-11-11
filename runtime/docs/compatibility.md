@@ -2,6 +2,8 @@
 
 本文件记录上游版本与本仓库的对应关系、登记表的职责，以及升级 DSH 内核时要跑的命令。验收证据在[验收状态](acceptance.md)，适配层的设计在[架构设计](architecture.md) 4.1.1 节。
 
+提供方适配器同时记录标准能力 API、DSH、插件、适配器和传递依赖的已验证组合，规则采用[平台版本契约](plugin-platform.md#43-接口与插件版本)。原生清单兼容与标准操作运行验收分别登记，缺少公开接口的操作不能通过扩大发布版本范围宣称支持。
+
 ## 一、兼容矩阵
 
 | DSH 内核 | 已验证的 dsh-tui | chatdsh-web | chatdsh-desktop | chatdsh-cli |
@@ -47,3 +49,9 @@ node scripts/verify-memory.mjs
 ```
 
 升级 `dsh-tui` 时先确认它的已验证清单覆盖新内核，再改 `profiles/chatdsh-cli/package.json` 的版本号，然后用 pnpm 更新该 profile 的锁文件并重跑组合检查。
+
+## 四、Super-Agent 开发能力基线
+
+[Super-Agent 设计](superagent/README.md)当前尚未接入运行时。它要求 Node 至少 24.0、Git 至少 2.43，并按[执行器规定](superagent/execution.md)分别提供 Linux/macOS SRT、Windows Docker 与受信任文件辅助程序。执行器、文件权限、网络策略、输入去重和 Agent handle 的实际能力在 SA01、SA03 验证；现有矩阵中的通过记录只覆盖已实现功能。
+
+DSH 适配须覆盖仓库声明的基线，使用本机较新版本验证时单独记录结果。无法提供必要能力的设备返回明确原因并阻止对应任务执行，不改变普通会话的版本判断。

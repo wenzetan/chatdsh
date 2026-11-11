@@ -2,6 +2,10 @@
 
 后续 agent 委派使用[实施工作包](<implementation-work-packages.md>)，包含 WP00–WP40 与 SYS01–SYS08 的依赖、范围和真实验收。设计入口为[完整交付](<design-delivery.md>)，客户端为[完整设计稿](<ui-design/complete.html>)。下文保留已实现能力的验证条件；新能力实施顺序与完成标准使用完整工作包。
 
+平台能力开发采用[PA01–PA08](plugin-platform.md#12-实施与验收)。标准接口与 DSH 映射、提供方真实入口、生命周期和绑定共同验证后，领域界面及 Super-Agent 才能使用对应能力。社区插件的清单检查只证明声明成立，适配器和实际业务调用仍需交付。
+
+项目级 Super-Agent 的开发使用 [SA01–SA09](superagent/implementation.md)，接口、数据库、调度、执行器和 Git 应用规则从[设计入口](superagent/README.md)读取。该能力当前为设计目标，完成实现后按 AC-SA01–27 分别登记真实结果。
+
 按验收顺序分组，每组写明缺什么条件与条件满足后跑哪个脚本。顺序是先收口主链路，再做跨设备与客户端形态，最后是平台相关项。验收的完整状态见 [acceptance.md](acceptance.md)。
 
 当前分布：通过 10 项、部分 10 项、未触及 5 项，共 25 项。逐章台账见[文档总纲](README.md)第五节，逐条证据见 [acceptance.md](acceptance.md)。

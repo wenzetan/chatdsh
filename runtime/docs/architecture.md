@@ -1,8 +1,8 @@
 # ChatDSH 架构设计
 
-完整目标契约使用[系统完成设计](<system-completion-design.md>)，客户端行为使用[完整交互规格](<client-complete-spec.md>)，后续实施使用[工作包](<implementation-work-packages.md>)。本文件保留上游事实、模块边界与既有实现证据；设备实时通道、单用户访问认证、连续副本、存储迁移、Hermes 运行桥接与资源限制以完整系统契约为准。
+平台分层、标准能力与提供方适配采用[插件平台架构](plugin-platform.md)。本文件记录 DSH 原生装载接口和现有包的源码事实，新增开发范围按平台架构确定。设备通信、访问认证与数据连续使用[系统完成设计](system-completion-design.md)，客户端行为使用[完整交互规格](client-complete-spec.md)。
 
-以 DSH（deepseek-harness）为运行内核，覆盖 Web 端、命令行、Windows 桌面、移动端四种形态的开源自托管 ChatGPT 对应物。目标形态是单用户、多设备、多终端：一个人拥有一套部署，在自己的多台设备与多种客户端上使用，没有账号体系，没有租户维度。全部能力以插件、组合包、profile 补丁进入运行时。
+以 DSH（deepseek-harness）为内核，提供单用户、多设备、多终端的插件集成平台。用户选择 DSH 插件，提供方适配器将其接入标准能力接口，会话、Super-Agent、自动化与客户端统一消费这些接口。插件、组合包和 profile 继续使用 DSH 原生机制。
 
 本机实测基线：`@deepseek-ai/dsh` 0.2.1-rc.2，安装根 `/usr/local/nvm/versions/node/v24.19.0/lib/node_modules/@deepseek-ai/dsh`（下文记作 `$DSH`），内置包目录 `$DSH/node_modules/@deepseek-ai/`（305 个条目）。Hermes 0.21.7 装在 `/usr/local/lib/hermes-agent/`。
 
@@ -151,62 +151,41 @@ DSH 自带的 `@deepseek-ai/dsh-otel` 只提供两条日志通道：`createEvent
 
 ChatDSH 的遥测自成一套：`@chatdsh/core-diagnostics` 提供各端共享的客户端、脱敏、W3C 链路上下文、有界环形缓冲与三条进程内导出管道，`@chatdsh/host-telemetry` 是宿主平面的唯一出口，在宿主平面注册 `ctx.chatdshTelemetry`，直发本机 OpenObserve。上游两行的关闭语义沿用：`DSH_TELEMETRY_DISABLED` 取任何非空值时整体关闭。信号清单、命名规范、上下文传播与关闭入口见[遥测与调试接口](telemetry.md)。
 
+### 2.15 Super-Agent 所需执行接口
+
+本机安装版本见文档总纲，其类型接口提供 `AgentRegistry.create/resume`、发布前 setup 和 owned AgentHandle。源码证据为 `$DSH/node_modules/@deepseek-ai/dsh-agent/lib/types/index.d.ts`。setup 用于在模型首次执行之前安装角色工具与权限，handle 由宿主服务持有。
+
+`dsh-sandbox/lib/types/index.d.ts` 的 `SandboxExecutionPolicy` 描述文件写入范围，`SandboxEnforcement` 区分 full/partial，读取与网络在该文件策略词汇之外。`dsh-sandbox-local/lib/types/index.d.ts` 描述平台执行及部分约束的具体边界。该事实只证明当前安装接口，仓库基线的能力由 SA01 验证。Super-Agent 使用[执行契约](superagent/execution.md)规定的额外策略与平台实现，不能将单一写权限状态表示为完整的读取和网络隔离。
+
 ## 三、总体架构
 
-三个平面加一个共享中枢。
+设备侧按产品消费者、标准能力、提供方适配器与 DSH 插件组织。`ctx.chatdshCapabilities` 是标准能力入口，集中解析身份、范围、绑定快照、错误和遥测。记忆算法、技能演化和插件存储属于具体提供方。
 
-**客户端平面**：浏览器界面、Electron 壳、移动端应用、命令行（`dsh-tui` 的插件）。全部经控制平面接入，不直连运行时。
+控制平面负责访问认证、设备与会话归属、反向代理、绑定意向和只读状态。业务能力在所属设备执行，插件数据留在提供方。图形客户端经过控制平面访问设备，CLI 使用本机运行时。
 
-**控制平面**：常驻的独立服务，持有设备与会话归属索引、订阅、用量账本、分享记录、聊天与记忆后端的开关，负责反向代理与按设备路由、跨设备推送的中枢、Hermes 的生命周期托管与 Hindsight 的探活、强制不休眠的电源策略、运行时的进程托管。
-
-**运行时平面**：一个未修改的 DSH 进程，独立 `$DSH_HOME`，只绑回环。聊天会话与工作会话都由 DSH 自己的 agent 执行；`chatBackend` 为 `hermes` 时聊天会话改由 Hermes 承载。
-
-**数据平面**：会话日志用 JSONL，工作区与检索索引用 SQLite FTS5，附件与制品走对象存储（单机是本地目录），记忆用外部 Hindsight 的 bank 或 Hermes 内置记忆（由 `memoryBackend` 决定），Hermes 的会话在其 `state.db`。
-
-聊天后端与记忆后端各自是可选插件，两者互相独立，四种组合见[聊天后端与记忆接入](hermes-integration.md)第四节。工作会话始终由 DSH 执行，不随这两个开关变化。
-
-三平面结构、控制平面模块、数据落盘布局、装配点、客户端加载次序、会话回合、遥测管道与验收对应关系另有成图，见[设计架构图](architecture-diagram.md)。本节定设计与取舍，成图文件定结构与次序。
+项目 Super-Agent 采用[专项开发契约](superagent/README.md)，通过标准能力使用 DSH Agent、子代理与所选记忆插件。项目任务归属、人工授权和成果应用由宿主验证。Router、Worker 和一层子代理共享项目预算，角色范围也必须约束插件原生的事件监听与后台任务。
 
 ```mermaid
 flowchart TB
-  subgraph C[客户端平面]
-    B[浏览器界面]
-    E[Electron 壳]
-    M[移动端应用]
-    T[dsh-tui 插件]
-  end
-  subgraph P[控制平面]
-    ACC[设备与会话归属]
-    DEV[设备在线状态与订阅]
-    PUSH[跨设备推送]
-    PROXY[反向代理与按设备路由]
-    POOL[运行时进程托管]
-    SUP[Hermes 托管与 Hindsight 探活]
-    POWER[强制不休眠电源策略]
-  end
-  subgraph R[运行时平面]
-    RT[一个 DSH 进程]
-    HS[Hermes 实例（可选）]
-  end
-  subgraph D[数据平面]
-    LOG[会话日志 JSONL 或 Postgres]
-    IDX[SQLite FTS5 或 Postgres]
-    MEM[Hindsight bank 或 Hermes 内置记忆（可选）]
-  end
-  C -->|HTTPS 与 SSE| P
-  P -->|回环| RT
-  P -->|回环或 tailnet| HS
-  RT --> LOG
-  RT --> IDX
-  RT --> MEM
-  HS --> MEM
+  CLIENT[各端界面与 Agent 工具]
+  GATEWAY[访问认证、设备路由与只读索引]
+  API[设备侧标准能力接口]
+  ADAPTER[DSH 与社区插件适配器]
+  CORE[DSH 插件系统与 Agent 生命周期]
+  PROVIDER[插件业务能力与原生数据]
+  CLIENT --> GATEWAY
+  GATEWAY --> API
+  API --> ADAPTER
+  ADAPTER --> CORE
+  ADAPTER --> PROVIDER
+  CORE -->|原生装载| PROVIDER
 ```
 
 隔离落在两处：运行时进程只绑回环，外部只能经控制平面进入；设备之间按归属表分派，`/d/<deviceId>/` 前缀之外的请求走部署的运行时。工作区的隔离由目录与归属判定承担：每个工作区一个根目录，会话创建时把该目录作为 `cwd`，会话日志按 `cwd` 的项目键分目录存放，因此工作区之间的会话在落盘层面已经分开；跨工作区的访问由控制平面的归属判定与运行时的 Remote 前置检查共同限制。
 
 ## 四、仓库与包结构
 
-仓库只有一个 Git 根 `/workspace/chatdsh`。运行时侧的代码全部在 `runtime/` 下；适配层与参考项目快照是仓库根下的同级目录。
+仓库只有一个 Git 根 `/workspace/chatdsh`。运行时侧代码位于 `runtime/`，适配层位于根目录。下表登记现有包和目录，标准能力服务及提供方适配器的目标位置采用[平台架构第九节](plugin-platform.md#9-仓库组织与依赖)。
 
 ```mermaid
 flowchart TB
@@ -257,7 +236,7 @@ flowchart TB
 
 命令行形态不另设包：交互由全局安装的 `dsh-tui` 承担，`chatdsh-cli` 只提供 profile 与组合包选择。移动端见[桌面与移动端载体](desktop-mobile.md)。
 
-依赖方向单向：`core-contracts` 无内部依赖；`core-*`、`host-*`、`tool-*` 依赖 `core-contracts` 与适配层 `@chatdsh/adapter`；`bundle-*` 依赖插件；profile 的 `dsh.profile.bundles` 列出组合包。插件之间通过 `ctx` 服务名互相发现，不互相 import 实现。DSH 内置包只允许 `@chatdsh/adapter` 直接引用，本仓库其余包一律经由适配层。
+本项目对 DSH 内部接口的引用集中在 `@chatdsh/adapter`。提供方适配器可以依赖第三方插件公开入口，产品消费者只依赖标准能力契约。能力服务通过 Cordis 注册发现提供方，不依赖适配器实现。组合包与 profile 负责完整依赖和装载顺序，具体方向采用[平台依赖规则](plugin-platform.md#9-仓库组织与依赖)。
 
 ### 4.1 契约包
 
@@ -302,7 +281,7 @@ flowchart TB
 - 跨设备推送的中枢：按设备订阅决定投给谁，应用在前台走长连接，后台由 Service Worker 收到 Web Push 后展示本地通知；
 - 自动化的入口与去重：持有自动化记录与投递记录，webhook 路由按记录里的密钥环境变量鉴权、按事件标识去重，手工触发的动作由控制平面转发给运行时；
 - Hermes 的生命周期托管：只在 `chatBackend` 为 `hermes` 时启动，每部署一个实例，控制平面负责启动、探活、降级与回收；Hindsight 由用户自行部署，控制平面只探活不托管进程；
-- 聊天与记忆后端开关：持有 `chatBackend` 与 `memoryBackend` 的值并下发给运行时，四种组合见[聊天后端与记忆接入](hermes-integration.md)第四节；
+- 提供方配置意向与绑定 revision，设备侧验证实际装载、操作和作用范围后发布能力状态，见[平台绑定规则](plugin-platform.md#5-选择绑定与运行期行为)；
 - 强制不休眠的电源策略：按用户开关让控制平面与运行时保持存活，并阻止计算机进入睡眠与休眠；
 - 运行时的进程托管：按需启动、空闲回收。
 
@@ -326,7 +305,7 @@ flowchart TB
 | `@chatdsh/host-llm-router` | 模型适配器，转发到控制平面的模型入口，在 `stream()` 入口做额度检查；请求与分块的 OpenAI 兼容翻译在控制平面入口完成 | `ctx.llm.registerAdapter` |
 | `@chatdsh/host-projects` | 在工作区注册表之上扩展标题、指令、模型默认值 | `ctx.storageDomain`、`dsh-agent-instructions` |
 | `@chatdsh/host-artifacts` | 制品存储与版本，制品虚拟文件系统 | `ctx.storageDomain`、`ctx.attachments` |
-| `@chatdsh/host-memory` | 记忆接入层：向存储层召回并注入、定期摘要写入，按工作区与会话类型决定召回哪些 bank；`memoryBackend` 为 `none` 时不加载 | `agent/pre-step` |
+| `@chatdsh/host-memory` | 现有自建召回和摘要实现，目标消费者通过标准记忆能力使用所选插件，生命周期采用平台契约 | `agent/pre-step`，源码现状 |
 | `@chatdsh/host-assistants` | 自定义助手写入 preset 声明并注册 | `dsh-agent-preset-registry` |
 | `@chatdsh/host-connectors` | MCP 接入：从控制平面读全局注册与按设备的端点，按本机那段生成 DSH 原生 MCP 客户端行；协议细节由上游客户端承担 | MCP 客户端行、`ctx.authorization.registerFlow` |
 | `@chatdsh/host-approval` | 把 Hermes 的审批请求写成 `plugin:` 记录，接收应答并回传；`chatBackend` 为 `hermes` 时加载 | `appendPluginRecord`、自建 Remote 方法 |
@@ -422,40 +401,17 @@ MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协�
 
 命令行形态不另设组合包：终端交互与命令行审批应答方全部由上游的 dsh-tui 承担，见 6.2 节。
 
-存储实现独立成组合包，由 profile 的 bundles 列表选择，默认取 JSONL，需要 Postgres 时取 Postgres 后端。聊天后端与记忆后端也各成组合包：`bundle-memory-hindsight` 在 `memoryBackend` 为 `hindsight` 时加入，`bundle-chat-hermes` 在 `chatBackend` 为 `hermes` 时加入，两者都不加入时就是「无 Hermes 无 Hindsight」的最轻形态。组合包之间不表达「基础」关系，叠加顺序由 profile 决定，同一组合包在列表里只出现一次。
+上表记录现有组合包。目标记忆组合由原生插件、对应提供方适配器及可选界面组成，使用标准能力绑定选择。组合包不重复插入原生插件已经声明的行，同一组合包在 profile 中只出现一次。存储与外部执行体继续独立选装。
 
 ### 4.8 扩展包
 
-扩展包是「一组 cordis 插件加 agent preset 加 MCP 配置加界面面板」的分发单元。它在 DSH 侧就是一个组合包，加上控制平面侧的元数据与安装流程。运行时不引入第二套插件机制。
+扩展使用普通 DSH 插件和组合包分发。安装调用 `dsh plugin --profile <name> add`，依赖解析、兼容判断、原生补丁和客户端模块由 DSH 处理。平台适配器单独登记其标准能力、版本范围和验收证据，第三方插件无需声明 ChatDSH 专用字段。
 
-**形态。** 一个 npm 包，`package.json` 里声明标准的 `dsh.bundle.patch`，另加一段 `chatdsh` 字段描述组成：
+平台组合包声明原生插件与适配器的完整依赖。原生 bundle 已提供的宿主行、preset 和客户端模块保持唯一装载，平台只追加自己的行及明确的配置覆盖。安装后还需要选择标准能力绑定，实际可用性由设备的注册和探测结果决定。
 
-```json
-{
-  "name": "chatdsh-extension-example",
-  "dsh": { "bundle": { "patch": ["./cordis.patch.yml", "./presets.patch.yml", "./client.patch.yml"] } },
-  "chatdsh": {
-    "extensionApiVersion": 1,
-    "displayName": "示例扩展",
-    "presets": ["example-assistant"],
-    "mcpServers": [{ "name": "example", "transport": "stdio", "command": "example-mcp" }],
-    "panels": ["example-panel"],
-    "permissions": ["shell", "fs:workspace"]
-  }
-}
-```
+控制平面记录安装意向，设备保存实际依赖锁文件与 profile。重建使用精确版本、配置和绑定，凭据及设备路径保持本地。卸载前解除绑定并处理在途操作，数据清理由用户单独决定。
 
-三个补丁文件分别负责宿主平面的服务与配置行、agent preset 声明、客户端面板行。
-
-**安装。** 控制平面读取 `chatdsh` 字段与安装记录，把包写进用户 profile 的 `dependencies` 与 `dsh.profile.bundles`，把 preset 声明写进补丁层，把 MCP 服务器配置写成 MCP 客户端行，把面板行插进客户端名册。安装动作走 `dsh plugin --profile <name> add`，依赖记录与兼容性判定由它承担。
-
-**分发与重建。** 安装记录在控制平面（哪个用户装了哪个版本、何时、来源），profile 目录是可重建的产物：重建时按安装记录重新生成 bundles 与补丁层。这与「存储访问走接口、profile 目录可重建」的原则一致。
-
-**权限声明。** 声明的权限在安装时告知用户并写入审计记录，运行时不依赖扩展包自我约束：工具执行仍经 `tools/execute` 的 guard 与沙箱策略，文件访问仍受工作区根目录限制，网络出站仍由沙箱策略决定。声明的作用是告知与审计，不构成授权机制。
-
-**卸载。** 从 bundles 与 dependencies 移除，删除它插入的行，清理安装记录。卸载不删该扩展创建的会话与记忆，那些属于用户数据。
-
-**版本与兼容。** 扩展包同时声明 `engines.dsh` 与 `chatdsh.extensionApiVersion`。前者由 `dsh plugin` 在安装前判定，后者由控制平面判定，两者都满足才允许安装。
+同进程插件具有宿主执行权限，模型工具审批与沙箱不限制其任意后台代码。安装说明必须展示这一边界，原生监听、网络端点、数据访问和停用释放均进入真实集成验收。标准能力调用的身份与范围验证采用[平台契约](plugin-platform.md)。
 
 ## 五、profile
 
@@ -472,7 +428,7 @@ MCP 接入的方向相反：把外部 MCP 服务的能力接进执行器。协�
 
 每个 profile 的 `cordis.patch.yml` 负责本部署的差异：会话存储 `root`、`session-query` 打开检索、`connection` 行补 `trustedHosts`、按形态禁用不需要的宿主行。
 
-聊天后端与记忆后端的组合包按开关加入 bundles，不写死在上面这张表里。`memoryBackend` 为 `hindsight` 时加入 `bundle-memory-hindsight`，`chatBackend` 为 `hermes` 时加入 `bundle-chat-hermes`；两者都不加入即默认形态，聊天走 DSH、记忆不启用。开关值由控制平面写进 profile 的 bundles 列表，用户切换开关时重建 profile，这是 profile 目录可重建原则的一部分。
+提供方插件及适配器按设备选装，能力绑定独立保存。profile 装载与运行期绑定分别验证，原生插件要求重启时显示等待重启，不能将绑定写入成功表示为已经生效。新回合和新任务采用新绑定，进行中操作继续使用原快照。
 
 禁用的内置行包括账号链六行（`deepseek-account`、`llm-deepseek-account`、`account-controller`、`ui-settings-account`、`web-deepseek-api`、`web-search-deepseek`），`deepseekAccount` 被六个包引用，禁用时必须整链处理，否则会留下失败的 fiber。`llm-deepseek` 是否保留取决于是否允许用户直接配 DeepSeek API key。
 
@@ -584,7 +540,7 @@ Electron 主进程承担原生能力与运行时编排，控制平面、运行�
 
 目标形态是单用户、多设备、多终端：控制平面、运行时、以及可选的 Hermes 与 Hindsight 部署在同一网络内，运行时只绑回环，控制平面开两个 TLS 监听（回环供 Serve 转发、EasyTier 接口供反代以 mTLS 接入），数据根下只有一份部署、没有账号或租户目录，存储用 SQLite 与本地文件，不需要任何外部服务。每台设备跑一个运行时进程，客户端是窗口。Hermes 由控制平面托管，与运行时同机；Hindsight 由用户自行部署，可同机或分机。
 
-Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合都成立：无 Hermes 有 Hindsight 时聊天走 DSH、记忆经 Hindsight；无 Hermes 无 Hindsight 时聊天走 DSH、记忆不启用；有 Hermes 无 Hindsight 时聊天与记忆都走 Hermes 内置；有 Hermes 有 Hindsight 时聊天走 Hermes、记忆走 Hindsight 的 bank。见[聊天后端与记忆接入](hermes-integration.md)。
+执行体与记忆插件独立选择，通过适配器绑定为标准能力。部署只创建选定组合的资源，验证原生后台行为、实际范围和所需操作。外部执行体与记忆服务按各自所有者管理，具体组合采用[接入契约](hermes-integration.md)。
 
 必须从第一天就按最终形态实现的接缝，以及当下可以简化掉的部分，见[部署形态与兼容接缝](deployment.md)。
 
@@ -790,11 +746,11 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 ## 八、会话与工作区模型
 
-会话分两类。工作会话带 `workspaceId`，`cwd` 指向工作区根目录，agent preset 为 `chatdsh`。聊天会话不带工作区，`cwd` 指向一个专用的聊天目录，归属表里 `workspaceId` 留空。聊天会话的 agent preset 与执行者由 `chatBackend` 决定：为 `hermes` 时 preset 是空组合、执行由 Hermes 承载，为 `dsh` 时 preset 为 `chatdsh`、执行由 DSH 自己的 agent 完成。
+会话分为工作和聊天两类。常规工作会话带 `workspaceId`，`cwd` 指向工作区目录，工具档位由第四节的会话预设契约决定。聊天会话不带工作区，`cwd` 指向专用聊天目录，执行者由 `chatBackend` 决定。
 
-**工作区之间的记忆共享靠手动关联。** 默认每个工作区独立，记忆写入并召回 `ws:<workspaceId>`。用户可以把两个工作区关联成一个记忆组，关联后两者共用 `ws:<memoryGroupId>`，在一台设备的工作区里积累的记忆可以在另一台设备的关联工作区里召回。关联是双向的，一个工作区同时只属于一个组；它只影响记忆的写入与召回目标，不改变会话归属、项目指令、会话列表与助手设置，这些仍按各自的工作区记录。
+项目工作会话的完整目标还包括 `executionMode=single-session|super-agent`，默认 single-session。Super-Agent 使用一个项目逻辑主会话和独立 DSH 执行会话，项目身份、角色、任务目录与实际 cwd 分别保存。其 Git 基准、权限、子代理深度、参考资料、审阅、应用并提交和人工恢复使用[专项架构](superagent/architecture.md)。当前项目配置与创建入口尚未交付这些字段和流程，现有功能状态保持实际证据口径。
 
-关联入口只在记忆能力开启时出现：`memoryBackend` 为 `none`、`@chatdsh/host-memory` 未启用或 Hindsight 不可达时，界面不展示关联操作，因为它不产生任何效果。解除关联后两个工作区各自回到自己的 `ws:<workspaceId>`，此前写入组 bank 的记忆留在原处不迁移。
+工作区之间的记忆共享由用户明确关联提供方原生范围。平台保存项目和设备到原生范围的映射，实际共享依赖所选插件的远程存储或同步能力。关联不改变会话归属、项目指令与助手设置，解除关联不删除或迁移原数据。提供方未声明共享或项目范围时，界面显示具体限制。
 
 ## 九、ChatGPT 能力映射
 
@@ -810,7 +766,7 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 | 语音输出 | 未实现 |
 | 图像生成与编辑 | `@chatdsh/tool-image` 把生成请求发给外部供应方，凭据经控制平面 |
 | 分享链接 | 控制平面按会话副本渲染只读快照，签名令牌、匿名可访问 |
-| 记忆 | 外部 Hindsight 的 bank 或 Hermes 内置记忆，由 `memoryBackend` 决定，见[聊天后端与记忆接入](hermes-integration.md) |
+| 记忆 | 用户选择 DSH 记忆插件，通过提供方适配器和标准能力接口使用，见[平台记忆契约](plugin-platform.md#6-记忆标准接口) |
 | Connectors | `host-connectors` 生成 MCP 条目，凭据走 `ctx.authorization` |
 | 助手与插件市场 | `dsh-plugin-market` 与 `dsh-plugin-market-index` 的索引格式 |
 | 工作区 | 控制平面的工作区记录与设备归属；单用户部署下没有成员表 |
@@ -860,7 +816,7 @@ Hermes 与 Hindsight 都是可选依赖，各自以插件接入，四种组合�
 
 设备与隔离：控制平面只按已登记的设备分派，`/d/<deviceId>/` 指向未登记的设备时返回 404 且不回退到部署的运行时；运行时只绑回环，外部无法直连；运行时侧始终以 owner 身份运行。
 
-聊天与记忆后端：四种组合各自能启动并就绪。`chatBackend: dsh`、`memoryBackend: none` 时不加载 Hermes、不加载 `host-memory`，聊天与工作会话都能执行；`memoryBackend: hindsight` 且 Hindsight 可达时召回返回命中并写入成功，Hindsight 停掉后召回返回空、写入进本地待写队列并显示降级；`chatBackend: hermes` 时聊天经 Hermes 的 `api_server` 往返成功，`memoryBackend: hermes` 时聊天记忆写进 Hermes 内置存储；`chatBackend: hermes`、`memoryBackend: hindsight` 时聊天与工作会话写入同一批 bank。切换 `memoryBackend` 后旧后端记忆不出现在新后端，界面在切换前给出说明。
+聊天与记忆提供方采用[平台验收](plugin-platform.md#12-实施与验收)和[外部执行体契约](hermes-integration.md)。每个提供方分别验证实际装载、标准调用、角色范围、生命周期唯一性、受理与提交状态、停用释放和数据保留。插件切换不自动搬迁数据，外部执行体还必须通过完整历史、实时审批、运行查询与真实取消验收。
 
 保活与强制不休眠：开启强制不休眠后让 Windows 空闲超过系统睡眠阈值，`powercfg /requests` 出现本程序的 `SYSTEM` 与 `DISPLAY` 请求且机器不睡眠；关闭设置后两条请求消失。托盘常驻下关闭窗口进程仍在、通知照常；选择退出后进程消失、通知停止。
 

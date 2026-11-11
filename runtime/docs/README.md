@@ -1,6 +1,6 @@
 # 文档总纲
 
-本文件是文档入口，规定权威顺序、事实基线、状态词表与进度台账。完整设计和后续实施使用[设计交付入口](<design-delivery.md>)；客户端直接浏览[完整设计稿](<ui-design/complete.html>)，字段行为与验收使用[完整规格](<client-complete-spec.md>)，跨组件契约使用[系统完成设计](<system-completion-design.md>)，委派使用[实施工作包](<implementation-work-packages.md>)。这些新增文件规定最终设计目标，现有验收状态继续按实际证据登记。
+本文件是文档入口，规定权威顺序、事实基线、状态词表与进度台账。平台职责、标准能力接口和提供方选择使用[插件平台架构](plugin-platform.md)，具体类型使用[接口附件](plugin-platform/contracts.ts)。客户端行为使用[完整规格](client-complete-spec.md)，设备通信和数据契约使用[系统完成设计](system-completion-design.md)，实施入口使用[设计交付](design-delivery.md)。实现程度继续按真实验收证据登记。
 
 文档不一致的根源有两个：同一事实在多份文档里各写一份，改一处漏一处；参考项目（`refer_repos/`）里的做法与结论被写进设计文档正文，读起来像本项目的现状。本文件用两条规则处理这两件事：事实只在指定的权威文档里定义一次，其余文档引用它；参考实现只能出现在“参考实现核验”一类段落里，并标明它是参考而非现状。
 
@@ -10,11 +10,13 @@
 
 | 事实类别 | 权威文档 | 说明 |
 |---|---|---|
+| 插件平台、标准能力、提供方选择和适配器职责 | [plugin-platform.md](plugin-platform.md) | 能力归属、绑定、生命周期、接口与 PA01–PA08，其他设计按此确定自建范围 |
 | 目标形态、形态差异与取舍 | [target-shape.md](target-shape.md) | 基础形态以此为准；完整系统契约和客户端细节由[系统完成设计](<system-completion-design.md>)与[完整交互规格](<client-complete-spec.md>)细化 |
 | 未完成系统能力的最终契约 | [system-completion-design.md](<system-completion-design.md>) | 协议、安全、迁移、数据连续、后端、资源预算与 AC-SYS01–08 |
+| 项目级 Super-Agent | [superagent/README.md](superagent/README.md) | 项目共享 Router、独立执行目录、接口、数据库、权限、Git 应用恢复与 SA01–SA09；当前为待实施设计 |
 | 插件与组合包契约、上游内部接口的事实 | [architecture.md](architecture.md) 第二、四节 | 每条都带源码证据路径 |
 | 部署组件、数据布局、必须第一天做对的接缝 | [deployment.md](deployment.md) | 存储后端与密码学约定以它为准 |
-| 聊天后端与记忆后端、bank 命名 | [hermes-integration.md](hermes-integration.md) | bank 名以代码 `banksFor` 为准，文档跟随代码 |
+| 聊天执行体与记忆提供方的接入 | [hermes-integration.md](hermes-integration.md) | 外部执行体桥接与插件记忆的职责，范围及生命周期使用平台架构 |
 | 桌面与移动端载体、推送与送达 | [desktop-mobile.md](desktop-mobile.md) | 移动端形态以 target-shape 1.1 节为准 |
 | 移动端接入协议 | [mobile-protocol.md](mobile-protocol.md) | 请求形状、认证顺序、事件折叠 |
 | 客户端模块分层与席位 | [client-modules.md](client-modules.md) | 席位名以上游行列表为准 |
@@ -164,7 +166,10 @@
 
 | 文档 | 职责 |
 |---|---|
+| [plugin-platform.md](plugin-platform.md) | DSH 插件集成、标准能力接口、提供方绑定、适配器目录与真实验收 |
+| [plugin-platform/contracts.ts](plugin-platform/contracts.ts) | 能力公共类型、记忆操作、提供方描述符与结果状态 |
 | [design-delivery.md](<design-delivery.md>) | 完整设计交付、阅读顺序与任务委派入口 |
+| [superagent/README.md](superagent/README.md) | Super-Agent 完整开发设计、类型与 SQL 附件、工作包和设计验证 |
 | [system-completion-design.md](<system-completion-design.md>) | 系统最终契约、协议、安全、数据、后端与运维验收 |
 | [client-complete-spec.md](<client-complete-spec.md>) | S01–S32 字段、流程、状态及跨场景验收 |
 | [implementation-work-packages.md](<implementation-work-packages.md>) | WP00–WP40、SYS01–SYS08 的依赖、范围与完成标准 |
@@ -173,7 +178,7 @@
 | [architecture.md](architecture.md) | 硬约束、已核验的事实基座、总体架构、包结构、profile、客户端形态、隔离与托管、会话模型、验收方式 |
 | [architecture-diagram.md](architecture-diagram.md) | 上述设计的图与次序 |
 | [deployment.md](deployment.md) | 部署组件、数据布局、第一天必须做对的接缝、资源占用 |
-| [hermes-integration.md](hermes-integration.md) | 聊天后端与记忆后端、四种组合、bank 命名、记忆召回 |
+| [hermes-integration.md](hermes-integration.md) | 外部执行体、标准记忆能力、原生生命周期与历史运行桥接 |
 | [desktop-mobile.md](desktop-mobile.md) | 桌面与移动端载体、发布与更新、推送与后台 |
 | [mobile.md](mobile.md) | 移动端接入现状与 PWA 改造边界 |
 | [mobile-protocol.md](mobile-protocol.md) | 移动端网络协议 |

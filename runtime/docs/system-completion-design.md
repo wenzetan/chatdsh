@@ -2,9 +2,11 @@
 
 ## 1. 契约范围与实施依据
 
-本文件定义尚未完成系统能力的最终目标。基础形态遵循[目标形态](<target-shape.md>)，客户端遵循[完整交互规格](<client-complete-spec.md>)，实现任务与完整验收采用[工作包](<implementation-work-packages.md>)的 SYS01–SYS08、WP00–WP40。设计交付不改变[实际验收状态](<acceptance.md>)。
+本文件定义设备通信、安全、数据连续与跨组件契约。平台能力归属、提供方适配、绑定与生命周期采用[插件平台架构](plugin-platform.md)，基础形态遵循[目标形态](target-shape.md)，客户端遵循[完整交互规格](client-complete-spec.md)。实现任务采用[工作包](implementation-work-packages.md)，设计交付不改变[实际验收状态](acceptance.md)。
 
 固定约束：单用户部署；每台执行设备一个运行时；会话 `deviceId/cwd` 创建后固定；设备日志为权威；控制平面保存只读副本；图形客户端每窗口一个活动设备 iframe；移动载体为 PWA。客户端离线仅保留草稿，恢复不自动发送。在线运行中的消息队列失联后暂停，用户确认后恢复。
+
+项目级 Super-Agent 的完整开发契约采用[专项设计](superagent/README.md)。其任务、人工决定与应用日志属于执行设备权威数据，控制平面持有只读视图。普通用户消息离线规则继续生效；已经受理的设备侧任务具有独立生命周期，客户端关闭不取消任务，宿主中断后的继续执行由用户决定。
 
 | 已核验实现 | 事实与目标差异 |
 |---|---|
@@ -12,7 +14,7 @@
 | [网关路由](<../gateway/src/server.ts>)、[WebSocket](<../gateway/src/websocket.ts>) | 当前设备前缀升级拒绝、帧处理为手写；目标采用成熟 ws 库 |
 | [存储](<../gateway/src/store.ts>) | 当前缺少版本迁移；副本最大序号不能证明连续；目标事务连续追加与迁移登记 |
 | [Hermes 客户端](<../../hermes-adapter/src/client.ts>)、[聊天宿主](<../packages/host/chat-hermes/src/index.ts>) | 当前只提交输入且批量回写事件；目标完整历史与即时事件、审批、取消统一运行接口 |
-| [记忆宿主](<../packages/host/memory/src/index.ts>)、[Hindsight 适配器](<../../hindsight-adapter/src/index.ts>) | 召回结构触发已经存在；目标持久写入 outbox 与稳定 operation_id |
+| [记忆宿主](../packages/host/memory/src/index.ts)、[Hindsight 适配器](../../hindsight-adapter/src/index.ts) | 现有自建召回与写入，目标由标准能力消费所选插件，原生操作能力分别验证 |
 | [自动化](<../gateway/src/automation.ts>)、[推送](<../gateway/src/push.ts>) | 目标补齐真实目标执行、持久投递状态、Web Push 与慢消费控制 |
 
 ## 2. 设备通信与执行路由
@@ -74,7 +76,7 @@ TOTP 密钥、可恢复服务凭据和备份密钥使用 AES-256-GCM 信封加�
 | device_generations / pairing_codes | deviceId/generation；令牌摘要与撤销状态；配对摘要、角色、期限、consumedAt |
 | replica_cursors / replica_outbox | sessionId/retentionGeneration；continuousSeq、digest；扫描范围与确认游标 |
 | run_inbox | runId/eventId；seq、payloadRef、appliedAt；仅已应用且已归档事件可回收 |
-| memory_outbox | operationId；sessionId、endSeq、bank、state、attempts、nextAttemptAt |
+| capability_operations | 设备侧 operationId；领域、提供方实例与版本、bindingRevision、requestDigest、nativeOperationId、state、resultRef；保留未确认结果 |
 | notification_outbox / subscriptions | 业务关联键/客户端；state、tag、expiresAt；加密端点与推送材料 |
 | backup_manifests / migration_jobs | jobId；schemaVersion、sourceDigest、targetDigest、checkpoint、state、manifestRef |
 
@@ -104,17 +106,17 @@ DSH 日志始终是 ChatDSH 历史权威。每次发给 Hermes 的运行都携�
 
 现有 Hermes API 的完整历史与运行控制组合尚无验证证据。SYS05 必须交付受维护的历史运行桥接部署产物，适配真实 Hermes 的运行管理与历史注入；禁止直接改写已安装运行文件。桥接先通过完整历史、即时审批、runId 查询与服务端取消四项集成门禁，才能启用 Hermes 聊天能力。能力不满足时配置验证失败，不能将仅返回最终文本的接口作为完整能力启用。
 
-运行事件先写入持久 inbox，再按单会话写者追加 DSH 日志并推进已应用游标。宿主重启从 inbox 和真实 run 查询恢复，防止已写日志后终止导致重复消息。服务端受理前确认不可达时，当前同一会话可由 DSH 执行；服务端已经受理或结果未知时进入 unconfirmed，查询原运行，禁止向 DSH 重放。停止请求必须终止同一 run 并取得终态，2 秒未确认显示停止未确认，继续查询且不宣称已停止。
+运行事件先写入持久 inbox，再按单会话写者追加 DSH 日志并推进已应用游标。宿主重启从 inbox 和真实 run 查询恢复，防止已写日志后终止导致重复消息。执行体不可达时返回明确错误，服务端已经受理或结果未知时进入 unconfirmed 并查询原运行。禁止自动更换执行体和重放请求。停止请求必须终止同一 run 并取得终态，2 秒未确认显示停止未确认，继续查询且不宣称已停止。
 
 首次 DSH 承载后保存持久 `historyMode=full`，fork 与恢复携带标记；后续每一轮 Hermes 均传完整历史，不能假设一次请求已经补入 Hermes 数据库。界面的本地执行标记读取执行来源元数据，不追加模型可见的解释消息。
 
 ## 7. 后端分派、记忆与自动化
 
-`chatBackend=dsh|hermes` 与 `memoryBackend=none|hindsight|hermes` 使用 revision 配置；hermes 记忆仅允许 Hermes 聊天组合。工作会话保持 DSH 执行。配置在新回合开始时取快照，进行中回合不变；默认 provider/model/preset 第一轮后固定。Hermes 可达判断只发生于发送准备阶段，不周期轮询。Hermes 可选外部服务或控制平面托管单实例，外部模式绝不启停服务进程。
+标准能力按设备、项目与会话绑定提供方，使用 revision。工作会话保持所属设备的 DSH 执行。每个回合和已受理任务保存实际提供方、适配器版本、配置摘要与范围映射快照，活动操作继续使用原快照。需要重启的插件显示等待重启，真实装载完成后才发布可用状态。默认 provider/model/preset 第一轮后固定。
 
-记忆在 step=1 或新增 user 输入时召回，作为带来源的 UserMessage 追加；相同稳定结果不重复注入。召回个人 bank `acct` 与工作区 bank `ws:<memoryGroupId>`，回合写入 `acct`。工作区显示名、绝对路径和稳定 memoryGroupId 独立，关联只修改映射，不删除既有记忆。查询仅保留页面内存。
+记忆的召回、写入与管理通过标准 `memory` 接口。原生插件负责抽取、存储和整理，平台适配器映射实际支持的操作和范围。自动召回与写入各自只有一个负责人，采用原生生命周期时不再生成平台摘要。普通会话与内部执行角色的隔离同时覆盖原生监听和后台任务，范围约束无法成立的组合不可启用。
 
-记忆写入采用持久 outbox，记录 operationId、sessionId、endSeq、bank、状态和尝试次数。先登记操作再调用后端，复用稳定 operation_id；成功后推进提交游标。受理结果未知先查询，禁止生成新标识重复写入。重试间隔 1、5、30、120、600 秒，此后每 30 分钟，最长 24 小时；仍失败转为废弃并保留脱敏原因供人工处理。召回超时 3 秒，失败显示降级，当前回合继续。
+平台操作记录保存原生关联标识和真实结果，不另建通用记忆抽取队列。原生幂等、取消和结果查询按操作分别声明，受理状态未知进入 unconfirmed。没有原生幂等能力时禁止自动重试。跨提供方切换不自动搬迁数据，共享依赖提供方的原生范围和同步能力。完整语义使用[标准记忆契约](plugin-platform.md#6-记忆标准接口)。
 
 webhook 自动化固定 deviceId/cwd/preset，使用事件标识唯一约束、签名时间窗 5 分钟和持久执行状态。状态为 received→validated→dispatching→accepted→completed/failed/unconfirmed。签名校验使用成熟密码学接口和常量时间比较，体积上限 1 MiB；目标离线立即失败，不建立用户消息离线重发任务。已经受理的运行只查询原结果，人工重试沿原事件幂等语义执行。
 
@@ -162,7 +164,7 @@ PWA Service Worker 只缓存版本化静态资源，禁止缓存私有 API、认
 | AC-SYS03 | 销毁独立测试源后仅凭备份隔离恢复并继续会话；损坏与密钥缺失明确失败 |
 | AC-SYS04 | 真实 Postgres 种子与恢复、跨进程唯一写者、flush 耐久、失租旧写入拒绝 |
 | AC-SYS05 | Hermes→DSH→Hermes 两轮均保留历史；运行结束前审批可决定；取消真正停止同一运行 |
-| AC-SYS06 | 合法组合热变更仅新回合生效；不可达接管与不确定禁止重放；外部进程不被托管关闭 |
+| AC-SYS06 | 合法提供方组合按声明热变更或等待重启，活动操作保持原绑定，生命周期唯一，不确定请求禁止重放，外部进程不被托管关闭 |
 | AC-SYS07 | TLS/mTLS、Origin、配对撤销、独立装卸、默认轻量组合和真实发行全部验证 |
 | AC-SYS08 | 本节固定预算与性能门槛、慢消费、超限、资源回收和用户实例隔离全部通过 |
 
@@ -174,7 +176,7 @@ PWA Service Worker 只缓存版本化静态资源，禁止缓存私有 API、认
 |---|---|
 | [目标形态](<target-shape.md>)第四、十一、十二节 | 完整历史、运行期分派、未完成能力门禁 |
 | [部署](<deployment.md>)第一、三、五节 | 可选外部 Hermes、安全绑定、迁移和恢复 |
-| [Hermes 接入](<hermes-integration.md>)第二至七节 | 历史权威、实时审批取消、持久记忆写入 |
+| [执行体与记忆接入](hermes-integration.md) | 历史权威、实时审批取消与插件能力归属 |
 | [移动协议](<mobile-protocol.md>)第一、四节 | 浏览器认证、短期 ticket、只保留离线草稿 |
 | [客户端模块](<client-modules.md>)移动与命令行章节 | PWA 同源外壳、单 iframe、CLI 本机范围 |
 | [桌面移动载体](<desktop-mobile.md>)配对、离线与电源章节 | 统一配对、草稿、设备本地电源与窗口安全 |

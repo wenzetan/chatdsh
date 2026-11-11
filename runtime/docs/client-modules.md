@@ -22,7 +22,7 @@ flowchart TB
 
 - React 基础组件库是零 cordis 的纯 React 包，被 `ui-*` 插件引用。
 - 基础插件是每一端都需要的运行时骨架，没有对应业务语义。
-- 数据层把宿主能力做成 Remote 通道，客户端只通过这些通道读写。
+- 数据层通过领域 Remote 调用[标准能力接口](plugin-platform.md)，保持范围、绑定版本和实际提供方来源。插件原生扩展使用明确登记的入口。
 - 内容层是与对话直接相关的界面。Web、移动端、桌面渲染进程全部复用 `dsh-client-ui-*`；命令行在 `dsh-tui` 贡献点里重建。
 - 业务层承载 ChatDSH 自建能力，Web、移动端、桌面通过 `client-*` 插件接入既有席位。
 - 原生层只承担该端独有的能力，不进 Web 与移动端。
@@ -105,7 +105,7 @@ Web 端的界面外壳与内容界面由以下模块提供，ChatDSH 直接复�
 |---|---|---|
 | `@chatdsh/client-projects` | `sidebar.panellist`（`list`） | 项目列表、标题与指令表单、模型默认值 |
 | `@chatdsh/client-artifacts` | `settings.section`（`list`） | 制品列表、版本选择、制品文件预览 |
-| `@chatdsh/client-memory` | `settings.section`（`list`） | bank 浏览、检索、关联工作区、废弃项目上报；`memoryBackend` 为 `none` 时只显示启用入口 |
+| `@chatdsh/client-memory` | `settings.section`（`list`） | 提供方选择、实际操作、范围映射、检索来源与写入回执，未配置时显示选择入口 |
 | `@chatdsh/client-assistants` | `settings.section`（`list`） | 助手目录、preset 声明编辑 |
 | `@chatdsh/client-connectors` | `settings.section`（`list`） | MCP 服务器条目、凭据录入与授权 |
 | `@chatdsh/client-account` | `settings.section`（`list`） | 设备列表与在线状态 |

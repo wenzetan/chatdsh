@@ -5,7 +5,17 @@ from markdown_it import MarkdownIt
 
 root = Path(__file__).resolve().parents[2]
 docs = root / 'runtime' / 'docs'
-names = ['design-delivery.md', 'client-complete-spec.md', 'system-completion-design.md', 'implementation-work-packages.md', 'design-verification.md']
+names = [
+    '../../README.md', 'README.md', 'plugin-platform.md',
+    'architecture.md', 'architecture-diagram.md', 'target-shape.md',
+    'hermes-integration.md', 'deployment.md', 'compatibility.md',
+    'client-modules.md', 'desktop-mobile.md', 'next-steps.md',
+    'telemetry.md', 'ui-feature-inventory.md', 'design-delivery.md',
+    'client-complete-spec.md', 'system-completion-design.md',
+    'implementation-work-packages.md', 'design-verification.md',
+    'superagent/README.md', 'superagent/architecture.md',
+    'superagent/implementation.md',
+]
 parser = MarkdownIt()
 links = []
 failures = []
