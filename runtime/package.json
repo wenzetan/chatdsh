@@ -49,6 +49,8 @@
     "verify:device-link": "node scripts/verify-device-link.mjs",
     "profiles:sync": "node scripts/sync-profiles.mjs",
     "check:surface": "node scripts/check-upstream-surface.mjs",
+    "check:refer-repos": "node scripts/check-refer-repos.mjs",
+    "clone:refer-repos": "node scripts/clone-refer-repos.mjs",
     "upgrade:dsh": "node scripts/upgrade-dsh.mjs",
     "verify:provider-chat": "node scripts/verify-provider-chat.mjs",
     "package:desktop:win": "node scripts/build-desktop-windows.mjs",

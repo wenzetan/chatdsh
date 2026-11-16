@@ -41,6 +41,8 @@
 
 下表是本项目已知的对应关系，作为检索起点用，不是白名单。它记录的是到目前为止已经核验过、确实对本项目某个模块有过参考价值的项目与切入点。
 
+清单的完整登记（目录名、上游地址、分支、固定提交）在根 [`README.md`](../../README.md) 的参考项目一节与 [`runtime/refer-repos.json`](../refer-repos.json)，取源码用 `node runtime/scripts/clone-refer-repos.mjs`。
+
 | 模块 | 首选参考项目 | 可以核对什么 |
 |---|---|---|
 | Electron 桌面壳的构建与补丁 | `dataelement_dsh-desktop` | 补丁流程、原生能力落点、安装器、权限处理 |
@@ -50,6 +52,8 @@
 | 客户端插件独立打包 | `saya-ch_dsh-mobile` | 浏览器侧作为独立 npm 包发布的产物形态 |
 | 轻量客户端形态 | `shaobeichen_dsh-pocket` | 轻量客户端的反向代理与插槽注册 |
 | 移动端打包流程 | `kelai141_dsh-mobile-apk` | 把运行时装进设备的打包做法 |
+| Android 宿主侧运行引擎 | `dsh-Go` | 手机内安装运行环境、远程连接、插件界面 SDK 与工具卡 |
+| 远程接入与多客户端并发 | `ds-harness-remote` | 主机常驻引擎的远程窗口、按连接隔离的 RPC 与流、端到端加密通道 |
 | 多包仓库组织与单工具多操作面 | `ZCode` | 仓库组织、工具目录收敛 |
 | 逆向分析工具（对照检索） | `rea_workbuddy` | 与本项目无直接设计关系，仅供对照 |
 

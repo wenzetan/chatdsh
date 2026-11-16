@@ -1,0 +1,103 @@
+{
+  "rootDirectory": "refer_repos",
+  "repositories": [
+    {
+      "directory": "dataelement_dsh-desktop",
+      "url": "https://github.com/dataelement/dsh-desktop.git",
+      "branch": "main",
+      "commit": "bc732f5dc4c5465915d5b3f28d9b0b32703fc664",
+      "commitDate": "2026-10-16T16:04:20+08:00",
+      "module": "Electron 桌面壳的构建与补丁",
+      "purpose": "补丁流程、原生能力落点、安装器、权限处理"
+    },
+    {
+      "directory": "anywhere-labs_dsh-desktop",
+      "url": "https://github.com/anywhere-labs/dsh-desktop.git",
+      "branch": "master",
+      "commit": "6a63b9730b82cf4e858b9a11ac9783da9a5a0c3a",
+      "commitDate": "2026-10-18T01:48:51+08:00",
+      "module": "Electron 桌面壳的多包组织",
+      "purpose": "工作区组织、补丁格式、更新通道"
+    },
+    {
+      "directory": "Clarklevis1995_dsh-mobile",
+      "url": "https://github.com/Clarklevis1995/dsh-mobile.git",
+      "branch": "main",
+      "commit": "70b60b7f0b0e75d87554a77d4892203484c6591e",
+      "commitDate": "2026-10-16T17:58:33+08:00",
+      "module": "移动端客户端形态",
+      "purpose": "客户端与内核的职责划分、协议解码与事件折叠"
+    },
+    {
+      "directory": "Clarklevis1995_dsh-plugin-mobile-gateway",
+      "url": "https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway.git",
+      "branch": "main",
+      "commit": "58878f5612aa3f0bf05e8c4a409e5ffa67b5a265",
+      "commitDate": "2026-10-26T17:45:28+08:00",
+      "module": "移动网关插件接入",
+      "purpose": "移动网关的插件挂载方式"
+    },
+    {
+      "directory": "saya-ch_dsh-mobile",
+      "url": "https://github.com/saya-ch/dsh-mobile.git",
+      "branch": "main",
+      "commit": "0efceeb9c5698e854e9d1e227a93bf393e69effa",
+      "commitDate": "2026-10-18T13:25:54+08:00",
+      "module": "客户端插件独立打包",
+      "purpose": "浏览器侧作为独立 npm 包发布的产物形态"
+    },
+    {
+      "directory": "shaobeichen_dsh-pocket",
+      "url": "https://github.com/shaobeichen/dsh-pocket.git",
+      "branch": "main",
+      "commit": "aee3ae7e97516206049394c7a37dc38778ffb6da",
+      "commitDate": "2026-10-17T09:48:37+00:00",
+      "module": "轻量客户端形态",
+      "purpose": "轻量客户端的反向代理与插槽注册"
+    },
+    {
+      "directory": "kelai141_dsh-mobile-apk",
+      "url": "https://github.com/kelai141/dsh-mobile-apk.git",
+      "branch": "main",
+      "commit": "18439f1b8cb96f7d4d9b8508bdb02aa2695143a3",
+      "commitDate": "2026-10-18T21:00:09+08:00",
+      "module": "移动端打包流程",
+      "purpose": "把运行时装进设备的打包做法"
+    },
+    {
+      "directory": "dsh-Go",
+      "url": "https://github.com/ccch1mneyyy/dsh-Go.git",
+      "branch": "main",
+      "commit": "8be2d028652dfede17b8a8f3df5fa706a1feb403",
+      "commitDate": "2026-11-06T10:20:11+08:00",
+      "module": "Android 宿主侧运行引擎",
+      "purpose": "手机内安装运行环境、远程连接、插件界面 SDK 与工具卡"
+    },
+    {
+      "directory": "ds-harness-remote",
+      "url": "https://github.com/liguobao/ds-harness-remote.git",
+      "branch": "main",
+      "commit": "6432fb9be2e8e350f97bee334e8541c829698180",
+      "commitDate": "2026-11-06T02:13:42+08:00",
+      "module": "远程接入与多客户端并发",
+      "purpose": "主机常驻引擎的远程窗口、按连接隔离的 RPC 与流、端到端加密通道"
+    },
+    {
+      "directory": "ZCode",
+      "url": "https://github.com/zai-org/ZCode.git",
+      "branch": "main",
+      "commit": "0a1fc56d279fd1001f78387bd81aec1c26767411",
+      "commitDate": "2026-10-19T10:34:55+08:00",
+      "module": "多包仓库组织与单工具多操作面",
+      "purpose": "仓库组织、工具目录收敛"
+    }
+  ],
+  "manual": [
+    {
+      "directory": "rea_workbuddy",
+      "module": "逆向分析材料（对照检索）",
+      "purpose": "客户端的协议、认证与加密对照材料",
+      "note": "本地快照，无 Git 元数据，约 3.1 GB，不在任何远端。按本目录 README.md 的说明人工放入，脚本跳过。"
+    }
+  ]
+}

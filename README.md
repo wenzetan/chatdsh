@@ -54,16 +54,26 @@
 - [bytecodealliance/cap-std](https://github.com/bytecodealliance/cap-std) —— 受信任文件辅助程序的目录访问依赖，用于成果封存和应用时的路径权限约束。
 - [Git merge-tree 官方文档](https://git-scm.com/docs/git-merge-tree/2.43.0) —— 审阅候选采用显式基准的原生树合并，覆盖依赖、重命名与用户未提交修改。
 
-`refer_repos/` 下的项目是开发过程中的参考实现，本地共 9 个快照。其中对程序设计产生过正面作用的有：
+`refer_repos/` 下的项目是开发过程中的参考实现，共 11 个目录，不纳入本项目的版本管理。每个仓库固定在一个提交上，登记处是 [`runtime/refer-repos.json`](runtime/refer-repos.json)，取源码用：
 
-- [Clarklevis1995/dsh-mobile](refer_repos/Clarklevis1995_dsh-mobile) —— 移动端形态的实现参考，客户端与内核之间的职责划分参考自此。
-- [Clarklevis1995/dsh-plugin-mobile-gateway](refer_repos/Clarklevis1995_dsh-plugin-mobile-gateway) —— 移动网关插件的接入方式参考。
-- [saya-ch/dsh-mobile](refer_repos/saya-ch_dsh-mobile) —— 浏览器侧作为独立 npm 包发布的做法，客户端插件的产物形态参考自此。
-- [dataelement/dsh-desktop](refer_repos/dataelement_dsh-desktop) —— Electron 桌面端的构建与补丁流程参考自此。
-- [anywhere-labs/dsh-desktop](refer_repos/anywhere-labs_dsh-desktop) —— 桌面端的多包工作区组织方式参考自此。
-- [shaobeichen/dsh-pocket](refer_repos/shaobeichen_dsh-pocket) —— 轻量客户端的形态参考。
-- [kelai141/dsh-mobile-apk](refer_repos/kelai141_dsh-mobile-apk) —— 移动端打包流程参考。
-- [ZCode](refer_repos/ZCode) —— 多包仓库的组织方式参考。
-- [rea_workbuddy](refer_repos/rea_workbuddy) —— 逆向分析工具的本地快照，供对照检索。
+```sh
+node runtime/scripts/clone-refer-repos.mjs               # 取清单里的全部仓库
+node runtime/scripts/clone-refer-repos.mjs --only ZCode  # 只取指定的
+node runtime/scripts/clone-refer-repos.mjs --list        # 只打印清单
+```
 
-这些仓库保留在本地供检索，不纳入本项目的版本管理。设计结论以 `runtime/docs/` 为准，参考实现只用于核验取舍。
+| 目录 | 上游 | 作用 |
+|---|---|---|
+| `dataelement_dsh-desktop` | [dataelement/dsh-desktop](https://github.com/dataelement/dsh-desktop) | Electron 桌面端的构建与补丁流程 |
+| `anywhere-labs_dsh-desktop` | [anywhere-labs/dsh-desktop](https://github.com/anywhere-labs/dsh-desktop) | 桌面端的多包工作区组织方式 |
+| `Clarklevis1995_dsh-mobile` | [Clarklevis1995/dsh-mobile](https://github.com/Clarklevis1995/dsh-mobile) | 客户端与内核之间的职责划分 |
+| `Clarklevis1995_dsh-plugin-mobile-gateway` | [Clarklevis1995/dsh-plugin-mobile-gateway](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway) | 移动网关插件的接入方式 |
+| `saya-ch_dsh-mobile` | [saya-ch/dsh-mobile](https://github.com/saya-ch/dsh-mobile) | 浏览器侧作为独立 npm 包发布的产物形态 |
+| `shaobeichen_dsh-pocket` | [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) | 轻量客户端的反向代理与插槽注册 |
+| `kelai141_dsh-mobile-apk` | [kelai141/dsh-mobile-apk](https://github.com/kelai141/dsh-mobile-apk) | 把运行时装进设备的打包流程 |
+| `dsh-Go` | [ccch1mneyyy/dsh-Go](https://github.com/ccch1mneyyy/dsh-Go) | 手机内安装运行环境、远程连接、插件界面 SDK 与工具卡 |
+| `ds-harness-remote` | [liguobao/ds-harness-remote](https://github.com/liguobao/ds-harness-remote) | 主机常驻引擎的远程窗口、按连接隔离的 RPC 与流、端到端加密通道 |
+| `ZCode` | [zai-org/ZCode](https://github.com/zai-org/ZCode) | 多包仓库的组织方式与工具目录收敛 |
+| `rea_workbuddy` | 无远端 | WorkBuddy 客户端的协议、认证与加密对照材料，本地快照，需人工放入 |
+
+这些仓库保留在本地供检索。设计结论以 `runtime/docs/` 为准，参考实现只用于核验取舍。

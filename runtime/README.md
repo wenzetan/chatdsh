@@ -91,6 +91,7 @@ node scripts/check-telemetry.mjs           # 包内遥测声明、源码与文�
 node scripts/check-profile-deps.mjs        # profile 的依赖覆盖它引用的组合包插入的全部自建插件
 node scripts/check-plugin-contract.mjs     # 四类清单声明：engines.dsh、dsh.client、dsh.bundle.patch、dsh.profile.bundles
 node scripts/check-upstream-names.mjs       # 源码、补丁层与客户端清单里的上游包名都在适配层登记过
+node scripts/check-refer-repos.mjs          # 根 README 的参考项目表与 runtime/refer-repos.json 一致，本机已取的仓库停在登记的提交
 node --test 'e2e/unit/*.test.mjs'          # 单元测试：协议构造、呈现格式化、启动编排、真实外部服务
 node scripts/verify-client-asset.mjs --profile chatdsh-web --package @chatdsh/client-projects
 node scripts/telemetry-probe.mjs            # 向本机 OpenObserve 写日志、追踪、指标各一条再查询核对，需 OO_USER 与 OO_PASS
