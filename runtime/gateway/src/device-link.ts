@@ -200,6 +200,7 @@ export type DeviceFrameV2 =
     readonly role: NodeRole;
     readonly capabilities: readonly string[];
   }
+  | { readonly type: 'ping'; readonly generation: number; readonly nonce: string }
   | { readonly type: 'pong'; readonly generation: number; readonly nonce?: string }
   | {
     readonly type: 'accepted';
@@ -254,7 +255,8 @@ export type ControlFrameV2 =
   | { readonly type: 'end'; readonly channelId: string; readonly generation: number; readonly lastSeq: number }
   | { readonly type: 'cancel'; readonly channelId: string; readonly generation: number; readonly reason: string }
   | { readonly type: 'reset'; readonly channelId: string; readonly generation: number; readonly code: string }
-  | { readonly type: 'ping'; readonly generation: number; readonly nonce: string };
+  | { readonly type: 'ping'; readonly generation: number; readonly nonce: string }
+  | { readonly type: 'pong'; readonly generation: number; readonly nonce?: string };
 
 /** 一次转发的请求。 */
 export interface DeviceRequest {
@@ -310,6 +312,28 @@ export type DeviceLinkErrorCode =
   | 'device-buffer-exceeded'
   | 'device-handshake-failed'
   | 'device-upgrade-rejected';
+
+/** 一次按设备升级的结果；供路由层写 span 与指标。 */
+export type DeviceUpgradeOutcome =
+  | 'upgraded'
+  | 'device-offline'
+  | 'path-invalid'
+  | 'device-not-found'
+  | 'device-revoked'
+  | 'handshake-invalid'
+  | 'upgrade-rejected';
+
+/** 一次按设备升级的完整结果。 */
+export interface DeviceUpgradeResult {
+  /** 稳定的结果枚举。 */
+  readonly outcome: DeviceUpgradeOutcome;
+  /** 回给浏览器的状态码；成功时为 101。 */
+  readonly status: number;
+  /** 稳定的错误码；成功时为 `upgraded`。 */
+  readonly code: string;
+  /** 失败类别的稳定枚举。 */
+  readonly errorType?: 'auth' | 'request' | 'protocol' | 'link' | 'upgrade';
+}
 
 /** 长连接失败。转发方按 `code` 决定回给客户端的状态码。 */
 export class DeviceLinkError extends Error {
@@ -595,6 +619,11 @@ export class DeviceChannel {
     return this.finishedDeferred.promise;
   }
 
+  /** 设备是否已经发送半关闭。 */
+  get deviceEnded(): boolean {
+    return this.remoteEnded;
+  }
+
   /** 订阅数据段；处理函数结算之后才给设备补充额度。 */
   onChunk(handler: (chunk: Buffer, eventId: string | undefined) => void | Promise<void>): void {
     this.chunkHandler = handler;
@@ -700,10 +729,12 @@ export class DeviceChannel {
       return;
     }
     if (this.chunkHandler === undefined) {
-      if (this.kind === 'http' || this.kind === 'events') {
-        this.buffered.push(payload);
-        this.bufferedBytes += bytes;
+      if (this.kind !== 'websocket' && this.bufferedBytes + bytes > MAX_BUFFERED_RESPONSE_BYTES) {
+        this.hub.terminateChannel(this, 'response-too-large');
+        return;
       }
+      this.buffered.push(payload);
+      this.bufferedBytes += bytes;
       this.grantCredit(bytes);
       return;
     }
@@ -790,7 +821,8 @@ export class DeviceChannel {
 
   /** 接收设备的响应头。 */
   receiveAccepted(frame: Extract<DeviceFrameV2, { type: 'accepted' }>): void {
-    if (this.state !== 'opening') {
+    // 请求体可以在响应头之前发完，此时通道已经半关闭，响应头仍然有效。
+    if (this.state !== 'opening' && this.state !== 'half-closed') {
       this.hub.terminateChannel(this, 'channel-unknown');
       return;
     }
@@ -1025,34 +1057,34 @@ export class DeviceLinkHub {
    * @param socket - 升级后的套接字。
    * @param head - 升级请求里已经读出的首段字节。
    */
-  handleDeviceUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
+  async handleDeviceUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<DeviceUpgradeResult> {
     const resolved = resolveDeviceResourcePath(request.url ?? '');
     if (!resolved.ok) {
-      this.reject(socket, 400, resolved.code, 'upgrade');
-      return;
+      this.reject(socket, 400, resolved.code, 'upgrade', 'request');
+      return { outcome: 'path-invalid', status: 400, code: resolved.code, errorType: 'request' };
     }
     const pathOnly = resolved.path.split('?')[0] ?? '';
     if (!DEVICE_UPGRADE_PATHS.includes(pathOnly)) {
-      this.reject(socket, 403, 'device-upgrade-path-rejected', 'upgrade');
-      return;
+      this.reject(socket, 403, 'path-invalid', 'upgrade', 'request');
+      return { outcome: 'path-invalid', status: 403, code: 'path-invalid', errorType: 'request' };
     }
     const record = this.store.nodeById(resolved.deviceId);
     if (record === undefined) {
-      this.reject(socket, 404, 'device-not-found', 'upgrade');
-      return;
+      this.reject(socket, 404, 'device-not-found', 'upgrade', 'request');
+      return { outcome: 'device-not-found', status: 404, code: 'device-not-found', errorType: 'request' };
     }
     if (this.revoked.has(record.id)) {
-      this.reject(socket, 401, 'device-revoked', 'upgrade');
-      return;
+      this.reject(socket, 401, 'device-revoked', 'upgrade', 'auth');
+      return { outcome: 'device-revoked', status: 401, code: 'device-revoked', errorType: 'auth' };
     }
     const link = this.links.get(record.id);
     if (link === undefined) {
-      this.reject(socket, 503, 'device-offline', 'upgrade');
-      return;
+      this.reject(socket, 409, 'device-offline', 'upgrade', 'link');
+      return { outcome: 'device-offline', status: 409, code: 'device-offline', errorType: 'link' };
     }
     if (!websocketVersionSupported(request) || typeof request.headers['sec-websocket-key'] !== 'string') {
-      this.reject(socket, 400, 'handshake-invalid', 'upgrade');
-      return;
+      this.reject(socket, 400, 'handshake-invalid', 'upgrade', 'protocol');
+      return { outcome: 'handshake-invalid', status: 400, code: 'handshake-invalid', errorType: 'protocol' };
     }
     const headers: Record<string, string> = {};
     for (const [key, value] of Object.entries(request.headers)) {
@@ -1068,10 +1100,14 @@ export class DeviceLinkHub {
     try {
       channel = this.openChannelOn(link, { kind: 'websocket', method: 'GET', path: resolved.path, headers });
     } catch (error) {
-      this.reject(socket, 502, error instanceof DeviceLinkError ? error.code : 'device-upgrade-rejected', 'upgrade');
-      return;
+      const code = error instanceof DeviceLinkError ? error.code : 'device-upgrade-rejected';
+      this.reject(socket, 502, code, 'upgrade', 'upgrade');
+      return { outcome: 'upgrade-rejected', status: 502, code, errorType: 'upgrade' };
     }
-    void this.bridgeUpgrade(channel, socket, head);
+    const outcome = await this.bridgeUpgrade(channel, socket, head);
+    return outcome === 'upgraded'
+      ? { outcome: 'upgraded', status: 101, code: 'upgraded' }
+      : { outcome: 'upgrade-rejected', status: 502, code: 'upgrade-rejected', errorType: 'upgrade' };
   }
 
   /**
@@ -1131,9 +1167,10 @@ export class DeviceLinkHub {
       this.terminateChannel(channel, 'request-timeout');
     });
     try {
-      const accepted = await channel.accepted();
+      // 请求体先于响应头发送：读取请求体后才回响应头的处理器不能被顺序卡死。
       if (request.body !== undefined && request.body.length > 0) await channel.send(request.body);
       channel.sendEnd();
+      const accepted = await channel.accepted();
       await channel.finished();
       const response: DeviceResponse = {
         status: accepted.status,
@@ -1304,6 +1341,20 @@ export class DeviceLinkHub {
     if (frame.type === 'pong') {
       link.lastPongAt = Date.now();
       this.store.touchNode(link.record.id);
+      return;
+    }
+    if (frame.type === 'ping') {
+      if (link.protocol !== PROTOCOL_VERSION) {
+        this.violation(link, 'frame-unknown');
+        return;
+      }
+      if (frame.generation !== link.generation || typeof frame.nonce !== 'string') {
+        this.violation(link, 'frame-invalid');
+        return;
+      }
+      link.lastPongAt = Date.now();
+      this.store.touchNode(link.record.id);
+      this.writeFrame(link, { type: 'pong', generation: link.generation, nonce: frame.nonce }, undefined, true);
       return;
     }
     if (link.protocol !== PROTOCOL_VERSION) {
@@ -1523,14 +1574,13 @@ export class DeviceLinkHub {
   }
 
   /** 把升级后的浏览器套接字接到通道上。 */
-  private async bridgeUpgrade(channel: DeviceChannel, socket: Duplex, head: Buffer): Promise<void> {
+  private async bridgeUpgrade(channel: DeviceChannel, socket: Duplex, head: Buffer): Promise<'upgraded' | 'upgrade-rejected'> {
     let accepted: ChannelAcceptance;
     try {
       accepted = await channel.accepted();
-    } catch (error) {
-      const code = error instanceof DeviceLinkError ? error.channelCode ?? error.code : 'device-upgrade-rejected';
-      this.reject(socket, 502, code, 'upgrade');
-      return;
+    } catch {
+      this.reject(socket, 502, 'upgrade-rejected', 'upgrade', 'upgrade');
+      return 'upgrade-rejected';
     }
     const lines = ['HTTP/1.1 101 Switching Protocols'];
     for (const [key, value] of Object.entries(accepted.headers)) {
@@ -1564,11 +1614,23 @@ export class DeviceLinkHub {
       socket.once('close', settle);
     }));
     channel.onEnd(() => socket.end());
+    const buffered = channel.takeBuffered();
+    if (buffered.length > 0 && !socket.destroyed) socket.write(buffered);
+    if (channel.deviceEnded && !socket.destroyed) socket.end();
     channel.finished().then(() => {
       if (!socket.destroyed) socket.destroy();
     }, () => {
       if (!socket.destroyed) socket.destroy();
     });
+    socket.on('close', () => channel.cancel('client-closed'));
+    socket.on('error', () => channel.cancel('client-error'));
+    if (head.length > 0) {
+      try {
+        await channel.send(head);
+      } catch {
+        return 'upgraded';
+      }
+    }
     let pendingBytes = 0;
     socket.on('data', (chunk: Buffer) => {
       pendingBytes += chunk.length;
@@ -1578,9 +1640,7 @@ export class DeviceLinkHub {
         if (pendingBytes <= this.limits.sendBufferBytes / 2 && !socket.destroyed) socket.resume();
       }, () => undefined);
     });
-    socket.on('close', () => channel.cancel('client-closed'));
-    socket.on('error', () => channel.cancel('client-error'));
-    if (head.length > 0) await channel.send(head);
+    return 'upgraded';
   }
 
   /** 协议违规：写一条事件；累计到上限则从在线表移除并断开。 */
@@ -1643,11 +1703,17 @@ export class DeviceLinkHub {
   }
 
   /** 握手阶段拒绝一次升级。 */
-  private reject(socket: Duplex, status: number, code: string, action = 'link'): void {
+  private reject(
+    socket: Duplex,
+    status: number,
+    code: string,
+    action = 'link',
+    errorType: 'auth' | 'request' | 'protocol' | 'link' | 'upgrade' = status === 401 ? 'auth' : 'protocol',
+  ): void {
     this.telemetry.event('chatdsh.gateway.device.rejected', {
       action,
       outcome: 'rejected',
-      'error.type': status === 401 ? 'auth' : 'protocol',
+      'error.type': errorType,
       'error.code': code,
     });
     this.telemetry.counter('chatdsh_gateway_device_links_total', { description: '设备长连接生命周期' })

@@ -154,7 +154,7 @@ export function encodeServerTextFrame(payload: string): Buffer {
 /** 拒绝一次升级，回一个最小的 HTTP 响应后关闭套接字。 */
 export function rejectUpgrade(socket: Duplex, status: number, code: string): void {
   const body = JSON.stringify({ error: code });
-  const reason = status === 401 ? 'Unauthorized' : status === 403 ? 'Forbidden' : 'Bad Request';
+  const reason = STATUS_REASONS[status] ?? 'Bad Request';
   socket.write(
     `HTTP/1.1 ${status} ${reason}\r\n` +
     'Content-Type: application/json; charset=utf-8\r\n' +
@@ -164,6 +164,17 @@ export function rejectUpgrade(socket: Duplex, status: number, code: string): voi
   );
   socket.destroy();
 }
+
+/** 升级拒绝用到的状态短语；未列出的按 400 处理。 */
+const STATUS_REASONS: Readonly<Record<number, string>> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  409: 'Conflict',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+};
 
 /** 一帧解析结果。 */
 interface ParsedFrame {

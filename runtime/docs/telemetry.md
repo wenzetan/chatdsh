@@ -120,7 +120,7 @@ flowchart TB
 |---|---|---|---|
 | span | `chatdsh.runtime.device.link` | 设备出站长连接生命周期 | `outcome` |
 | span | `chatdsh.runtime.device.forward` | 将中继转发请求交给本地运行时 | `method`、`http.status_code`、`outcome`、`error.type`、`error.code` |
-| event | `chatdsh.runtime.device.rejected` | 设备出站长连接拒绝或协议违规 | `outcome`、`error.type`、`error.code` |
+| event | `chatdsh.runtime.device.rejected` | 设备出站长连接拒绝或协议违规 | `action`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.runtime.device.forward.failed` | 转发到本地运行时失败 | `outcome`、`error.type`、`error.code` |
 | metric | `chatdsh_runtime_device_links_total` | 设备长连接结果计数 | `outcome` |
 | metric | `chatdsh_runtime_device_forwards_total` | 本地转发结果计数 | `outcome` |

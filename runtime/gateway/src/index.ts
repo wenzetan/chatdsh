@@ -38,6 +38,8 @@ export { DeviceLinkError, DeviceLinkHub, DEVICE_LINK_PATH } from './device-link.
 export type {
   ControlFrame,
   DeviceFrame,
+  DeviceUpgradeOutcome,
+  DeviceUpgradeResult,
   DeviceLinkErrorCode,
   DeviceLinkOptions,
   DeviceRequest,
