@@ -10,6 +10,7 @@
 |---|---|---|
 | 总体架构、插件形态、中继职责与边界 | [architecture.md](architecture.md) | 纯附加 `@chatdsh/bundle`、Web 与 Desktop 共用机制、轻量中继与 PWA 边界 |
 | 面向执行者的实现说明与工作包交付 | [implementation-guide.md](implementation-guide.md) | P01–P06 工作包的范围、文件清单、接口契约、遥测接入与验收命令 |
+| 合入前修复交接清单（R01–R03） | [repair-handoff.md](repair-handoff.md) | 同源中继代理、遥测可选依赖、副本压缩标记与 `pwa-view.ts` 双形状同步的精确修复契约与验收命令 |
 | 遥测信号清单、上下文传播与关闭开关 | [telemetry.md](telemetry.md) | 第六节信号清单与 `check-telemetry.mjs` 构建检查一一比对 |
 | 上游 DSH 版本基线与升级验证步骤 | [compatibility.md](compatibility.md) | 依赖版本策略、真实官方 profile 安装验证与升级流程 |
 | 单机与家庭服务器部署、环境变量、备份与升级 | [deployment.md](deployment.md) | 中继启动、设备配对、反向代理与 TLS、VAPID、遥测开关、数据目录与 DSH 升级步骤 |
