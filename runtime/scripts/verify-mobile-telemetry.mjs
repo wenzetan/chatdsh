@@ -44,6 +44,7 @@ const gateway = spawn(nodeRuntime(), [join(ROOT, 'gateway', 'lib', 'main.js')], 
   cwd: ROOT,
   env: {
     ...process.env,
+    DSH_HOME: HOME,
     // 遥测只有配好采集目标才会启用；端点据此决定是转发还是回 404。
     CHATDSH_TELEMETRY_ENDPOINT: `http://127.0.0.1:${OTLP_PORT}`,
     CHATDSH_TELEMETRY_ORG: 'verify',

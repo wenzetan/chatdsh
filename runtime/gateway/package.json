@@ -36,7 +36,8 @@
         "chatdsh.gateway.push.failed",
         "chatdsh.gateway.push.withdrawn",
         "chatdsh.gateway.push.subscription.expired",
-        "chatdsh.gateway.notification.rejected"
+        "chatdsh.gateway.notification.rejected",
+        "chatdsh.gateway.browser.telemetry.rejected"
       ],
       "spans": [
         "chatdsh.gateway.http",
@@ -61,6 +62,7 @@
         "chatdsh.gateway.notification.settings",
         "chatdsh.gateway.notification.subscription",
         "chatdsh.gateway.notification.probe",
+        "chatdsh.gateway.browser.telemetry",
         "chatdsh.push.dispatch",
         "chatdsh.push.send",
         "chatdsh.gateway.push.deliver"
@@ -84,7 +86,8 @@
         "chatdsh_gateway_device_plugins_total",
         "chatdsh_gateway_ownership_writes_total",
         "chatdsh_gateway_settings_writes_total",
-        "chatdsh_gateway_client_requests_total"
+        "chatdsh_gateway_client_requests_total",
+        "chatdsh_gateway_browser_telemetry_batches_total"
       ]
     }
   },

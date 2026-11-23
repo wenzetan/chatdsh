@@ -341,7 +341,10 @@ export function decodeCursor(cursor: string): { createdAt: number; id: string } 
  * 兜底填充：查不到就是查不到。
  */
 export class NotificationStore {
-  constructor(private readonly database: DatabaseSync) {
+  constructor(
+    private readonly database: DatabaseSync,
+    private readonly defaults: NotificationSettings & { readonly privacy: NotificationPrivacyLevel } = DEFAULT_NOTIFICATION_SETTINGS,
+  ) {
     this.database.exec(`
       create table if not exists notifications (
         id text primary key,
@@ -654,7 +657,7 @@ export class NotificationStore {
       revision: number;
       updated_at: number;
     } | undefined;
-    if (row === undefined) return { ...DEFAULT_NOTIFICATION_SETTINGS, revision: 0, updatedAt: 0 };
+    if (row === undefined) return { ...this.defaults, revision: 0, updatedAt: 0 };
     return {
       deliveryMode: row.delivery_mode as NotificationSettings['deliveryMode'],
       firstStageSeconds: row.first_stage_seconds,

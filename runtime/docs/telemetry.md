@@ -74,8 +74,9 @@ flowchart TB
 | span | `chatdsh.gateway.settings.write` | 写入白名单设置并推送至在线设备 | `outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.client.request` | 私有客户端会话分页读取 | `outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.mobile.telemetry` | 移动端遥测批次中转 | `action`、`outcome`、`count`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.browser.telemetry` | 浏览器遥测批次中转 | `action`、`outcome`、`count`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.mobile.devices` | 客户端设备列举与吊销 | `action`、`outcome`、`error.type`、`error.code` |
-| span | `chatdsh.gateway.mobile.pairing` | 签发一次性配对码 | `outcome` |
+| span | `chatdsh.gateway.mobile.pairing` | 手机配对与一次性配对码签发 | `outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.notification.record` | 通知记录写入 | `kind`、`session.id`、`outcome` |
 | span | `chatdsh.gateway.notification.list` | 通知中心分页 | `count`、`outcome` |
 | span | `chatdsh.gateway.notification.read` | 已读标记 | `count`、`outcome` |
@@ -93,6 +94,7 @@ flowchart TB
 | event | `chatdsh.gateway.client.rejected` | 私有客户端读取拒绝或失败 | `outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.mobile.rejected` | 客户端设备管理拒绝 | `action`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.mobile.telemetry.rejected` | 移动端遥测批次拒绝 | `action`、`outcome`、`error.type`、`error.code` |
+| event | `chatdsh.gateway.browser.telemetry.rejected` | 浏览器遥测批次拒绝 | `action`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.push.failed` | Web Push 发送失败 | `http.status_code`、`error.type`、`error.code`、`outcome` |
 | event | `chatdsh.gateway.push.withdrawn` | 审批决定撤回同键提醒 | `count`、`outcome`、`session.id` |
 | event | `chatdsh.gateway.push.subscription.expired` | 过期订阅清理 | `count`、`outcome` |
@@ -110,6 +112,7 @@ flowchart TB
 | metric | `chatdsh_mobile_devices_total` | 客户端设备管理操作计数 | `action`、`outcome` |
 | metric | `chatdsh_mobile_telemetry_batches_total` | 移动端遥测批次计数 | `outcome`、`error.code` |
 | metric | `chatdsh_mobile_telemetry_records_total` | 移动端遥测记录计数 | `signal`、`outcome` |
+| metric | `chatdsh_gateway_browser_telemetry_batches_total` | 浏览器遥测批次计数 | `outcome`、`error.code` |
 | metric | `chatdsh_push_deliveries_total` | 推送投递计数 | `device_kind`、`outcome` |
 | metric | `chatdsh_push_sends_total` | Web Push 发送计数 | `outcome` |
 | metric | `chatdsh_push_subscriptions_total` | 推送订阅状态变更计数 | `action`、`outcome` |
