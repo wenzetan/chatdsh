@@ -103,6 +103,9 @@ test('relay-up.sh 首次运行询问必填域名、自动生成随机口令保�
     assert.match(code, /^[A-Za-z0-9_-]{32}$/);
     assert.ok(first.stdout.includes(`bash scripts/device-join.sh --relay https://relay.example.com --code ${code}`));
     assert.ok(first.stdout.includes('--print-join-command'));
+    assert.ok(first.stdout.includes('域名解析'), '应提醒用户配置域名解析');
+    assert.ok(first.stdout.includes('反向代理'), '应提醒用户配置反向代理转发到本机 IP 端口');
+    assert.ok(first.stdout.includes('http://127.0.0.1:3170'), '应明确给出反向代理转发的目标地址与端口');
 
     // 追加用户自定义配置并验证二次运行保留
     writeFileSync(envFile, `${readFileSync(envFile, 'utf8')}CUSTOM_KEEP_ME=hello-world\n`, { mode: 0o600 });

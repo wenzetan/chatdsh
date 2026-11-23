@@ -288,6 +288,43 @@ build_device_join_command() {
     "$(shell_quote "$pairing_code")"
 }
 
+extract_host_from_origin() {
+  local origin="$1"
+  local rest="${origin#*://}"
+  if [[ "$rest" == \[* ]]; then
+    printf '%s' "${rest%%]*}]"
+  else
+    printf '%s' "${rest%%:*}"
+  fi
+}
+
+check_public_health() {
+  local url="$1"
+  local body=""
+  if body="$(curl -fsS --max-time 3 "$url" 2>/dev/null)"; then
+    if [[ "$body" == *'"ok":true'* ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+print_network_checklist() {
+  local public_url="$1"
+  local probe_host="$2"
+  local bind_port="$3"
+  local domain_host
+  domain_host="$(extract_host_from_origin "$public_url")"
+
+  printf '\n'
+  printf '%s\n' '公网接入前置提醒（中继容器仅监听本机 HTTP 端口，TLS 与域名路由由前置反向代理/网关承担）：'
+  printf '  1. 域名解析：将 %s 的 A / AAAA（或 CNAME）记录解析到当前服务器公网 IP。\n' "$domain_host"
+  printf '  2. 反向代理：在 Nginx / Caddy / 网关中为 %s 配置 HTTPS，并转发到 http://%s:%s。\n' "$public_url" "$probe_host" "$bind_port"
+  printf '%s\n' '     转发规则需开启 WebSocket 升级（Upgrade / Connection）并关闭响应缓冲（proxy_buffering off），'
+  printf '%s\n' '     以确保 /chatdsh/gateway/device-link、/d/<deviceId>/api/remote.mux 与 /chatdsh/gateway/events 长连接正常。'
+  printf '  3. 验证公网连通：curl -fsS %s/healthz（返回 ok:true 后再在设备端执行接入命令）。\n' "$public_url"
+}
+
 print_join_instructions() {
   local env_file="$1"
   local public_url="$2"
@@ -472,6 +509,11 @@ main() {
   printf '中继对外地址：%s\n' "$public_url"
 
   if [ "$prepare_only" -eq 1 ]; then
+    local probe_host_prep="$bind_host"
+    if [ "$probe_host_prep" = "0.0.0.0" ] || [ "$probe_host_prep" = "::" ]; then
+      probe_host_prep="127.0.0.1"
+    fi
+    print_network_checklist "$public_url" "$probe_host_prep" "$bind_port"
     print_join_instructions "$env_file" "$public_url" "$pairing_code"
     return 0
   fi
@@ -488,9 +530,14 @@ main() {
   fi
   local health_url="http://${probe_host}:${bind_port}/healthz"
   wait_for_health "$health_url" >/dev/null
-  printf '中继服务端已就绪：%s\n' "$health_url"
-  printf '本机绑定地址：http://%s:%s\n' "$probe_host" "$bind_port"
+  printf '中继容器已就绪（对外来源：%s，本机回环入口：http://%s:%s）\n' "$public_url" "$probe_host" "$bind_port"
   printf '手机端 PWA 入口：%s/\n' "$public_url"
+  if check_public_health "${public_url}/healthz"; then
+    printf '公网域名检查通过：%s/healthz\n' "$public_url"
+  else
+    printf '提示：尚未通过公网地址 %s/healthz 访问到中继（若尚未配置域名解析或反向代理属正常现象）。\n' "$public_url"
+    print_network_checklist "$public_url" "$probe_host" "$bind_port"
+  fi
   print_join_instructions "$env_file" "$public_url" "$pairing_code"
 }
 
