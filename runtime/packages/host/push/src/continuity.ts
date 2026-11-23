@@ -104,6 +104,18 @@ interface SyncAccumulator {
   outcome: ReplicaSyncOutcome;
 }
 
+/** 上报载荷里的完整事件信封。 */
+function replicaEnvelopeOf(event: SessionEvent): Record<string, unknown> {
+  return {
+    type: event.type,
+    seq: Number(event.seq),
+    time: event.time,
+    data: event.data,
+    ...(event.surfaceOp === undefined ? {} : { surfaceOp: event.surfaceOp }),
+    ...(event.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: event.sourceEventSeqs }),
+  };
+}
+
 /** 设备侧连续补传。 */
 export class ReplicaContinuity {
   private readonly persistence: SessionPersistence;
@@ -344,7 +356,7 @@ export class ReplicaContinuity {
         seq: Number(event.seq),
         kind: event.type,
         time: event.time,
-        payload: event.data,
+        payload: replicaEnvelopeOf(event),
       })),
     });
     const lastSeq = events.length === 0 ? -1 : Number(events[events.length - 1]?.seq ?? -1);
@@ -472,7 +484,7 @@ export class ReplicaContinuity {
     const batch: SessionEvent[] = [];
     let bytes = 0;
     for (const event of events) {
-      const size = Buffer.byteLength(JSON.stringify(event.data));
+      const size = Buffer.byteLength(JSON.stringify(replicaEnvelopeOf(event)));
       if (batch.length > 0 && bytes + size > this.batchBytes) break;
       batch.push(event);
       bytes += size;

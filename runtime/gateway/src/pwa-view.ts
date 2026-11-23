@@ -1,7 +1,8 @@
 /**
  * 中继 PWA 的只读副本视图与审批角标纯函数。
  *
- * 副本事件的 `payload` 是设备上报的会话事件 `data`。这里只从真实字段取文本、工具名与
+ * 副本事件的 `payload` 可能是完整事件信封（`type`／`seq`／`time`／`data`），也可能是
+ * 历史副本里的裸事件数据；两种形状在这里统一解包。这里只从真实字段取文本、工具名与
  * 审批结果，不把原始 JSON 当正文。视图模型与角标状态都可以直接序列化进内联页面脚本，
  * 单元测试与浏览器运行的是同一份实现。
  * @module @chatdsh/gateway/pwa-view
@@ -150,8 +151,14 @@ export function buildReplicaTimeline(events: readonly ReplicaEventLike[]): Repli
 
   function payloadOf(event: ReplicaEventLike): Record<string, unknown> {
     const payload = event.payload;
-    if (!isRecord(payload)) return {};
-    return payload;
+    if (typeof payload !== 'object' || payload === null) return {};
+    const record = payload as { type?: unknown; data?: unknown };
+    if (typeof record.type === 'string' && Object.hasOwn(record, 'data')) {
+      return typeof record.data === 'object' && record.data !== null
+        ? record.data as Record<string, unknown>
+        : {};
+    }
+    return record as Record<string, unknown>;
   }
 
   function metaOf(parts: readonly (string | undefined)[]): string {

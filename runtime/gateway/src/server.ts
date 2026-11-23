@@ -1801,17 +1801,27 @@ async function readRawBody(request: IncomingMessage, limit: number): Promise<Buf
   return Buffer.concat(chunks);
 }
 
+/** 取副本事件的业务数据；同时兼容完整信封与裸数据。 */
+function replicaPayloadDataOf(payload: unknown): unknown {
+  if (typeof payload !== 'object' || payload === null) return payload;
+  const record = payload as { type?: unknown; data?: unknown };
+  if (typeof record.type === 'string' && Object.hasOwn(record, 'data')) return record.data;
+  return payload;
+}
+
 function approvalInfoOf(payload: unknown): { toolName: string; callId: string } {
-  if (typeof payload !== 'object' || payload === null) return { toolName: '', callId: '' };
-  const record = payload as { toolName?: unknown; callId?: unknown; request?: { callId?: unknown; toolName?: unknown } };
+  const data = replicaPayloadDataOf(payload);
+  if (typeof data !== 'object' || data === null) return { toolName: '', callId: '' };
+  const record = data as { toolName?: unknown; callId?: unknown; request?: { callId?: unknown; toolName?: unknown } };
   const toolName = typeof record.toolName === 'string' ? record.toolName : (typeof record.request?.toolName === 'string' ? record.request.toolName : '');
   const callId = typeof record.callId === 'string' ? record.callId : (typeof record.request?.callId === 'string' ? record.request.callId : '');
   return { toolName, callId };
 }
 
 function approvalIdOf(payload: unknown): string {
-  if (typeof payload !== 'object' || payload === null) return '';
-  const record = payload as { id?: unknown; request?: { id?: unknown } };
+  const data = replicaPayloadDataOf(payload);
+  if (typeof data !== 'object' || data === null) return '';
+  const record = data as { id?: unknown; request?: { id?: unknown } };
   if (typeof record.id === 'string') return record.id;
   return typeof record.request?.id === 'string' ? record.request.id : '';
 }
