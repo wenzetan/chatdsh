@@ -107,15 +107,6 @@
 
 遥测里禁止出现提示词、模型输出、工具参数与工具结果原文、文件内容、凭据、Cookie、`Authorization` 头、请求体原文、邮箱、手机号、真实姓名、主机名与内网地址。允许记录长度、数量、类型、状态、耗时、枚举值与登记过的标识。未登记属性键在非调试模式下丢弃并计入 `chatdsh_telemetry_dropped_total`。
 
-#### Android 交付
-
-每次构建并编译完成 Android APK 后，必须执行以下交付约定：
-
-- 统一使用 `node scripts/build-android.mjs`，它固定执行 `assembleRelease`。
-- APK 文件名固定为 `chatdsh<版本号>.apk`，版本号取 `mobile/android/version.properties` 的 `VERSION_NAME`。
-- 构建完成后必须给出 `http://<CHATDSH_APK_BIND>:8099/chatdsh<版本号>.apk` 形式的下载地址，并确认该地址可访问。
-- 下载服务由 `scripts/serve-apk.mjs` 提供，构建脚本检测到未运行时自动拉起；不要改用其他绑定地址或目录。
-
 #### 提交信息
 
 本仓库的全部提交信息遵循「Gitmoji + Conventional Commits + 中英双语」，完整提示词模板与类型对照表在 [`docs/prompts/git-commit-message.md`](docs/prompts/git-commit-message.md)。生成提交信息之前必须先读取该文件，把待提交的 diff 填入模板末尾的 `### Diff:` 一节后交给模型。

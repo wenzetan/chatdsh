@@ -39,7 +39,7 @@ pnpm verify:plugin-install
 
 ## 三、官方 profile 真实安装验收要求
 
-升级验收必须覆盖用户真实的安装路径，具体由 `runtime/scripts/verify-plugin-install.mjs`（P01 交付）执行：
+升级验收必须覆盖用户真实的安装路径，由 `runtime/scripts/verify-plugin-install.mjs` 执行：
 
 1. 在临时隔离的 `DSH_HOME` 中初始化官方默认 `web` profile。
 2. 执行真实的 `dsh plugin --profile web add <仓库内 @chatdsh/bundle 绝对路径>`。

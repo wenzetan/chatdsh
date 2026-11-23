@@ -1,0 +1,161 @@
+# ChatDSH
+
+[中文](README.md) | English
+
+ChatDSH is a cross-device plugin bundle and self-hosted lightweight relay server for the official DSH (DeepSeek Harness). Users run the official DSH runtime and official Web/Desktop clients directly, install the append-only plugin bundle `@chatdsh/bundle` via `dsh plugin add`, and pair devices with a self-hosted `@chatdsh/gateway` relay to enable remote device switching, offline read-only session replicas, local session resume and fork, allowlisted preference synchronization, approval push notifications, and a built-in mobile PWA.
+
+![ChatDSH System Architecture](assets/architecture.jpg)
+
+## Key Capabilities
+
+- **Append-Only Plugin Delivery**: `@chatdsh/bundle` adds ChatDSH host and client plugins exclusively through `insert` rules in `cordis.patch.yml`, leaving upstream DSH configuration untouched. All client plugins target the `platform: "web"` contract so the same build runs in both official DSH Web and official DSH Desktop clients.
+- **Outbound Multiplexed Tunnel**: Devices behind NAT or firewalls initiate outbound WebSocket connections to the relay via `@chatdsh/host-device-link` (v2 framed protocol supporting up to 128 concurrent logical channels per link, window-based flow control, heartbeat timeouts, and generation replacement). Clients access live remote DSH sessions through `/d/<deviceId>/*` and `/d/<deviceId>/api/remote.mux`.
+- **Loopback Same-Origin Relay Proxy**: When a browser connects to a cross-origin relay URL, `@chatdsh/host-device-link` exposes loopback-only allowlisted proxy endpoints that strip sensitive headers, enforce CSRF checks on pairing, and preserve trace propagation.
+- **Offline Read-Only Replicas & Local Resume**: Each device's local `$DSH_HOME` remains the authoritative store for session logs. `@chatdsh/host-push` persists sync intents and streams full event envelopes to the relay SQLite database, allowing offline timeline browsing and local session resume or fork on another device via `@chatdsh/host-import`.
+- **Allowlisted Preference Sync**: `@chatdsh/host-settings-sync` synchronizes only five portable preference namespaces (default model, locale, chat view, analytics toggle, and preset registry), keeping local paths and machine-specific parameters on each device.
+- **Built-In Mobile PWA & Approval Alerts**: The relay serves an installable mobile PWA at `/` with online device status, aggregated sessions, structured read-only timelines, and IndexedDB offline drafts. Approval requests trigger notifications over SSE and Web Push and are automatically withdrawn once decided.
+- **Integrated Observability**: Built on OpenTelemetry (targeting local OpenObserve by default) with W3C `traceparent` propagation across browser, relay, and device boundaries. Telemetry can be disabled immediately without restarting via environment variables, settings, CLI flags, or runtime toggles.
+
+## Repository Structure
+
+| Path | Description |
+|---|---|
+| [`dsh-adapter/`](dsh-adapter/) | `@chatdsh/adapter`: narrow compatibility boundary wrapping 7 direct DSH `peerDependencies` and 13 registered upstream package names |
+| [`runtime/packages/core/`](runtime/packages/core/) | Shared core libraries: `@chatdsh/core-contracts`, `@chatdsh/core-diagnostics`, `@chatdsh/core-remote-client` |
+| [`runtime/packages/host/`](runtime/packages/host/) | Device-side host plugins: `telemetry`, `device-link`, `push`, `import`, `settings-sync` |
+| [`runtime/packages/client/`](runtime/packages/client/) | Client plugins (`platform: "web"`): `telemetry`, `pwa`, `remote` |
+| [`runtime/packages/bundle/chatdsh/`](runtime/packages/bundle/chatdsh/) | `@chatdsh/bundle`: append-only bundle installing all ChatDSH host and client plugins in one command |
+| [`runtime/gateway/`](runtime/gateway/) | `@chatdsh/gateway`: standalone lightweight relay server hosting device tunnels, prefix routing, replicas, push hub, settings sync, and the mobile PWA |
+| [`runtime/docs/`](runtime/docs/) | Architecture, deployment, telemetry, compatibility, and secret-guard documentation |
+| [`runtime/scripts/`](runtime/scripts/) | Build tooling, static checks, upstream upgrade verification, and end-to-end verification scripts |
+| [`runtime/e2e/unit/`](runtime/e2e/unit/) | Unit and regression test suites |
+
+## Quick Start
+
+### 1. Prerequisites
+
+- Node.js 22+
+- pnpm 11.21.0
+- Official DSH (`@deepseek-ai/dsh`, verified baseline `0.2.2-rc.3`)
+
+### 2. Build Adapter and Runtime
+
+```sh
+cd dsh-adapter
+pnpm install
+node scripts/link-dsh-deps.mjs
+pnpm build
+pnpm test
+
+cd ../runtime
+pnpm install
+node scripts/link-dsh-deps.mjs
+pnpm build
+pnpm build:client
+```
+
+### 3. Start the Lightweight Relay
+
+```sh
+cd runtime
+DSH_HOME=/srv/chatdsh \
+CHATDSH_GATEWAY_HOST=127.0.0.1 \
+CHATDSH_GATEWAY_PORT=3170 \
+CHATDSH_PUBLIC_URL=https://relay.example.com \
+CHATDSH_PAIRING_CODE='replace-with-random-secret' \
+node gateway/lib/main.js
+```
+
+Verify readiness with `curl -fsS http://127.0.0.1:3170/healthz`, which returns `{"ok":true,"service":"chatdsh-gateway",...}`. Terminate TLS in front of the relay with a reverse proxy such as Nginx with WebSocket upgrades enabled and response buffering disabled (see [`runtime/docs/deployment.md`](runtime/docs/deployment.md)).
+
+### 4. Install the Bundle and Pair a Device
+
+```sh
+# 1. Pair a device node to obtain deviceId and token
+curl -fsS -X POST http://127.0.0.1:3170/chatdsh/gateway/devices/pair \
+  -H 'content-type: application/json' \
+  -d '{"code":"replace-with-pairing-code","name":"device-a","platform":"linux","role":"both","capabilities":["shell"]}'
+
+# 2. Install @chatdsh/bundle into the official web profile
+DSH_HOME=/srv/dsh-device-a dsh plugin --profile web add /path/to/chatdsh/runtime/packages/bundle/chatdsh
+
+# 3. Start the official DSH runtime with pairing credentials
+DSH_HOME=/srv/dsh-device-a \
+CHATDSH_CONTROL_URL=https://relay.example.com \
+CHATDSH_DEVICE_ID='deviceId-from-pairing' \
+CHATDSH_NODE_TOKEN='token-from-pairing' \
+dsh --profile web --no-open --port 3080
+```
+
+Once connected, open `/` on the relay for the mobile PWA, open `/d/<deviceId>/` to interact with a live online device through the official DSH interface, or use the Remote panel in your local official DSH sidebar.
+
+## Documentation
+
+Detailed technical documentation is maintained in Chinese under `runtime/docs/`:
+
+- Documentation Index & Baseline: [`runtime/docs/README.md`](runtime/docs/README.md)
+- System Architecture: [`runtime/docs/architecture.md`](runtime/docs/architecture.md)
+- Deployment, Environment Variables, VAPID, Backup & Upgrade: [`runtime/docs/deployment.md`](runtime/docs/deployment.md)
+- Telemetry Specification & Signal Registry: [`runtime/docs/telemetry.md`](runtime/docs/telemetry.md)
+- DSH Compatibility & Upgrade Verification: [`runtime/docs/compatibility.md`](runtime/docs/compatibility.md)
+- Credential & Privacy Hooks: [`runtime/docs/secret-guard.md`](runtime/docs/secret-guard.md)
+- Adapter Package Guide: [`dsh-adapter/README.md`](dsh-adapter/README.md)
+- Runtime Workspace Guide: [`runtime/README.md`](runtime/README.md)
+
+## Verification
+
+Run the full build, static contract checks, unit tests, and end-to-end verification suite from `runtime/`:
+
+```sh
+cd runtime
+node_modules/.bin/tsc -b tsconfig.build.json --force
+pnpm --config.verify-deps-before-run=false build:client
+pnpm --config.verify-deps-before-run=false check:telemetry
+pnpm --config.verify-deps-before-run=false check:plugins
+node scripts/check-upstream-names.mjs
+pnpm --config.verify-deps-before-run=false check:layering
+pnpm --config.verify-deps-before-run=false test
+pnpm --config.verify-deps-before-run=false verify:plugin-install
+pnpm --config.verify-deps-before-run=false verify:device-link
+pnpm --config.verify-deps-before-run=false verify:routing
+pnpm --config.verify-deps-before-run=false verify:settings-sync
+pnpm --config.verify-deps-before-run=false verify:approval-notify
+pnpm --config.verify-deps-before-run=false verify:import
+pnpm --config.verify-deps-before-run=false verify:receipt-sync
+pnpm --config.verify-deps-before-run=false verify:multi-client
+pnpm --config.verify-deps-before-run=false verify:mobile-telemetry
+```
+
+Install the local Git privacy hooks after cloning:
+
+```sh
+cd runtime && bash scripts/install-hooks.sh
+```
+
+## References & Acknowledgements
+
+### Upstream & Open-Source Foundations
+
+We are grateful to the following open-source projects and tools that power ChatDSH:
+
+- **[DeepSeek Harness (`@deepseek-ai/dsh`)](https://www.npmjs.com/package/@deepseek-ai/dsh)** & **Cordis**: Core agent runtime, session persistence, official Web/Desktop clients, and plugin architecture.
+- **[OpenTelemetry](https://opentelemetry.io/)** & **[OpenObserve](https://openobserve.ai/)**: Standard OTLP logging, distributed tracing, metrics, and self-hosted observability backend.
+- **[Zod](https://zod.dev/)** & **[esbuild](https://esbuild.github.io/)**: Schema validation for shared contracts and fast client plugin bundling.
+
+### Ecosystem Reference Projects
+
+Special thanks to the following DSH community and open-source projects whose designs informed ChatDSH's trade-offs across desktop integration, mobile UX, remote tunneling, and monorepo organization. Local snapshot metadata is registered in [`runtime/refer-repos.json`](runtime/refer-repos.json) (not committed to Git):
+
+| Project | Repository | Contribution to Design Decisions |
+|---|---|---|
+| `dataelement_dsh-desktop` | [dataelement/dsh-desktop](https://github.com/dataelement/dsh-desktop) | Electron desktop packaging and permission model reference |
+| `anywhere-labs_dsh-desktop` | [anywhere-labs/dsh-desktop](https://github.com/anywhere-labs/dsh-desktop) | Multi-package workspace layout and update channels |
+| `Clarklevis1995_dsh-mobile` | [Clarklevis1995/dsh-mobile](https://github.com/Clarklevis1995/dsh-mobile) | Mobile client and runtime responsibility boundary |
+| `Clarklevis1995_dsh-plugin-mobile-gateway` | [Clarklevis1995/dsh-plugin-mobile-gateway](https://github.com/Clarklevis1995/dsh-plugin-mobile-gateway) | Mobile gateway plugin integration pattern |
+| `saya-ch_dsh-mobile` | [saya-ch/dsh-mobile](https://github.com/saya-ch/dsh-mobile) | Standalone browser-side npm package layout and narrow-screen drawer UI |
+| `shaobeichen_dsh-pocket` | [shaobeichen/dsh-pocket](https://github.com/shaobeichen/dsh-pocket) | Lightweight client reverse proxy and UI slot registration |
+| `kelai141_dsh-mobile-apk` | [kelai141/dsh-mobile-apk](https://github.com/kelai141/dsh-mobile-apk) | On-device mobile runtime packaging reference |
+| `dsh-Go` | [ccch1mneyyy/dsh-Go](https://github.com/ccch1mneyyy/dsh-Go) | Remote connection protocol and plugin UI boundary reference |
+| `ds-harness-remote` | [liguobao/ds-harness-remote](https://github.com/liguobao/ds-harness-remote) | Resident host remote tunnel, multiplexed streams, and E2E encryption comparison |
+| `ZCode` | [zai-org/ZCode](https://github.com/zai-org/ZCode) | Multi-package repository structure |
+| `rea_workbuddy` | Local snapshot (no remote) | Protocol and authentication reference material |

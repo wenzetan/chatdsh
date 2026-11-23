@@ -4,11 +4,10 @@
 
 ## 文档入口
 
-- 总纲与事实基线：[`docs/README.md`](docs/README.md)
+- 总纲与构成基线：[`docs/README.md`](docs/README.md)
 - 总体架构：[`docs/architecture.md`](docs/architecture.md)
-- 实现说明与工作包交付（P01–P06）：[`docs/implementation-guide.md`](docs/implementation-guide.md)
-- 遥测规范与信号清单：[`docs/telemetry.md`](docs/telemetry.md)
 - 部署、运行、备份与升级：[`docs/deployment.md`](docs/deployment.md)
+- 遥测规范与信号清单：[`docs/telemetry.md`](docs/telemetry.md)
 - 升级与兼容验证：[`docs/compatibility.md`](docs/compatibility.md)
 - 凭据与隐私防护：[`docs/secret-guard.md`](docs/secret-guard.md)
 

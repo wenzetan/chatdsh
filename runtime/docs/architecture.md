@@ -9,7 +9,7 @@ ChatDSH 是面向官方 DSH（deepseek-harness）的跨设备互联插件集与�
 3. **极窄的上游依赖接触面**：业务插件禁止直接引入 `@deepseek-ai/*` 内部包，全部经由 `@chatdsh/adapter` 访问。`@chatdsh/adapter` 仅转出 7 个顶层稳定包（`cordis`、`schemastery`、`dsh-client-connection`、`dsh-host-webserver`、`dsh-session`、`dsh-session-persistence`、`dsh-typert-protocol`），peer 依赖使用开放 semver 区间 `>=0.2.0-0`，升级 DSH 时无需批量修改清单。
 4. **原生能力与生态解耦**：
    - 自定义模型网关与多模型管理直接使用 DSH 内置 `@deepseek-ai/dsh-llm-pi-ai` 与官方模型设置页。
-   - 记忆、外部执行体与其他领域扩展直接使用 DSH 社区原生插件（如 `dsh-hindsight` 等），由用户通过 `dsh plugin add` 自由装卸。
+   - 记忆、外部执行体与其他领域扩展直接使用 DSH 社区原生插件，由用户通过 `dsh plugin add` 自由装卸。
    - 项目指令、文件管理、终端、技能目录、定时任务与子代理直接使用 DSH 原生能力。
    - 若需要在手机端使用 `dsh-Go` 原生客户端，用户在电脑端按需独立安装 `ds-harness-remote` 插件与对应中继，与 ChatDSH 体系完全解耦。
 
@@ -75,7 +75,7 @@ flowchart TB
   ROOT --> RT["runtime/"]
   RT --> CORE["packages/core/<br/>contracts · diagnostics · remote-client"]
   RT --> HOST["packages/host/<br/>telemetry · device-link · push · import · settings-sync"]
-  RT --> CLIENT["packages/client/<br/>telemetry · pwa · remote（P03）"]
+  RT --> CLIENT["packages/client/<br/>telemetry · pwa · remote"]
   RT --> BUNDLE["packages/bundle/chatdsh/（@chatdsh/bundle）"]
   RT --> GW["gateway/（@chatdsh/gateway）"]
   RT --> SCR["scripts/（构建、静态检查与端到端验收）"]
@@ -92,13 +92,13 @@ flowchart TB
 | `@chatdsh/core-diagnostics` | [packages/core/diagnostics/](../packages/core/diagnostics/) | 各端共享的遥测客户端、脱敏器、W3C 链路上下文、环形缓冲与 OTLP 导出管道 | `@chatdsh/core-contracts` |
 | `@chatdsh/core-remote-client` | [packages/core/remote-client/](../packages/core/remote-client/) | 浏览器侧 Remote 方法贡献构造器 | 无内部依赖 |
 | `@chatdsh/host-telemetry` | [packages/host/telemetry/](../packages/host/telemetry/) | 注册 `ctx.chatdshTelemetry`、状态/自检/诊断/热开关与浏览器上报中继端点 | `@chatdsh/adapter`、`core-contracts`、`core-diagnostics` |
-| `@chatdsh/host-device-link` | [packages/host/device-link/](../packages/host/device-link/) | 设备出站长连接至中继服务端，将转发来的 HTTP 与 WebSocket 通道路由至本机运行时 | `@chatdsh/adapter`、`core-contracts` |
-| `@chatdsh/host-push` | [packages/host/push/](../packages/host/push/) | 监听 `session/created` 与 `session/event`，持久化补传意图并成批上报只读副本 | `@chatdsh/adapter`、`core-contracts` |
+| `@chatdsh/host-device-link` | [packages/host/device-link/](../packages/host/device-link/) | 设备出站长连接至中继服务端，将转发来的 HTTP 与 WebSocket 通道路由至本机运行时，并提供本机回环白名单中继代理 | `@chatdsh/adapter`、`core-contracts` |
+| `@chatdsh/host-push` | [packages/host/push/](../packages/host/push/) | 监听 `session/created` 与 `session/event`，持久化补传意图并成批上报完整事件信封副本 | `@chatdsh/adapter`、`core-contracts` |
 | `@chatdsh/host-import` | [packages/host/import/](../packages/host/import/) | 将中继副本记录构造为合法会话种子，支持「在本机继续」恢复与分叉 | `@chatdsh/adapter` |
 | `@chatdsh/host-settings-sync` | [packages/host/settings-sync/](../packages/host/settings-sync/) | 监听白名单设置变更上报中继，接收中继下发并写入本机 `$DSH_HOME/cordis.patch.yml` | `@chatdsh/adapter`、`core-contracts` |
 | `@chatdsh/client-telemetry` | [packages/client/telemetry/](../packages/client/telemetry/) | 浏览器与官方桌面渲染进程错误采集与同源遥测上报 | `core-contracts`、`core-diagnostics` |
 | `@chatdsh/client-pwa` | [packages/client/pwa/](../packages/client/pwa/) | PWA 清单、Service Worker、离线草稿、安全凭据与窄屏样式 | 无内部依赖 |
-| `@chatdsh/client-remote`（P03） | `packages/client/remote/` | 注入官方客户端侧栏与对话顶部状态条，提供设备切换、离线副本浏览与本机继续入口 | `core-contracts`、`core-remote-client` |
+| `@chatdsh/client-remote` | [packages/client/remote/](../packages/client/remote/) | 注入官方客户端侧栏与对话顶部状态条，提供设备切换、离线副本浏览、配对设置与本机继续入口 | `core-contracts`、`core-remote-client` |
 | `@chatdsh/bundle` | [packages/bundle/chatdsh/](../packages/bundle/chatdsh/) | 纯 `insert` 组合包，在 `dependencies` 声明全部宿主与客户端插件供 `dsh plugin add` 一步装入 | 上述全部宿主与客户端插件 |
 | `@chatdsh/gateway` | [gateway/](../gateway/) | 独立运行的轻量中继服务端进程，承载设备长连接、转发、副本、推送、设置同步与 PWA 静态入口 | `core-contracts`、`core-diagnostics` |
 

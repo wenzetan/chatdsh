@@ -1,38 +1,63 @@
-# ChatDSH 工作区
+# ChatDSH
 
-面向官方 DSH（deepseek-harness）的跨设备互联插件集与轻量中继服务端。用户直接使用官方 DSH 运行时与官方客户端（Web 端与 Desktop 端），通过 `dsh plugin add` 安装纯附加组合包 `@chatdsh/bundle`，配合自托管的轻量中继服务端实现公网跨设备切换、离线只读会话副本、本机恢复继续、白名单设置同步、审批通知推送与移动端 PWA 入口。
+中文 | [English](README.EN.md)
 
-## 目录构成
+ChatDSH 是面向官方 DSH（DeepSeek Harness）的跨设备互联插件集与自托管轻量中继服务端。用户直接使用官方 DSH 运行时与官方客户端（Web 端与 Desktop 端），通过标准插件命令安装仅追加的组合包 `@chatdsh/bundle`，配合自托管的轻量中继服务端 `@chatdsh/gateway`，即可实现公网跨设备访问、离线只读会话副本、本机恢复继续、白名单偏好设置同步、审批提醒推送与手机端 PWA 入口。
 
-| 目录 | 内容 |
+![ChatDSH 系统架构](assets/architecture.jpg)
+
+## 核心能力
+
+- **仅追加插件交付**：`@chatdsh/bundle` 仅通过 `cordis.patch.yml` 的 `insert` 规则追加自有插件，保留上游 DSH 原生配置完整结构。全部客户端插件遵循 `platform: "web"` 契约，同一份产物同时运行在官方 Web 端与官方 Desktop 端。
+- **出站多路复用隧道**：内网设备通过 `@chatdsh/host-device-link` 主动向中继服务端发起出站 WebSocket 连接（v2 帧协议，单连接最多 128 条并发逻辑通道，支持流量控制、心跳保活与代次替换），经 `/d/<deviceId>/*` 与 `/d/<deviceId>/api/remote.mux` 实时访问目标设备的官方 DSH 界面与流式接口。
+- **本机同源中继代理**：浏览器跨来源访问中继时，由设备宿主侧回环白名单代理转发中继接口，自动剥离敏感头字段并校验 CSRF 标记，同时完整透传链路上下文。
+- **离线只读副本与本机继续**：各设备本地 `$DSH_HOME` 始终保存权威会话日志。`@chatdsh/host-push` 持久化补传意图并按顺序上报完整事件信封至中继 SQLite；设备离线时可随时浏览只读时间线，并通过 `@chatdsh/host-import` 在当前设备恢复或分叉继续会话。
+- **白名单偏好同步**：`@chatdsh/host-settings-sync` 仅同步 5 个通用偏好命名空间（默认模型、界面语言、聊天视图、分析开关、预设注册表），本机路径与设备运行参数留在各自设备上。
+- **手机端 PWA 与审批推送**：中继根路径 `/` 内置可安装的移动端 PWA，聚合在线设备状态、会话列表、只读副本与 IndexedDB 离线草稿；副本出现审批请求时通过 SSE 与 Web Push 推送提醒，审批完成后自动撤回同键待投递提醒。
+- **统一可观测性**：内置基于 OpenTelemetry 的遥测管道（默认对接本机 OpenObserve），支持 W3C `traceparent` 跨端链路传播，并提供环境变量、设置文件、启动参数与运行期热开关等多种即刻关闭入口。
+
+## 项目结构
+
+| 目录 | 说明 |
 |---|---|
-| [`dsh-adapter/`](dsh-adapter/) | 适配层 `@chatdsh/adapter`：DSH 顶层稳定 API 的唯一接触面（7 个 peer 依赖） |
-| [`runtime/`](runtime/) | 运行时侧工作区：3 个核心包、5 个宿主插件、3 个客户端插件、1 个纯附加组合包 `@chatdsh/bundle`、轻量中继服务端 `@chatdsh/gateway`、校验脚本、单元测试与技术文档 |
-| [`refer_repos/`](refer_repos/) | 参考项目本地快照，不纳入版本管理 |
+| [`dsh-adapter/`](dsh-adapter/) | 适配层 `@chatdsh/adapter`：聚合上游 DSH 7 个直接 `peerDependencies` 与 13 个登记包名，作为业务插件访问 DSH 内部 API 的唯一边界 |
+| [`runtime/packages/core/`](runtime/packages/core/) | 共享核心包：`@chatdsh/core-contracts`、`@chatdsh/core-diagnostics`、`@chatdsh/core-remote-client` |
+| [`runtime/packages/host/`](runtime/packages/host/) | 设备宿主插件：`telemetry`、`device-link`、`push`、`import`、`settings-sync` |
+| [`runtime/packages/client/`](runtime/packages/client/) | 客户端插件：`telemetry`、`pwa`、`remote`（支持官方 Web 端与 Desktop 端） |
+| [`runtime/packages/bundle/chatdsh/`](runtime/packages/bundle/chatdsh/) | 组合包 `@chatdsh/bundle`，供 `dsh plugin add` 一步装入全部宿主与客户端插件 |
+| [`runtime/gateway/`](runtime/gateway/) | 独立运行的轻量中继服务端 `@chatdsh/gateway`，提供设备隧道、前缀转发、只读副本、推送中枢、白名单设置同步与手机端 PWA |
+| [`runtime/docs/`](runtime/docs/) | 架构设计、部署运维、遥测规范、兼容性与隐私防护文档 |
+| [`runtime/scripts/`](runtime/scripts/) | 构建脚本、静态检查、上游升级验证与端到端验收脚本 |
+| [`runtime/e2e/unit/`](runtime/e2e/unit/) | 单元测试与回归测试 |
 
-## 文档与交付入口
+## 快速开始
 
-- 文档总纲与事实基线：[`runtime/docs/README.md`](runtime/docs/README.md)
-- 目标架构设计：[`runtime/docs/architecture.md`](runtime/docs/architecture.md)
-- 实现说明与工作包交付清单（P01–P06）：[`runtime/docs/implementation-guide.md`](runtime/docs/implementation-guide.md)
-- 遥测信号清单与关闭规范：[`runtime/docs/telemetry.md`](runtime/docs/telemetry.md)
-- 部署、运行、备份与升级：[`runtime/docs/deployment.md`](runtime/docs/deployment.md)
-- DSH 兼容性与升级验证步骤：[`runtime/docs/compatibility.md`](runtime/docs/compatibility.md)
-- 凭据与隐私防护：[`runtime/docs/secret-guard.md`](runtime/docs/secret-guard.md)
-- 适配层说明：[`dsh-adapter/README.md`](dsh-adapter/README.md)
+### 1. 环境要求
 
-## 本机实测运行
+- Node.js 22 及以上
+- pnpm 11.21.0
+- 官方 DSH（`@deepseek-ai/dsh`，当前验证基线 `0.2.2-rc.3`）
 
-前置条件：Node.js 22 及以上、pnpm 11.21.0、官方 DSH 基线 `0.2.2-rc.3`。以下命令在 `/workspace/chatdsh/runtime` 下执行。
+### 2. 构建适配层与运行时
 
 ```sh
-node_modules/.bin/tsc -b tsconfig.build.json --force
-pnpm --config.verify-deps-before-run=false build:client
+cd dsh-adapter
+pnpm install
+node scripts/link-dsh-deps.mjs
+pnpm build
+pnpm test
+
+cd ../runtime
+pnpm install
+node scripts/link-dsh-deps.mjs
+pnpm build
+pnpm build:client
 ```
 
-启动轻量中继：
+### 3. 启动轻量中继服务端
 
 ```sh
+cd runtime
 DSH_HOME=/srv/chatdsh \
 CHATDSH_GATEWAY_HOST=127.0.0.1 \
 CHATDSH_GATEWAY_PORT=3170 \
@@ -41,13 +66,43 @@ CHATDSH_PAIRING_CODE='替换为随机口令' \
 node gateway/lib/main.js
 ```
 
-`GET /healthz` 返回 `{"ok":true,"service":"chatdsh-gateway",...}`。设备通过 `POST /chatdsh/gateway/devices/pair` 取得 `deviceId` 与 `token`，再把 `CHATDSH_CONTROL_URL`、`CHATDSH_DEVICE_ID`、`CHATDSH_NODE_TOKEN` 写入设备运行时环境。
+执行 `curl -fsS http://127.0.0.1:3170/healthz` 确认返回 `{"ok":true,"service":"chatdsh-gateway",...}`。生产环境建议通过 Nginx 或其他反向代理终止 TLS，并保持 WebSocket 升级与关闭响应缓冲（配置示例见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md)）。
 
-常用环境变量：`DSH_HOME`、`CHATDSH_GATEWAY_HOST`、`CHATDSH_GATEWAY_PORT`、`CHATDSH_GATEWAY_DB`、`CHATDSH_PUBLIC_URL`、`CHATDSH_PAIRING_CODE`、`CHATDSH_PUSH_MODE`、`CHATDSH_ACCESS_MODE`、`CHATDSH_CONTROL_URL`、`CHATDSH_NODE_TOKEN`、`CHATDSH_DEVICE_ID`、`CHATDSH_VAPID_SUBJECT`、`CHATDSH_VAPID_PUBLIC_KEY`、`CHATDSH_VAPID_PRIVATE_KEY`、`CHATDSH_TELEMETRY`。完整清单、默认值与关闭行为见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md) 第六节。
+### 4. 在设备安装插件并配对
 
-## 验收命令
+```sh
+# 1. 向中继申请设备配对，获取 deviceId 与 token
+curl -fsS -X POST http://127.0.0.1:3170/chatdsh/gateway/devices/pair \
+  -H 'content-type: application/json' \
+  -d '{"code":"替换为配对码","name":"device-a","platform":"linux","role":"both","capabilities":["shell"]}'
 
-以下命令在仓库根目录 `/workspace/chatdsh` 下执行。
+# 2. 将组合包安装到官方 web profile
+DSH_HOME=/srv/dsh-device-a dsh plugin --profile web add /path/to/chatdsh/runtime/packages/bundle/chatdsh
+
+# 3. 携带配对凭据启动官方 DSH 运行时
+DSH_HOME=/srv/dsh-device-a \
+CHATDSH_CONTROL_URL=https://relay.example.com \
+CHATDSH_DEVICE_ID='配对返回的 deviceId' \
+CHATDSH_NODE_TOKEN='配对返回的 token' \
+dsh --profile web --no-open --port 3080
+```
+
+连接成功后，可通过中继地址 `/` 使用手机端 PWA，通过 `/d/<deviceId>/` 直接进入对应在线设备的官方 DSH 界面，或在本地官方客户端侧栏打开「远程设备」面板。
+
+## 文档导航
+
+- 文档总纲与构成基线：[`runtime/docs/README.md`](runtime/docs/README.md)
+- 总体架构与模块边界：[`runtime/docs/architecture.md`](runtime/docs/architecture.md)
+- 部署、环境变量、VAPID、备份与升级：[`runtime/docs/deployment.md`](runtime/docs/deployment.md)
+- 遥测规范与信号登记清单：[`runtime/docs/telemetry.md`](runtime/docs/telemetry.md)
+- 上游 DSH 兼容性与升级验证：[`runtime/docs/compatibility.md`](runtime/docs/compatibility.md)
+- 凭据与隐私防护钩子：[`runtime/docs/secret-guard.md`](runtime/docs/secret-guard.md)
+- 适配层包说明：[`dsh-adapter/README.md`](dsh-adapter/README.md)
+- 运行时工作区说明：[`runtime/README.md`](runtime/README.md)
+
+## 验证与开发注意事项
+
+在 `runtime/` 目录下运行完整编译、静态检查、单元测试与九条端到端验收脚本：
 
 ```sh
 cd runtime
@@ -58,6 +113,7 @@ pnpm --config.verify-deps-before-run=false check:plugins
 node scripts/check-upstream-names.mjs
 pnpm --config.verify-deps-before-run=false check:layering
 pnpm --config.verify-deps-before-run=false test
+pnpm --config.verify-deps-before-run=false verify:plugin-install
 pnpm --config.verify-deps-before-run=false verify:device-link
 pnpm --config.verify-deps-before-run=false verify:routing
 pnpm --config.verify-deps-before-run=false verify:settings-sync
@@ -66,20 +122,32 @@ pnpm --config.verify-deps-before-run=false verify:import
 pnpm --config.verify-deps-before-run=false verify:receipt-sync
 pnpm --config.verify-deps-before-run=false verify:multi-client
 pnpm --config.verify-deps-before-run=false verify:mobile-telemetry
-pnpm --config.verify-deps-before-run=false verify:plugin-install
-node scripts/telemetry-probe.mjs
 ```
 
-全部命令的实测结论与遗留风险见 `.worktrees/P06-REPORT.md`。
+环境注意事项：
 
-## 参考项目
+- **依赖预装环境**：运行 `pnpm` 命令时可附加 `--config.verify-deps-before-run=false` 跳过锁文件校验。
+- **`GIT_CONFIG_COUNT` 变量**：部分托管环境注入不完整的 `GIT_CONFIG_COUNT` 会导致 `git` 退出，执行命令时可使用 `env -u GIT_CONFIG_COUNT -u GIT_CONFIG_KEY_0 -u GIT_CONFIG_VALUE_0 git <子命令>`。
+- **隐私防护钩子**：克隆仓库后在 `runtime/` 目录运行 `bash scripts/install-hooks.sh` 启用提交与推送前敏感信息检查。
 
-`refer_repos/` 保存开发过程中的参考实现快照，登记处位于 [`runtime/refer-repos.json`](runtime/refer-repos.json)，不纳入版本管理。
+## 参考项目与致谢
+
+### 上游框架与开源基础
+
+感谢以下开源项目与基础设施为 ChatDSH 提供底层运行时、插件系统、可观测性与构建能力：
+
+- **[DeepSeek Harness (`@deepseek-ai/dsh`)](https://www.npmjs.com/package/@deepseek-ai/dsh)** 与 **Cordis 插件框架**：提供核心代理运行时、会话持久化、官方 Web/Desktop 客户端与插件加载机制。
+- **[OpenTelemetry](https://opentelemetry.io/)** 与 **[OpenObserve](https://openobserve.ai/)**：提供标准 OTLP 日志、链路追踪、指标协议与轻量级本地观测存储。
+- **[Zod](https://zod.dev/)** 与 **[esbuild](https://esbuild.github.io/)**：提供跨组件契约校验与客户端插件打包。
+
+### 生态参考项目
+
+感谢以下 DSH 生态与开源项目的探索与实践，它们在桌面端集成、移动端交互、远程隧道与多包工程组织等方面为 ChatDSH 的架构取舍提供了宝贵参考。本地参考快照登记于 [`runtime/refer-repos.json`](runtime/refer-repos.json)（不纳入版本管理）：
 
 ```sh
-node runtime/scripts/clone-refer-repos.mjs               # 拉取清单里的全部仓库
-node runtime/scripts/clone-refer-repos.mjs --only dsh-Go # 只拉取指定仓库
-node runtime/scripts/clone-refer-repos.mjs --list        # 打印清单
+node runtime/scripts/clone-refer-repos.mjs               # 拉取清单中的全部参考仓库
+node runtime/scripts/clone-refer-repos.mjs --only dsh-Go # 拉取指定仓库
+node runtime/scripts/clone-refer-repos.mjs --list        # 查看清单
 ```
 
 | 目录 | 上游 | 作用 |
