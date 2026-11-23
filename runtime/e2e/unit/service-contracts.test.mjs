@@ -27,8 +27,8 @@ const { GatewayStore, ReplicaStore, SettingsStore, aggregateSessions, readConfig
 
 test('保留的服务把依赖声明在静态字段或插件清单上', () => {
   assert.deepEqual(ChatdshTelemetryService.inject, ['otel', 'webServer', 'settings']);
-  assert.ok(ChatdshDeviceLinkService.inject.includes('webServer'));
-  assert.ok(ChatdshPushService.inject.includes('sessionPersistence'));
+  assert.deepEqual(ChatdshDeviceLinkService.inject, ['webServer']);
+  assert.deepEqual(ChatdshPushService.inject, ['sessionPersistence']);
   assert.ok(ChatdshSettingsSyncService.inject.includes('webServer'));
   assert.ok(importInject.includes('sessions'));
   assert.equal(typeof ImportService.Config, 'function');

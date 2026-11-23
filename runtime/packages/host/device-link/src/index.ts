@@ -157,7 +157,7 @@ export class ChatdshDeviceLinkService extends Service {
           return this.localCredential();
         },
       },
-      telemetry: telemetryOf<ChatdshTelemetry>(this.ctx),
+      telemetry: () => telemetryOf<ChatdshTelemetry>(this.ctx),
       reconnectMaxMs: this.config.reconnectMaxMs,
     });
     this.ctx.effect(() => () => {
