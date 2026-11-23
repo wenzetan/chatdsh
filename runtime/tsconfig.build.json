@@ -20,6 +20,9 @@
       "path": "packages/client/telemetry"
     },
     {
+      "path": "packages/client/remote"
+    },
+    {
       "path": "packages/host/telemetry"
     },
     {

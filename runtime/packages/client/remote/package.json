@@ -1,0 +1,57 @@
+{
+  "name": "@chatdsh/client-remote",
+  "version": "0.1.0",
+  "description": "ChatDSH 客户端插件：远程设备列表、离线只读副本、本机继续与中继配对设置",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-api-gateway"
+      ]
+    }
+  },
+  "chatdsh": {
+    "telemetry": {
+      "events": [
+        "chatdsh.client.ui.action",
+        "chatdsh.client.error"
+      ],
+      "spans": [
+        "chatdsh.client.remote.call"
+      ],
+      "metrics": [
+        "chatdsh_client_errors_total"
+      ]
+    }
+  },
+  "dependencies": {
+    "@chatdsh/core-contracts": "workspace:*",
+    "@chatdsh/core-remote-client": "workspace:*",
+    "zod": "4.6.7"
+  }
+}
