@@ -1,0 +1,16 @@
+.git
+.githooks
+.run
+.worktrees
+.verify
+.tmp
+.env
+.env.*
+assets
+refer_repos
+**/node_modules
+**/lib
+**/*.tsbuildinfo
+**/.dsh-deps
+**/.run
+*.tgz

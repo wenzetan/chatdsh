@@ -1,0 +1,33 @@
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chatdsh-relay:local
+    container_name: ${CHATDSH_RELAY_CONTAINER_NAME:-chatdsh-relay}
+    restart: unless-stopped
+    ports:
+      - "${CHATDSH_GATEWAY_BIND_HOST:-127.0.0.1}:${CHATDSH_GATEWAY_BIND_PORT:-3170}:3170"
+    environment:
+      DSH_HOME: /data
+      CHATDSH_GATEWAY_HOST: "0.0.0.0"
+      CHATDSH_GATEWAY_PORT: "3170"
+      CHATDSH_PUBLIC_URL: ${CHATDSH_PUBLIC_URL:?CHATDSH_PUBLIC_URL 必填，请先运行 bash scripts/relay-up.sh}
+      CHATDSH_PAIRING_CODE: ${CHATDSH_PAIRING_CODE:?CHATDSH_PAIRING_CODE 必填，请先运行 bash scripts/relay-up.sh}
+      CHATDSH_ACCESS_MODE: ${CHATDSH_ACCESS_MODE:-disabled}
+      CHATDSH_PUSH_MODE: ${CHATDSH_PUSH_MODE:-two-stage}
+      CHATDSH_PUSH_ESCALATION_MS: ${CHATDSH_PUSH_ESCALATION_MS:-120000}
+      CHATDSH_ENVIRONMENT: ${CHATDSH_ENVIRONMENT:-production}
+      CHATDSH_VAPID_SUBJECT: ${CHATDSH_VAPID_SUBJECT:-mailto:chatdsh@localhost}
+      CHATDSH_VAPID_PUBLIC_KEY: ${CHATDSH_VAPID_PUBLIC_KEY:-}
+      CHATDSH_VAPID_PRIVATE_KEY: ${CHATDSH_VAPID_PRIVATE_KEY:-}
+      CHATDSH_TELEMETRY: ${CHATDSH_TELEMETRY:-off}
+      CHATDSH_TELEMETRY_ENDPOINT: ${CHATDSH_TELEMETRY_ENDPOINT:-http://127.0.0.1:5080}
+      CHATDSH_TELEMETRY_ORG: ${CHATDSH_TELEMETRY_ORG:-default}
+      CHATDSH_TELEMETRY_USER: ${CHATDSH_TELEMETRY_USER:-}
+      CHATDSH_TELEMETRY_PASSWORD: ${CHATDSH_TELEMETRY_PASSWORD:-}
+    volumes:
+      - chatdsh-relay-data:/data
+
+volumes:
+  chatdsh-relay-data:

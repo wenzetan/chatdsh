@@ -47,9 +47,28 @@ pnpm --config.verify-deps-before-run=false test
 
 客户端产物由 `scripts/build-client.mjs` 写入 `packages/client/*/lib/client.js`。官方 profile 通过 `dsh plugin --profile web add` 装入 `@chatdsh/bundle` 后，宿主与客户端插件都从这些产物加载。
 
-## 三、启动轻量中继
+## 三、启动轻量中继（默认 Docker Compose）
 
-最小启动示例：
+在仓库根目录执行一行命令拉起中继容器（宿主机只需安装 Docker、Docker Compose、Bash 与 `curl`）：
+
+```sh
+bash scripts/relay-up.sh
+```
+
+首次运行行为：
+
+1. 通过命令行询问对外域名（必填，例如 `relay.example.com` 或 `https://relay.example.com`），规范化为精确 origin 并写入根目录 `.env`。
+2. 检查 `.env` 中是否已有 `CHATDSH_PAIRING_CODE`；未配置时自动生成 24 字节随机配对口令（base64url 编码）并持久化保存到 `.env`（文件权限 `0600`），后续再次运行直接复用。
+3. 执行 `docker compose --env-file .env -f docker-compose.yml up -d --build` 启动容器，并等待 `GET http://127.0.0.1:3170/healthz` 返回 `{"ok":true,"service":"chatdsh-gateway",...}`。
+4. 就绪后输出一条可在设备端直接复制执行的一行接入命令，以及后续再次打印该命令的方式：
+
+```sh
+bash scripts/relay-up.sh --print-join-command
+```
+
+默认环境变量模板见 [`.env.example`](../../.env.example)。容器内固定监听 `0.0.0.0:3170`，数据持久化在命名卷 `chatdsh-relay-data`（挂载点 `/data`），宿主机默认仅绑定 `127.0.0.1:3170` 供反向代理转发。监听通配地址时必须设置精确 `CHATDSH_PUBLIC_URL`（不含路径、查询串、片段与登录凭据）。
+
+如需在宿主机直接以 Node 进程运行（不使用容器）：
 
 ```sh
 cd runtime
@@ -61,53 +80,33 @@ CHATDSH_PAIRING_CODE='替换为随机口令' \
 node gateway/lib/main.js
 ```
 
-启动后核对：
+## 四、设备一行安装插件并配对启动
+
+复制上一步 `relay-up.sh` 输出的命令并在设备端执行：
 
 ```sh
-curl -fsS http://127.0.0.1:3170/healthz
+bash scripts/device-join.sh --relay https://relay.example.com --code '<中继配对口令>'
 ```
 
-响应包含 `{"ok":true,"service":"chatdsh-gateway",...}`。中继监听通配地址时必须同时设置 `CHATDSH_PUBLIC_URL`，启动会拒绝缺少公共来源的配置。`CHATDSH_PUBLIC_URL` 必须是精确的 HTTP 或 HTTPS origin，不能带路径、查询串、片段或登录凭据。
+该命令自动依次完成：
 
-## 四、安装官方 profile 并配对设备
+1. 将当前仓库的 `@chatdsh/bundle` 打包并经官方 `dsh plugin --profile web add` 安装到官方 `web` profile（可通过 `--profile desktop` 指定桌面端，或 `--bundle @chatdsh/bundle` 指定远端包）。
+2. 调用 `POST <中继地址>/chatdsh/gateway/devices/pair` 完成设备配对，并将 `CHATDSH_CONTROL_URL`、`CHATDSH_DEVICE_ID` 与 `CHATDSH_NODE_TOKEN` 写入 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）。节点令牌只通过运行环境变量注入，不进入配置树，也不出现在 `dsh --dump-config` 输出里。
+3. 注入配对凭据启动官方 DSH 运行时。
 
-在每台设备上初始化官方 `web` profile 并装入组合包：
+后续在同一台设备上重启 DSH 时无需再次传入配对口令，直接执行：
 
 ```sh
-DSH_HOME=/srv/dsh-device-a dsh plugin --profile web add /path/to/@chatdsh/bundle
-DSH_HOME=/srv/dsh-device-a dsh --profile web --dump-config
-DSH_HOME=/srv/dsh-device-a dsh --profile web --no-open --port 3080
+bash scripts/device-join.sh
 ```
 
-`--dump-config` 的退出码为 0 且没有未匹配补丁警告。组合包只追加 `insert` 条目，不覆写上游配置。
-
-配对使用中继的节点配对端点：
+如需接入新设备，在中继宿主机重新打印配对接入命令即可：
 
 ```sh
-curl -fsS -X POST http://127.0.0.1:3170/chatdsh/gateway/devices/pair \
-  -H 'content-type: application/json' \
-  -d '{"code":"替换为配对码","name":"device-a","platform":"linux","role":"both","capabilities":["shell"]}'
+bash scripts/relay-up.sh --print-join-command
 ```
 
-响应形如：
-
-```json
-{"deviceId":"...","token":"..."}
-```
-
-把 `deviceId` 与 `token` 写入设备运行时的环境：
-
-```sh
-DSH_HOME=/srv/dsh-device-a \
-CHATDSH_CONTROL_URL=https://relay.example.com \
-CHATDSH_DEVICE_ID='配对返回的 deviceId' \
-CHATDSH_NODE_TOKEN='配对返回的 token' \
-dsh --profile web --no-open --port 3080
-```
-
-设备连接成功后，`GET /chatdsh/gateway/devices` 会列出该设备并标记 `online: true`。节点令牌只从环境变量读取，不进入配置树，也不会出现在 `dsh --dump-config` 输出里。
-
-配对码是配置里的共享口令，每次配对都按同一个值校验。完成配对后更换 `CHATDSH_PAIRING_CODE` 并重启中继。缺少 `CHATDSH_PAIRING_CODE` 时配对端点返回 `404 pairing-disabled`。
+设备连接成功后，`GET /chatdsh/gateway/devices` 会列出该设备并标记 `online: true`。配对码在 `.env` 中持久化；如需轮换配对码，修改 `.env` 中的 `CHATDSH_PAIRING_CODE` 后重新执行 `bash scripts/relay-up.sh`。缺少 `CHATDSH_PAIRING_CODE` 时配对端点返回 `404 pairing-disabled`。
 
 手机端使用独立入口：
 

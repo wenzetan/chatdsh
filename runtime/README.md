@@ -47,38 +47,30 @@ pnpm --config.verify-deps-before-run=false check:layering
 pnpm --config.verify-deps-before-run=false test
 ```
 
-## 启动轻量中继
+## 启动轻量中继（默认 Docker Compose）
+
+在仓库根目录执行一行命令：
 
 ```sh
-DSH_HOME=/srv/chatdsh \
-CHATDSH_GATEWAY_HOST=127.0.0.1 \
-CHATDSH_GATEWAY_PORT=3170 \
-CHATDSH_PUBLIC_URL=https://relay.example.com \
-CHATDSH_PAIRING_CODE='替换为随机口令' \
-node gateway/lib/main.js
+cd ..
+bash scripts/relay-up.sh
 ```
 
-`GET /healthz` 返回 `{"ok":true,"service":"chatdsh-gateway",...}`。监听通配地址时必须同时设置 `CHATDSH_PUBLIC_URL`。
-
-## 配对设备
+首次运行会询问对外域名（必填）并自动生成随机配对口令保存到 `.env`（下次复用），拉起容器后输出一行设备接入命令。再次打印该命令执行：
 
 ```sh
-curl -fsS -X POST http://127.0.0.1:3170/chatdsh/gateway/devices/pair \
-  -H 'content-type: application/json' \
-  -d '{"code":"替换为配对码","name":"device-a","platform":"linux","role":"both","capabilities":["shell"]}'
+bash scripts/relay-up.sh --print-join-command
 ```
 
-把返回的 `deviceId` 与 `token` 写入设备运行时的环境：
+## 一行命令安装插件并配对设备
+
+在设备上粘贴中继启动后输出的一行命令：
 
 ```sh
-DSH_HOME=/srv/dsh-device-a \
-CHATDSH_CONTROL_URL=https://relay.example.com \
-CHATDSH_DEVICE_ID='配对返回的 deviceId' \
-CHATDSH_NODE_TOKEN='配对返回的 token' \
-dsh --profile web --no-open --port 3080
+bash scripts/device-join.sh --relay https://relay.example.com --code '<中继配对口令>'
 ```
 
-设备与中继的完整部署说明见 [`docs/deployment.md`](docs/deployment.md)。
+后续在同一设备上重启只需执行 `bash scripts/device-join.sh`。完整容器、反向代理与直接进程运行说明见 [`docs/deployment.md`](docs/deployment.md)。
 
 ## 环境变量
 
