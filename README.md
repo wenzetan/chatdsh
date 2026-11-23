@@ -7,7 +7,7 @@
 | 目录 | 内容 |
 |---|---|
 | [`dsh-adapter/`](dsh-adapter/) | 适配层 `@chatdsh/adapter`：DSH 顶层稳定 API 的唯一接触面（7 个 peer 依赖） |
-| [`runtime/`](runtime/) | 运行时侧工作区：3 个核心包、5 个宿主插件、2 个客户端插件、1 个纯附加组合包 `@chatdsh/bundle`、轻量中继服务端 `@chatdsh/gateway`、校验脚本、单元测试与技术文档 |
+| [`runtime/`](runtime/) | 运行时侧工作区：3 个核心包、5 个宿主插件、3 个客户端插件、1 个纯附加组合包 `@chatdsh/bundle`、轻量中继服务端 `@chatdsh/gateway`、校验脚本、单元测试与技术文档 |
 | [`refer_repos/`](refer_repos/) | 参考项目本地快照，不纳入版本管理 |
 
 ## 文档与交付入口
@@ -16,9 +16,61 @@
 - 目标架构设计：[`runtime/docs/architecture.md`](runtime/docs/architecture.md)
 - 实现说明与工作包交付清单（P01–P06）：[`runtime/docs/implementation-guide.md`](runtime/docs/implementation-guide.md)
 - 遥测信号清单与关闭规范：[`runtime/docs/telemetry.md`](runtime/docs/telemetry.md)
+- 部署、运行、备份与升级：[`runtime/docs/deployment.md`](runtime/docs/deployment.md)
 - DSH 兼容性与升级验证步骤：[`runtime/docs/compatibility.md`](runtime/docs/compatibility.md)
 - 凭据与隐私防护：[`runtime/docs/secret-guard.md`](runtime/docs/secret-guard.md)
 - 适配层说明：[`dsh-adapter/README.md`](dsh-adapter/README.md)
+
+## 本机实测运行
+
+前置条件：Node.js 22 及以上、pnpm 11.21.0、官方 DSH 基线 `0.2.2-rc.3`。以下命令在 `/workspace/chatdsh/runtime` 下执行。
+
+```sh
+node_modules/.bin/tsc -b tsconfig.build.json --force
+pnpm --config.verify-deps-before-run=false build:client
+```
+
+启动轻量中继：
+
+```sh
+DSH_HOME=/srv/chatdsh \
+CHATDSH_GATEWAY_HOST=127.0.0.1 \
+CHATDSH_GATEWAY_PORT=3170 \
+CHATDSH_PUBLIC_URL=https://relay.example.com \
+CHATDSH_PAIRING_CODE='替换为随机口令' \
+node gateway/lib/main.js
+```
+
+`GET /healthz` 返回 `{"ok":true,"service":"chatdsh-gateway",...}`。设备通过 `POST /chatdsh/gateway/devices/pair` 取得 `deviceId` 与 `token`，再把 `CHATDSH_CONTROL_URL`、`CHATDSH_DEVICE_ID`、`CHATDSH_NODE_TOKEN` 写入设备运行时环境。
+
+常用环境变量：`DSH_HOME`、`CHATDSH_GATEWAY_HOST`、`CHATDSH_GATEWAY_PORT`、`CHATDSH_GATEWAY_DB`、`CHATDSH_PUBLIC_URL`、`CHATDSH_PAIRING_CODE`、`CHATDSH_PUSH_MODE`、`CHATDSH_ACCESS_MODE`、`CHATDSH_CONTROL_URL`、`CHATDSH_NODE_TOKEN`、`CHATDSH_DEVICE_ID`、`CHATDSH_VAPID_SUBJECT`、`CHATDSH_VAPID_PUBLIC_KEY`、`CHATDSH_VAPID_PRIVATE_KEY`、`CHATDSH_TELEMETRY`。完整清单、默认值与关闭行为见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md) 第六节。
+
+## 验收命令
+
+以下命令在仓库根目录 `/workspace/chatdsh` 下执行。
+
+```sh
+cd runtime
+node_modules/.bin/tsc -b tsconfig.build.json --force
+pnpm --config.verify-deps-before-run=false build:client
+pnpm --config.verify-deps-before-run=false check:telemetry
+pnpm --config.verify-deps-before-run=false check:plugins
+node scripts/check-upstream-names.mjs
+pnpm --config.verify-deps-before-run=false check:layering
+pnpm --config.verify-deps-before-run=false test
+pnpm --config.verify-deps-before-run=false verify:device-link
+pnpm --config.verify-deps-before-run=false verify:routing
+pnpm --config.verify-deps-before-run=false verify:settings-sync
+pnpm --config.verify-deps-before-run=false verify:approval-notify
+pnpm --config.verify-deps-before-run=false verify:import
+pnpm --config.verify-deps-before-run=false verify:receipt-sync
+pnpm --config.verify-deps-before-run=false verify:multi-client
+pnpm --config.verify-deps-before-run=false verify:mobile-telemetry
+pnpm --config.verify-deps-before-run=false verify:plugin-install
+node scripts/telemetry-probe.mjs
+```
+
+全部命令的实测结论与遗留风险见 `.worktrees/P06-REPORT.md`。
 
 ## 参考项目
 

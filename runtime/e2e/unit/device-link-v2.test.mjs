@@ -214,7 +214,7 @@ function createClient(gateway, node, local, options = {}) {
     role: 'both',
     capabilities: ['http', 'websocket'],
     localOrigin: local.origin,
-    credentials: {
+    credentials: options.credentials ?? {
       get: async () => credential,
       refresh: async () => credential,
     },
@@ -307,6 +307,40 @@ test('版本 2 握手、HTTP 分块与额度窗口、凭据与 Host/Origin 改�
     assert.ok(client.stats.dataFramesReceived >= 10, '大请求按多帧接收');
     assert.ok(client.stats.creditFramesSent > 0, '接收方向补充过额度');
     assert.ok(client.stats.creditFramesReceived > 0, '发送方向等待过额度');
+  } finally {
+    client.stop();
+    await local.close();
+    await gateway.close();
+  }
+});
+
+test('凭据获取较慢时半关闭仍等待请求体写完', async () => {
+  const gateway = await startGateway();
+  const local = await startLocalRuntime();
+  const node = await pairNode(gateway, 'device-slow-credential');
+  const credential = { origin: local.origin, page: PAGE_COOKIE, api: API_COOKIE };
+  const client = createClient(gateway, node, local, {
+    credentials: {
+      get: async () => {
+        await new Promise((settle) => setTimeout(settle, 150));
+        return credential;
+      },
+      refresh: async () => credential,
+    },
+  });
+  try {
+    client.start();
+    await client.waitForWelcome(5000);
+    assert.ok(await waitFor(() => gateway.deviceLink.online(node.deviceId)));
+
+    const payload = 'z'.repeat(70 * 1024);
+    const upload = await fetch(`${gateway.url}/d/${node.deviceId}/upload`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: payload,
+    });
+    assert.equal(upload.status, 200);
+    assert.deepEqual(await upload.json(), { bytes: payload.length });
   } finally {
     client.stop();
     await local.close();

@@ -75,12 +75,15 @@ test('标题、路径末段、删除状态与业务未读在数据库查询中�
       { seq: 4, kind: 'tool/result', time: 5, bytes: 8, payload: {} },
       { seq: 5, kind: 'assistant/message', time: 6, bytes: 8, payload: {} },
     ]);
+    app.replica.append('a', [
+      { seq: 0, kind: 'session/title', time: 1, bytes: 8, payload: { title: '裸数据标题' } },
+    ]);
     app.receipts.mark({ sessionId: 'A', deviceId: 'reader', readUpToSeq: 3 });
     const options = { clientId: 'reader', deviceIds: 'all', query: '', limit: 50 };
     const rows = app.query(options).items;
     assert.equal(rows.find((row) => row.sessionId === 'A').title, 'ÄBC_% 中文');
     assert.equal(rows.find((row) => row.sessionId === 'A').unreadMessages, 1);
-    assert.equal(rows.find((row) => row.sessionId === 'a').title, '项目');
+    assert.equal(rows.find((row) => row.sessionId === 'a').title, '裸数据标题');
     assert.equal(rows.find((row) => row.sessionId === 'z').title, 'z');
     assert.deepEqual(app.query({ ...options, query: 'äbc_%' }).items.map((row) => row.sessionId), ['A']);
     assert.deepEqual(app.query({ ...options, query: '%' }).items.map((row) => row.sessionId), ['A']);

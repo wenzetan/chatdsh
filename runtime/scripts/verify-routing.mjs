@@ -144,8 +144,14 @@ try {
   check(noPrefix.status === 404, '没有 /d/ 前缀的请求不被转发到任何设备', `${noPrefix.status}`);
 
   for (const node of nodes) {
-    const frame = await probeRemoteMux(base, node.deviceId);
-    check(frame.type === 'error' && frame.streamId === 'chatdsh-probe', `${node.name} 的 Remote mux 双向收发`, JSON.stringify(frame));
+    const probe = await probeRemoteMux(base, node.deviceId);
+    const item = probe.frames.find((frame) => frame.type === 'item');
+    const value = item?.value;
+    const ok = probe.terminal.type === 'item'
+      && typeof value === 'object' && value !== null
+      && value.type === 'rows'
+      && Array.isArray(value.jobs);
+    check(ok, `${node.name} 的 Remote mux 双向收发`, JSON.stringify({ request: probe.request, frames: probe.frames }));
   }
 
   const pathRejected = await upgradeStatus(`${base}/d/${nodeA.deviceId}/other`);

@@ -71,7 +71,7 @@ export function nodeTokenFrom(env: NodeJS.ProcessEnv): string {
  */
 export class ChatdshDeviceLinkService extends Service {
   /** 依赖本地 HTTP 服务：转发目标地址与 `/healthz` 都由它提供。 */
-  static inject = ['webServer'];
+  static inject = ['webServer', 'chatdshTelemetry'];
 
   /** 配置 schema。 */
   static Config: z<DeviceLinkConfig> = Config;

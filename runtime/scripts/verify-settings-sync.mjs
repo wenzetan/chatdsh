@@ -1,23 +1,26 @@
 // 设置白名单同步的整机验收：一个真实控制平面与两台真实 dsh 运行时。
 //
-// 编排同 verify-device-link.mjs：控制平面不托管运行时，两台设备各跑一个
-// `dsh --profile chatdsh-web`，用配对得到的节点令牌连上控制平面。
+// 编排同 verify-device-link.mjs：控制平面不托管运行时，两台设备各跑一个真实安装的
+// 官方 `dsh --profile web`，用配对得到的节点令牌连上控制平面。
 //
 // 断言按顺序打印：
 //   1. 控制平面接受白名单命名空间的写入，并回传接收时刻；
 //   2. 白名单之外的命名空间被拒绝（400 namespace-not-whitelisted）；
 //   3. 在设备 A 上改一个白名单设置（agent-default-model 的 model），它被上报到控制平面；
-//   4. 设备 A 上报的设置经控制平面推给设备 B，写进 B 的 home 层补丁文件。
+//   4. 设备 A 上报的设置经控制平面推给设备 B，写进 B 的 home 层补丁文件；
+//   5. 白名单之外的设置在设备侧被拒绝，且不进入任何设备的 home 层；
+//   6. 过期版本写入返回冲突，同一命名空间的两个字段按接收时刻合并。
 //
 // 用法：node scripts/verify-settings-sync.mjs
 // 退出码 0 表示全部通过。端口从 20180 起；被占用时顺延，并在输出里写明实际端口。
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, symlinkSync, readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { tempHome } from './lib/cleanup.mjs';
 import { dshCommand } from './lib/dsh.mjs';
+import { installRuntimeProfile } from './lib/dsh-runtime.mjs';
 import { findFreePort } from './lib/ports.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -174,12 +177,11 @@ try {
   const ports = [portA, portB];
   const homes = [tempHome('verify-settings-a'), tempHome('verify-settings-b')];
   for (const [index, node] of nodes.entries()) {
-    mkdirSync(join(homes[index], 'profiles'), { recursive: true });
-    symlinkSync(join(ROOT, 'profiles', 'chatdsh-web'), join(homes[index], 'profiles', 'chatdsh-web'), 'dir');
+    installRuntimeProfile(homes[index]);
     runtimes.push({
       node,
       home: homes[index],
-      runtime: startProcess(dshCommand(), ['--profile', 'chatdsh-web', '--port', String(ports[index]), '--no-open'], {
+      runtime: startProcess(dshCommand(), ['--profile', 'web', '--port', String(ports[index]), '--no-open'], {
         cwd: ROOT,
         env: {
           ...process.env,
@@ -232,6 +234,59 @@ try {
       : { ok: false, detail: text === '' ? '（空文件）' : text.replaceAll('\n', ' ⏎ ').slice(0, 240) };
   }, 30_000, 500);
   check(applied.ok, '断言四：设备 B 的 home 层补丁文件写入了同一设置', applied.detail);
+
+  // 断言五：设备侧拒绝白名单之外的命名空间，任何设备的 home 层都不出现该写入。
+  const cookieB = await apiCookie(runtimes[1].bootUrl);
+  const deviceRejected = await fetch(`${new URL(runtimes[0].bootUrl).origin}/chatdsh/device/settings/form`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: cookieA },
+    body: JSON.stringify({ namespace: 'bash-local', revision: 0, fields: { cwd: '/etc' } }),
+  });
+  const deviceRejectedBody = await deviceRejected.json();
+  check(
+    deviceRejected.status === 400
+      && deviceRejectedBody.outcome === 'rejected'
+      && deviceRejectedBody.reason === 'namespace-device-scope',
+    '断言五：设备侧拒绝白名单之外的命名空间',
+    `${deviceRejected.status} ${JSON.stringify(deviceRejectedBody)}`,
+  );
+  const homeA = readHomeLayer(runtimes[0].home);
+  const homeB = readHomeLayer(runtimes[1].home);
+  check(
+    !homeA.includes('bash-local') && !homeA.includes('/etc') && !homeB.includes('bash-local') && !homeB.includes('/etc'),
+    '断言五：白名单之外的设置没有进入任何设备的 home 层',
+    `A=${homeA.includes('/etc')} B=${homeB.includes('/etc')}`,
+  );
+
+  // 断言六：过期版本写入返回冲突；另一个字段随后按接收时刻合并进同一补丁行。
+  const conflict = await fetch(`${new URL(runtimes[1].bootUrl).origin}/chatdsh/device/settings/form`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: cookieB },
+    body: JSON.stringify({ namespace: 'agent-default-model', revision: 0, fields: { model: 'stale-model' } }),
+  });
+  const conflictBody = await conflict.json();
+  check(
+    conflict.status === 409
+      && conflictBody.outcome === 'conflict'
+      && conflictBody.conflict?.currentRevision >= 1
+      && conflictBody.values?.model === newModel,
+    '断言六：过期版本写入返回冲突并给出当前值',
+    `${conflict.status} ${JSON.stringify(conflictBody)}`,
+  );
+  const provider = `provider-${Date.now()}`;
+  const providerWrite = await fetch(`${base}/chatdsh/gateway/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ namespace: 'agent-default-model', key: 'provider', value: JSON.stringify(provider) }),
+  });
+  check(providerWrite.status === 200, '断言六：控制平面接受同一命名空间的第二个字段', `${providerWrite.status}`);
+  const merged = await waitFor(async () => {
+    const text = readHomeLayer(runtimes[1].home);
+    return text.includes(newModel) && text.includes(provider)
+      ? { ok: true, detail: text.replaceAll('\n', ' ⏎ ').slice(0, 300) }
+      : { ok: false, detail: text === '' ? '（空文件）' : text.replaceAll('\n', ' ⏎ ').slice(0, 300) };
+  }, 30_000, 500);
+  check(merged.ok, '断言六：同一命名空间的两个字段按接收时刻合并到设备 B', merged.detail);
 } catch (error) {
   check(false, '验收中断', error instanceof Error ? error.message : String(error));
   if (gateway.output !== '') console.log(`控制平面输出片段：\n${gateway.output.slice(-1200)}`);

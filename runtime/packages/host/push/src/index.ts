@@ -83,7 +83,7 @@ export const Config: z<PushConfig> = z.object({
  */
 export class ChatdshPushService extends Service {
   /** 会话持久化用于读取已提交日志。 */
-  static inject = ['sessionPersistence'];
+  static inject = ['sessionPersistence', 'chatdshTelemetry'];
 
   /** 配置 schema。 */
   static Config: z<PushConfig> = Config;

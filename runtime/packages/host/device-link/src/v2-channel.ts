@@ -338,7 +338,7 @@ abstract class DeviceChannel {
   protected abstract consume(payload: Buffer): Promise<void>;
 
   /** 控制平面发送半关闭。 */
-  protected abstract onRemoteEnd(): void;
+  protected abstract onRemoteEnd(): Promise<void> | void;
 
   /** 中断本地请求或套接字。 */
   protected abstract abortLocal(error: Error): void;
@@ -399,7 +399,7 @@ abstract class DeviceChannel {
     // 半关闭要排在已收到的数据之后：先把请求体写完，再结束本地请求。
     this.inboundQueue = this.inboundQueue.then(async () => {
       if (this.closedValue) return;
-      this.onRemoteEnd();
+      await this.onRemoteEnd();
       if (this.localEndedValue) this.finish('ended');
     }).catch((error: unknown) => {
       if (this.closedValue) return;
@@ -666,8 +666,8 @@ class HttpChannel extends DeviceChannel {
     if (!request.write(payload)) await waitForDrain(request);
   }
 
-  protected onRemoteEnd(): void {
-    const request = this.request;
+  protected async onRemoteEnd(): Promise<void> {
+    const request = this.request ?? await this.requestReady;
     if (request !== undefined && !request.destroyed && !request.writableEnded) request.end();
   }
 
@@ -702,7 +702,6 @@ class HttpChannel extends DeviceChannel {
       request.end(body);
       return;
     }
-    if (this.remoteEnded) request.end();
   }
 
   private async buildHeaders(url: URL): Promise<Record<string, string>> {

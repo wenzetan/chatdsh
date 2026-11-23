@@ -447,7 +447,8 @@ function titleOfPayload(payload: string | null): string | undefined {
   if (payload === null) return undefined;
   const parsed: unknown = JSON.parse(payload);
   if (typeof parsed !== 'object' || parsed === null) return undefined;
-  const data = (parsed as { data?: unknown }).data;
+  const record = parsed as { data?: unknown };
+  const data = typeof record.data === 'object' && record.data !== null ? record.data : record;
   if (typeof data !== 'object' || data === null) return undefined;
   const title = (data as { title?: unknown }).title;
   return typeof title === 'string' && title !== '' ? title : undefined;

@@ -177,12 +177,17 @@ export interface ReplicaItem {
   readonly failed: boolean;
 }
 
-/** 取事件信封里的数据字段。 */
+/** 取事件数据；同时兼容完整信封与裸数据两种上报形状。 */
 function dataOf(event: ReplicaEvent): Readonly<Record<string, unknown>> {
   const payload = event.payload;
   if (typeof payload !== 'object' || payload === null) return {};
-  const data = (payload as { readonly data?: unknown }).data;
-  return typeof data === 'object' && data !== null ? (data as Readonly<Record<string, unknown>>) : {};
+  const record = payload as { readonly type?: unknown; readonly data?: unknown };
+  if (typeof record.type === 'string' && Object.hasOwn(record, 'data')) {
+    return typeof record.data === 'object' && record.data !== null
+      ? (record.data as Readonly<Record<string, unknown>>)
+      : {};
+  }
+  return record as Readonly<Record<string, unknown>>;
 }
 
 /** 取消息内容里的文本块。 */

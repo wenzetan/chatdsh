@@ -153,9 +153,13 @@ test('中继存储读写真实 SQLite 并聚合会话列表', () => {
     const settings = new SettingsStore(store.handle());
     store.registerNode({ id: 'node-a', name: '节点甲', platform: 'linux', role: 'host', capabilities: ['shell'], tokenHash: 'hash-a' });
     store.upsertSession({ sessionId: 'session-a', deviceId: 'node-a', cwd: '/workspace/project', kind: 'work', createdAt: 100 });
+    store.upsertSession({ sessionId: 'session-b', deviceId: 'node-a', cwd: '/workspace/bare', kind: 'work', createdAt: 101 });
     replica.append('session-a', [
       { seq: 0, kind: 'session/title', time: 200, bytes: 20, payload: { data: { title: '真实标题' } } },
       { seq: 1, kind: 'turn/start', time: 300, bytes: 10, payload: { data: { turn: 1 } } },
+    ]);
+    replica.append('session-b', [
+      { seq: 0, kind: 'session/title', time: 201, bytes: 20, payload: { title: '裸数据标题' } },
     ]);
     assert.equal(replica.watermarkOf('session-a'), 1);
     assert.equal(replica.read('session-a').length, 2);
@@ -171,6 +175,7 @@ test('中继存储读写真实 SQLite 并聚合会话列表', () => {
     assert.equal(snapshot.devices[0].online, true);
     assert.equal(snapshot.devices[0].sessions[0].title, '真实标题');
     assert.equal(snapshot.devices[0].sessions[0].workspaceName, 'project');
+    assert.equal(snapshot.devices[0].sessions[1].title, '裸数据标题');
 
     const parsed = readConfig({
       CHATDSH_GATEWAY_PORT: '4567',
