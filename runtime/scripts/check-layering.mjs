@@ -3,11 +3,10 @@
 //
 // 角色目录决定允许的依赖方向：
 //   core     只依赖 core 自身、适配层与上游
-//   host    只依赖 core、其它 host 包、适配层与同级协议适配器（投影类型增强与外部服务翻译）
-//   tool    只依赖 core 与适配层
+//   host     只依赖 core、其它 host 包与适配层
 //   client   只依赖 core
-//   bundle/preset 可以依赖全部
-//   gateway/desktop 只依赖 core
+//   bundle   可以依赖全部自建包
+//   gateway  只依赖 core
 // 适配层（dsh-adapter）不依赖任何自建运行时包。
 //
 // 另外核对客户端插件不引用第三方插件包：`dsh.client.inject` 里只允许上游包。
@@ -25,11 +24,9 @@ const failures = [];
 /** 角色目录允许的自建依赖。 */
 const ALLOWED = {
   core: [/^@chatdsh\/core-/, /^@chatdsh\/adapter$/],
-  host: [/^@chatdsh\/core-/, /^@chatdsh\/host-/, /^@chatdsh\/adapter$/, /^@chatdsh\/hindsight-adapter$/, /^@chatdsh\/hermes-adapter$/],
-  tool: [/^@chatdsh\/core-/, /^@chatdsh\/adapter$/],
+  host: [/^@chatdsh\/core-/, /^@chatdsh\/host-/, /^@chatdsh\/adapter$/],
   client: [/^@chatdsh\/core-/],
   bundle: [/^@chatdsh\//],
-  preset: [/^@chatdsh\//],
 };
 
 function manifestOf(dir) {
@@ -64,27 +61,14 @@ for (const role of Object.keys(ALLOWED)) {
   }
 }
 
-for (const name of ['gateway', 'desktop']) {
+for (const name of ['gateway']) {
   const dir = join(ROOT, name);
   if (!existsSync(join(dir, 'package.json'))) continue;
   const manifest = manifestOf(dir);
   for (const dep of Object.keys(depsOf(manifest))) {
     if (!dep.startsWith('@chatdsh/')) continue;
-    // 与 runtime 同级的桥接包只含纯函数，控制平面可以依赖它；其余只允许 core。
     if (/^@chatdsh\/core-/.test(dep)) continue;
-    if (dep === '@chatdsh/forge-bridge') continue;
-    failures.push(`${name} 依赖了 ${dep}，该层只允许依赖 core 与 forge-bridge`);
-  }
-}
-
-// 与 runtime 同级的适配器目录：只允许依赖 @chatdsh/core-*，不得依赖宿主或工具包。
-for (const name of ['hermes-adapter', 'hindsight-adapter', 'forge-bridge']) {
-  const manifestPath = join(REPO, name, 'package.json');
-  if (!existsSync(manifestPath)) continue;
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  for (const dep of Object.keys(depsOf(manifest))) {
-    if (!dep.startsWith('@chatdsh/')) continue;
-    if (!/^@chatdsh\/core-/.test(dep)) failures.push(`${name} 依赖了 ${dep}，同级适配器只允许依赖 core 包`);
+    failures.push(`${name} 依赖了 ${dep}，该层只允许依赖 core`);
   }
 }
 

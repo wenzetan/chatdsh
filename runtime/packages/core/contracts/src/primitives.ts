@@ -3,7 +3,7 @@
  *
  * 各域契约只声明字段，标量形状在这里统一定义，避免同类字段在不同文件里出现不同长度限制。
  * 本包不手写任何格式解析：JSON 与字段校验交给 zod，YAML 由设置同步使用 js-yaml 解析，
- * cron 由自动化宿主引入成熟解析库承担，三者都登记在 {@link PARSING_DEPENDENCIES}。
+ * 两者都登记在 {@link PARSING_DEPENDENCIES}。
  * @module @chatdsh/core-contracts/primitives
  */
 
@@ -54,7 +54,7 @@ export const clockTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 /** 解析依赖的登记项。 */
 export interface ParsingDependency {
   /** 被解析的格式。 */
-  readonly format: 'json' | 'yaml' | 'cron' | 'timezone';
+  readonly format: 'json' | 'yaml' | 'timezone';
   /** 承担解析的成熟依赖或平台接口。 */
   readonly library: string;
   /** 实施该解析的模块。 */
@@ -66,9 +66,7 @@ export interface ParsingDependency {
 /**
  * 解析依赖登记。
  *
- * 契约只声明字段形状与校验约束，实际解析全部交给表中登记的成熟依赖。`cron` 一项由
- * 自动化宿主（WP17）引入成熟 cron 解析库后改为 `implemented`，本包只声明表达式字段
- * 的写法与互斥规则。
+ * 契约只声明字段形状与校验约束，实际解析全部交给表中登记的成熟依赖。
  */
 export const PARSING_DEPENDENCIES: readonly ParsingDependency[] = [
   {
@@ -82,12 +80,6 @@ export const PARSING_DEPENDENCIES: readonly ParsingDependency[] = [
     library: 'js-yaml',
     owner: '@chatdsh/host-settings-sync',
     status: 'implemented',
-  },
-  {
-    format: 'cron',
-    library: 'croner',
-    owner: '@chatdsh/gateway 自动化路由（WP17）',
-    status: 'pending',
   },
   {
     format: 'timezone',

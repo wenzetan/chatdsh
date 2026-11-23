@@ -227,6 +227,19 @@ export function releaseIndependentHome(home) {
   return { removed: resolved };
 }
 
+/**
+ * 把 `DSH_HOME` 指向测试数据根，返回恢复函数。
+ * @param {string} home - 本次执行分配的数据根。
+ */
+export function useHome(home) {
+  const previous = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  return () => {
+    if (previous === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previous;
+  };
+}
+
 /** 用户数据根在本次运行期间保持不变的依据。 */
 export function snapshotUserHome() {
   const home = process.env.DSH_HOME;

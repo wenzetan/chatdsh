@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
+import net from 'node:net';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -67,13 +68,33 @@ const {
   SETTINGS_SCOPES_PATH,
   SETTINGS_SYNC_PATH,
 } = await import('../../packages/host/settings-sync/lib/index.js');
-const { findFreePort } = await import('../../gateway/lib/runtime.js');
 const { createTelemetryClient } = await import('../../packages/core/diagnostics/lib/client.js');
 const { defaultTelemetryConfig } = await import('../../packages/core/diagnostics/lib/config.js');
 
 /** 等一段时间。 */
 function settle(ms) {
   return new Promise((done) => setTimeout(done, ms));
+}
+
+/**
+ * 找一个空闲端口。
+ * @param {number} start - 起始端口。
+ */
+async function findFreePort(start) {
+  for (let port = start; port <= start + 200; port += 1) {
+    const server = net.createServer();
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', resolve);
+      });
+    } catch {
+      continue;
+    }
+    await new Promise((resolve) => server.close(resolve));
+    return port;
+  }
+  throw new Error('没有可用端口');
 }
 
 /**
@@ -94,8 +115,8 @@ async function waitFor(check, timeoutMs, label) {
 }
 
 /**
- * 起一个真实控制平面进程。
- * @param {string} home - 控制平面的数据根。
+ * 起一个真实中继进程。
+ * @param {string} home - 中继的数据根。
  * @param {string} pairingCode - 配对码。
  */
 async function startGateway(home, pairingCode) {
@@ -105,11 +126,11 @@ async function startGateway(home, pairingCode) {
     env: {
       ...process.env,
       CHATDSH_TELEMETRY: 'off',
+      DSH_HOME: join(home, 'gateway-home'),
       CHATDSH_GATEWAY_HOST: '127.0.0.1',
       CHATDSH_GATEWAY_PORT: String(port),
       CHATDSH_GATEWAY_DB: join(home, 'gateway.sqlite'),
       CHATDSH_PAIRING_CODE: pairingCode,
-      CHATDSH_RUNTIME_URL: 'http://127.0.0.1:1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -121,10 +142,10 @@ async function startGateway(home, pairingCode) {
   const base = `http://127.0.0.1:${port}`;
   try {
     await waitFor(async () => {
-      if (child.exitCode !== null) return { ok: false, detail: `控制平面已退出：${output.text.slice(-800)}` };
+      if (child.exitCode !== null) return { ok: false, detail: `中继已退出：${output.text.slice(-800)}` };
       const response = await fetch(`${base}/healthz`).catch(() => undefined);
       return { ok: response?.ok === true, detail: response?.status ?? '不可达' };
-    }, 30_000, '控制平面监听');
+    }, 30_000, '中继监听');
   } catch (error) {
     child.kill('SIGTERM');
     throw error;
@@ -134,7 +155,7 @@ async function startGateway(home, pairingCode) {
     output: () => output.text,
     async stop() {
       child.kill('SIGTERM');
-      await waitFor(async () => ({ ok: child.exitCode !== null }), 15_000, '控制平面退出').catch(() => undefined);
+      await waitFor(async () => ({ ok: child.exitCode !== null }), 15_000, '中继退出').catch(() => undefined);
     },
   };
 }

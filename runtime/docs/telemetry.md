@@ -75,6 +75,7 @@ flowchart TB
 | span | `chatdsh.gateway.client.request` | 私有客户端会话分页读取 | `outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.mobile.telemetry` | 移动端遥测批次中转 | `action`、`outcome`、`count`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.mobile.devices` | 客户端设备列举与吊销 | `action`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.mobile.pairing` | 签发一次性配对码 | `outcome` |
 | span | `chatdsh.gateway.notification.record` | 通知记录写入 | `kind`、`session.id`、`outcome` |
 | span | `chatdsh.gateway.notification.list` | 通知中心分页 | `count`、`outcome` |
 | span | `chatdsh.gateway.notification.read` | 已读标记 | `count`、`outcome` |
@@ -84,6 +85,7 @@ flowchart TB
 | span | `chatdsh.gateway.notification.probe` | 验证通知发送与回执 | `stage`、`outcome`、`error.type`、`error.code` |
 | span | `chatdsh.push.dispatch` | 通知批次投递 | `stage`、`mode`、`count`、`outcome` |
 | span | `chatdsh.push.send` | 单次 Web Push 发送 | `outcome`、`http.status_code`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.push.deliver` | 按分级规则向在线设备投递通知 | `device.kind`、`outcome` |
 | event | `chatdsh.gateway.device.rejected` | 配对、长连接升级、协议或前缀转发拒绝 | `action`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.device.disconnected` | 设备长连接断开 | `role`、`platform`、`reason` |
 | event | `chatdsh.gateway.ownership.rejected` | 会话归属写入拒绝 | `action`、`outcome`、`error.type`、`error.code` |
