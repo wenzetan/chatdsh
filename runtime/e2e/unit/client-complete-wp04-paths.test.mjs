@@ -360,19 +360,21 @@ test('设备前缀下的 WebSocket 升级回明确设备错误，不落到默认
   const gateway = await startGateway();
   try {
     const offline = await pairNode(gateway, 'device-upgrade');
-    for (const path of [
-      `/d/no-such-device/api/remote.mux`,
-      `/d/${offline.deviceId}/api/remote.mux`,
-      `/d/${offline.deviceId}/other/path`,
-    ]) {
+    const cases = [
+      [`/d/no-such-device/api/remote.mux`, '404 Not Found', 'device-not-found'],
+      [`/d/${offline.deviceId}/api/remote.mux`, '409 Conflict', 'device-offline'],
+      [`/d/${offline.deviceId}/other/path`, '403 Forbidden', 'path-invalid'],
+    ];
+    for (const [path, status, errorCode] of cases) {
       const text = await upgradeAttempt(gateway.url, path);
       const headerEnd = text.indexOf('\r\n\r\n');
       assert.notEqual(headerEnd, -1, `${path} 应当回一个完整的 HTTP 响应`);
       const statusLine = text.slice(0, text.indexOf('\r\n'));
       assert.doesNotMatch(text, /101 Switching Protocols/, `${path} 不得升级成功`);
       assert.match(statusLine, /^HTTP\/1\.1 [45]\d\d /, `${path} 应当以明确状态码拒绝`);
+      assert.equal(statusLine, `HTTP/1.1 ${status}`, `${path} 应当回精确状态码`);
       const payload = JSON.parse(text.slice(headerEnd + 4));
-      assert.match(payload.error, /^device-[a-z-]+$/, `${path} 应当给出设备侧错误码`);
+      assert.deepEqual(payload, { error: errorCode }, `${path} 应当给出对应的错误码`);
     }
   } finally {
     await gateway.close();

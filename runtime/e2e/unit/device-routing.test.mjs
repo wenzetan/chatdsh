@@ -339,8 +339,9 @@ test('/d/ 前缀的设备不存在、离线与 WebSocket 升级的拒绝', async
       });
     });
     socket.destroy();
-    assert.match(responseText, /^HTTP\/1\.1 501 Not Implemented/m);
-    assert.ok(responseText.includes('device-websocket-unsupported'));
+    assert.match(responseText, /^HTTP\/1\.1 409 Conflict/m);
+    const upgradeBody = JSON.parse(responseText.slice(responseText.indexOf('\r\n\r\n') + 4));
+    assert.deepEqual(upgradeBody, { error: 'device-offline' });
   } finally {
     await gateway.close();
   }
