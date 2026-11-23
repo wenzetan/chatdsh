@@ -63,7 +63,9 @@ flowchart TB
 |---|---|---|---|
 | span | `chatdsh.gateway.http` | 入站 HTTP 请求 | `http.route`、`http.method`、`http.status_code` |
 | span | `chatdsh.gateway.replica.append` | 会话副本追加 | `session.id`、`seq`、`bytes`、`outcome` |
-| span | `chatdsh.gateway.device.pair` | 节点配对并签发令牌 | `platform`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.device.pair` | 节点配对并签发令牌或登记待审批申请 | `platform`、`outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.device.pairing.claim` | 客户端轮询与一次性领取已审批配对令牌 | `outcome`、`error.type`、`error.code` |
+| span | `chatdsh.gateway.device.pairing.approve` | 本机管理员列举、批准或拒绝配对申请 | `action`、`outcome`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.device.link` | 设备出站长连接生命周期 | `role`、`platform`、`outcome` |
 | span | `chatdsh.gateway.device.request` | 沿设备连接转发请求 | `deviceId`、`outcome`、`http.status_code`、`error.type`、`error.code` |
 | span | `chatdsh.gateway.device.proxy` | `/d/<deviceId>/` 前缀转发与 WebSocket 升级 | `deviceId`、`http.method`、`http.status_code`、`outcome`、`error.type`、`error.code` |
@@ -89,6 +91,8 @@ flowchart TB
 | span | `chatdsh.gateway.push.deliver` | 按分级规则向在线设备投递通知 | `device.kind`、`outcome` |
 | event | `chatdsh.gateway.device.rejected` | 配对、长连接升级、协议或前缀转发拒绝 | `action`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.device.disconnected` | 设备长连接断开 | `role`、`platform`、`reason` |
+| event | `chatdsh.gateway.device.pairing.requested` | 客户端提交配对申请进入待审批状态 | `kind`、`platform`、`outcome` |
+| event | `chatdsh.gateway.device.pairing.decided` | 中继管理员批准或拒绝配对申请 | `action`、`kind`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.ownership.rejected` | 会话归属写入拒绝 | `action`、`outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.settings.rejected` | 设置同步写入拒绝 | `outcome`、`error.type`、`error.code` |
 | event | `chatdsh.gateway.client.rejected` | 私有客户端读取拒绝或失败 | `outcome`、`error.type`、`error.code` |
@@ -102,6 +106,7 @@ flowchart TB
 | metric | `chatdsh_http_requests_total` | 入站 HTTP 请求计数 | `route`、`method`、`status_class` |
 | metric | `chatdsh_http_request_duration_seconds` | 入站 HTTP 请求耗时 | `route`、`method` |
 | metric | `chatdsh_gateway_device_pairs_total` | 节点配对计数 | `outcome` |
+| metric | `chatdsh_gateway_device_pairing_approvals_total` | 配对审批与令牌领取计数 | `action`、`outcome` |
 | metric | `chatdsh_gateway_device_links_total` | 设备长连接计数 | `outcome` |
 | metric | `chatdsh_gateway_device_requests_total` | 设备连接转发请求计数 | `outcome` |
 | metric | `chatdsh_gateway_device_proxies_total` | 前缀路由转发计数 | `outcome` |

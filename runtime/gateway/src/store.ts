@@ -15,6 +15,46 @@ import { dirname, join } from 'node:path';
 /** 访问认证的启用方式。 */
 export type GatewayAccessMode = 'disabled' | 'required';
 
+/** 配对审批策略：`required` 要求中继管理员审批后才签发设备令牌，`auto` 校验配对口令后即时签发。 */
+export type PairingApprovalMode = 'auto' | 'required';
+
+/** 待审批配对请求的设备类别。 */
+export type PairingRequestKind = 'node' | 'mobile';
+
+/** 配对审批请求的状态。 */
+export type PairingRequestStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'claimed';
+
+/** 对外展示的配对申请元数据（不含轮询密钥摘要与加密令牌）。 */
+export interface PairingRequestView {
+  readonly id: string;
+  readonly kind: PairingRequestKind;
+  readonly name: string;
+  readonly platform: string;
+  readonly role: string;
+  readonly capabilities: readonly string[];
+  readonly status: PairingRequestStatus;
+  readonly createdAt: number;
+  readonly expiresAt: number;
+  readonly decidedAt?: number;
+  readonly deviceId?: string;
+}
+
+/** 内部配对申请记录。 */
+export interface PairingRequestRow extends PairingRequestView {
+  readonly pollSecretHash: string;
+  readonly sealedToken?: string;
+}
+
+/** 一次配对领取尝试的结果。 */
+export type PairingClaimOutcome =
+  | { readonly kind: 'claimed'; readonly deviceId: string; readonly sealedToken: string }
+  | { readonly kind: 'pending'; readonly expiresAt: number }
+  | { readonly kind: 'rejected' }
+  | { readonly kind: 'expired' }
+  | { readonly kind: 'already-claimed' }
+  | { readonly kind: 'not-found' }
+  | { readonly kind: 'unauthorized' };
+
 /** 中继服务端配置。 */
 export interface GatewayConfig {
   /** 监听地址。 */
@@ -37,6 +77,8 @@ export interface GatewayConfig {
   readonly pwaVersion: string;
   /** 配对码；未配置时配对端点返回 404。 */
   readonly pairingCode?: string;
+  /** 配对审批策略；缺省为 `auto`，容器默认设为 `required`。 */
+  readonly pairingApproval?: PairingApprovalMode;
   /** 对外访问的精确 origin；缺省按监听地址与实际端口拼出。 */
   readonly publicUrl?: string;
 }
@@ -125,6 +167,12 @@ export function parseAccessMode(raw: string | undefined): GatewayAccessMode {
   throw new Error(`CHATDSH_ACCESS_MODE 只能取 disabled 或 required：${raw}`);
 }
 
+export function parsePairingApproval(raw: string | undefined): PairingApprovalMode {
+  if (raw === undefined || raw.trim() === '') return 'auto';
+  if (raw === 'auto' || raw === 'required') return raw;
+  throw new Error(`CHATDSH_PAIRING_APPROVAL 只能取 auto 或 required：${raw}`);
+}
+
 /** 读取配置。 */
 export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   const root = dataRoot();
@@ -138,6 +186,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     pushMode: env.CHATDSH_PUSH_MODE === 'all-at-once' ? 'all-at-once' : 'two-stage',
     pushEscalationMs: Number.parseInt(env.CHATDSH_PUSH_ESCALATION_MS ?? '120000', 10),
     accessMode: parseAccessMode(env.CHATDSH_ACCESS_MODE),
+    pairingApproval: parsePairingApproval(env.CHATDSH_PAIRING_APPROVAL),
     pwaVersion: env.CHATDSH_PWA_VERSION ?? version,
     ...(env.CHATDSH_PAIRING_CODE === undefined || env.CHATDSH_PAIRING_CODE === '' ? {} : { pairingCode: env.CHATDSH_PAIRING_CODE }),
     ...(env.CHATDSH_PUBLIC_URL === undefined || env.CHATDSH_PUBLIC_URL === '' ? {} : { publicUrl: env.CHATDSH_PUBLIC_URL }),
@@ -228,6 +277,21 @@ export class GatewayStore {
         value text not null,
         updated_at integer not null,
         primary key (namespace, key)
+      );
+      create table if not exists pairing_requests (
+        id text primary key,
+        kind text not null,
+        name text not null,
+        platform text not null,
+        role text not null,
+        capabilities text not null,
+        poll_secret_hash text not null unique,
+        status text not null,
+        created_at integer not null,
+        expires_at integer not null,
+        decided_at integer,
+        device_id text,
+        sealed_token text
       );
     `);
 
@@ -409,6 +473,165 @@ export class GatewayStore {
   /** 更新执行节点活动时间。 */
   touchNode(id: string): void {
     this.database.prepare('update node_devices set last_seen_at = ? where id = ?').run(Date.now(), id);
+  }
+
+  /** 将已超时的待审批或未领取请求标记为过期并擦除密文。 */
+  private expirePairingRequests(now: number): void {
+    this.database
+      .prepare("update pairing_requests set status = 'expired', sealed_token = null where status in ('pending', 'approved') and expires_at <= ?")
+      .run(now);
+  }
+
+  /** 登记一条待审批配对申请。 */
+  createPairingRequest(input: {
+    readonly id: string;
+    readonly kind: PairingRequestKind;
+    readonly name: string;
+    readonly platform: string;
+    readonly role: string;
+    readonly capabilities: readonly string[];
+    readonly pollSecretHash: string;
+    readonly createdAt: number;
+    readonly expiresAt: number;
+  }): PairingRequestView {
+    this.expirePairingRequests(input.createdAt);
+    this.database
+      .prepare(`insert into pairing_requests (
+                  id, kind, name, platform, role, capabilities, poll_secret_hash,
+                  status, created_at, expires_at, decided_at, device_id, sealed_token
+                ) values (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, null, null, null)`)
+      .run(
+        input.id,
+        input.kind,
+        input.name,
+        input.platform,
+        input.role,
+        JSON.stringify(input.capabilities),
+        input.pollSecretHash,
+        input.createdAt,
+        input.expiresAt,
+      );
+    return {
+      id: input.id,
+      kind: input.kind,
+      name: input.name,
+      platform: input.platform,
+      role: input.role,
+      capabilities: [...input.capabilities],
+      status: 'pending',
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+    };
+  }
+
+  /** 按状态列举配对申请（不含轮询密钥摘要与加密令牌）。 */
+  listPairingRequests(status?: PairingRequestStatus, now: number = Date.now()): PairingRequestView[] {
+    this.expirePairingRequests(now);
+    const sql = status === undefined
+      ? 'select id, kind, name, platform, role, capabilities, status, created_at, expires_at, decided_at, device_id from pairing_requests order by created_at desc'
+      : 'select id, kind, name, platform, role, capabilities, status, created_at, expires_at, decided_at, device_id from pairing_requests where status = ? order by created_at desc';
+    const rows = (status === undefined
+      ? this.database.prepare(sql).all()
+      : this.database.prepare(sql).all(status)) as {
+        id: string;
+        kind: string;
+        name: string;
+        platform: string;
+        role: string;
+        capabilities: string;
+        status: string;
+        created_at: number;
+        expires_at: number;
+        decided_at: number | null;
+        device_id: string | null;
+      }[];
+    return rows.map((row) => ({
+      id: row.id,
+      kind: row.kind === 'mobile' ? 'mobile' : 'node',
+      name: row.name,
+      platform: row.platform,
+      role: row.role,
+      capabilities: capabilitiesOf(row.capabilities),
+      status: row.status as PairingRequestStatus,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      ...(row.decided_at === null ? {} : { decidedAt: row.decided_at }),
+      ...(row.device_id === null ? {} : { deviceId: row.device_id }),
+    }));
+  }
+
+  /** 按标识读取一条配对申请（内部使用）。 */
+  getPairingRequest(id: string, now: number = Date.now()): PairingRequestRow | undefined {
+    this.expirePairingRequests(now);
+    const row = this.database
+      .prepare('select id, kind, name, platform, role, capabilities, poll_secret_hash, status, created_at, expires_at, decided_at, device_id, sealed_token from pairing_requests where id = ?')
+      .get(id) as {
+        id: string;
+        kind: string;
+        name: string;
+        platform: string;
+        role: string;
+        capabilities: string;
+        poll_secret_hash: string;
+        status: string;
+        created_at: number;
+        expires_at: number;
+        decided_at: number | null;
+        device_id: string | null;
+        sealed_token: string | null;
+      } | undefined;
+    if (row === undefined) return undefined;
+    return {
+      id: row.id,
+      kind: row.kind === 'mobile' ? 'mobile' : 'node',
+      name: row.name,
+      platform: row.platform,
+      role: row.role,
+      capabilities: capabilitiesOf(row.capabilities),
+      pollSecretHash: row.poll_secret_hash,
+      status: row.status as PairingRequestStatus,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      ...(row.decided_at === null ? {} : { decidedAt: row.decided_at }),
+      ...(row.device_id === null ? {} : { deviceId: row.device_id }),
+      ...(row.sealed_token === null ? {} : { sealedToken: row.sealed_token }),
+    };
+  }
+
+  /** 批准一条待审批申请并保存加密后的一次性领取令牌。 */
+  approvePairingRequest(id: string, input: { readonly deviceId: string; readonly sealedToken: string; readonly now?: number }): boolean {
+    const now = input.now ?? Date.now();
+    this.expirePairingRequests(now);
+    const result = this.database
+      .prepare("update pairing_requests set status = 'approved', decided_at = ?, device_id = ?, sealed_token = ? where id = ? and status = 'pending' and expires_at > ?")
+      .run(now, input.deviceId, input.sealedToken, id, now);
+    return Number(result.changes) > 0;
+  }
+
+  /** 拒绝一条待审批申请。 */
+  rejectPairingRequest(id: string, now: number = Date.now()): boolean {
+    this.expirePairingRequests(now);
+    const result = this.database
+      .prepare("update pairing_requests set status = 'rejected', decided_at = ?, sealed_token = null where id = ? and status = 'pending'")
+      .run(now, id);
+    return Number(result.changes) > 0;
+  }
+
+  /** 客户端凭一次性轮询密钥领取审批结果；已批准的令牌仅可领取一次并立即擦除密文。 */
+  claimPairingRequest(id: string, pollSecretHash: string, now: number = Date.now()): PairingClaimOutcome {
+    const row = this.getPairingRequest(id, now);
+    if (row === undefined) return { kind: 'not-found' };
+    if (row.pollSecretHash !== pollSecretHash) return { kind: 'unauthorized' };
+    if (row.status === 'pending') return { kind: 'pending', expiresAt: row.expiresAt };
+    if (row.status === 'rejected') return { kind: 'rejected' };
+    if (row.status === 'expired') return { kind: 'expired' };
+    if (row.status === 'claimed') return { kind: 'already-claimed' };
+    if (row.deviceId === undefined || row.sealedToken === undefined) return { kind: 'expired' };
+    const updated = this.database
+      .prepare("update pairing_requests set status = 'claimed', sealed_token = null where id = ? and status = 'approved'")
+      .run(id);
+    if (Number(updated.changes) === 0) return { kind: 'already-claimed' };
+    return { kind: 'claimed', deviceId: row.deviceId, sealedToken: row.sealedToken };
   }
 
   /** 底层数据库句柄。 */

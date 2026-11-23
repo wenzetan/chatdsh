@@ -37,14 +37,14 @@ ChatDSH 是面向官方 DSH（DeepSeek Harness）的跨设备互联插件集与�
 推荐直接将本项目交给具备终端执行能力的 AI Agent（如官方 DSH、Claude Code、Codex 等），发送以下指令按 [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md) 逐步完成部署：
 
 ```text
-请先阅读 runtime/docs/agent-deploy-guide.md，按其中的流程帮我部署 ChatDSH 中继服务端并接入本机 DSH。
+请先阅读 runtime/docs/agent-deploy-guide.md，严格遵守其中的零泄露红线，帮我部署 ChatDSH 中继服务端并接入本机 DSH。严禁将任何密钥、令牌、配对口令、.env 内容或真实域名输出到上下文中（也不要执行 docker compose config / docker inspect / systemctl show / ps eww / curl -v）；宿主机监听禁止放行 0.0.0.0；其他服务使用密钥或域名时直接引用环境变量文件，需要查看口令或审批配对时提示我自己操作。
 ```
 
 AI Agent 会严格按以下流程协作执行：
 
-1. **网络与穿透环境探测**：自动检查宿主机网卡、Tailscale / Cloudflare Tunnel / FRP / WireGuard 等内网穿透工具及现有反向代理端口，再结合本机实际情况向你询问必填的对外域名与联网方式。
-2. **中继容器部署与网络指引**：调用 `bash scripts/relay-up.sh` 以 Docker Compose 拉起中继容器（首次自动生成随机配对口令并按 `0600` 权限持久化复用），探测公网连通性；若需配置反向代理或穿透规则，先展示完整变更并征得同意后再操作。
-3. **代劳安装 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机安装 `@chatdsh/bundle` 并完成配对接入；确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、拟注入的 `EnvironmentFile` 变更及重启影响，取得你的明确同意后再修改服务文件与重启。
+1. **零泄露约束与网络探测**：不读取或打印 `.env`、凭据文件与真实域名；先只读检查宿主机网卡类型、Tailscale / Cloudflare Tunnel / FRP / WireGuard 等内网穿透工具及现有反向代理端口，再引导你在自己的终端写入对外域名与具体监听地址（严禁 `0.0.0.0`，仅限 `127.0.0.1` 或对应内网穿透网卡 IP）并确认联网方式。
+2. **中继容器部署与配对审批**：调用 `bash scripts/relay-up.sh --redact-secrets` 以脱敏模式拉起 Docker Compose 中继容器（默认 `CHATDSH_PAIRING_APPROVAL=required`，客户端申请配对后需管理员审批放行；首次自动生成随机配对口令并按 `0600` 权限持久化复用）；反向代理或穿透配置通过环境变量引用，不展开明文，且修改前征得你的同意。查看完整接入命令时由你本人在宿主机终端手动执行 `bash scripts/relay-up.sh --print-join-command`。
+3. **代劳安装 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机安装 `@chatdsh/bundle` 并完成配对接入（同机通过 `--from-relay-env .env --redact-secrets` 直接引用配置，跨机通过交互隐藏输入口令不留 Shell 历史）；确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、运行用户、拟添加的 `EnvironmentFile` 引用变更及重启影响，取得你的明确同意后再修改服务文件与重启；全部设备接入完成后可运行 `bash scripts/relay-up.sh --disable-pairing` 关闭配对入口。
 
 ### 手动命令行部署
 
@@ -77,13 +77,20 @@ bash scripts/relay-up.sh --print-join-command
 cd dsh-adapter && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && cd ../runtime && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && pnpm build:client && cd ..
 ```
 
-随后直接粘贴上一步中继启动后输出的一行命令：
+随后执行中继启动后提示的一行接入命令（在交互提示中静默输入配对口令，不留 Shell 历史）：
 
 ```sh
-bash scripts/device-join.sh --relay https://relay.example.com --code '<上一步输出的配对口令>'
+bash scripts/device-join.sh --relay https://relay.example.com
 ```
 
-该命令自动完成三件事：将 `@chatdsh/bundle` 安装到官方 `web` profile、向中继完成配对并将设备凭据保存到 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）、以配对凭据启动官方 DSH。后续在同一设备重启只需执行 `bash scripts/device-join.sh`。
+客户端提交配对申请后会打印 `requestId` 并等待放行，在中继宿主机审批通过：
+
+```sh
+bash scripts/relay-approve.sh list
+bash scripts/relay-approve.sh approve <requestId>
+```
+
+审批通过后，设备脚本自动领取一次性凭据保存到 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）并启动官方 DSH；后续在同一设备重启只需执行 `bash scripts/device-join.sh`。全部设备接入完成后，可在中继宿主机执行 `bash scripts/relay-up.sh --disable-pairing` 关闭配对入口。
 
 连接成功后，可通过中继地址 `/` 使用手机端 PWA，通过 `/d/<deviceId>/` 直接进入对应在线设备的官方 DSH 界面，或在本地官方客户端侧栏打开「远程设备」面板。
 

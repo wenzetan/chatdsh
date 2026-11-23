@@ -19,7 +19,11 @@ print_help() {
 
 选项：
   --relay <域名或 origin>  中继对外地址（首次接入必填，后续自动复用）
-  --code <配对口令>        中继配对口令（首次接入必填；在中继宿主机运行 bash scripts/relay-up.sh --print-join-command 获取）
+  --code <配对口令>        中继配对口令（不传时在交互终端静默提示输入，避免留存 Shell 历史）
+  --code-stdin             从标准输入读取配对口令（避免口令出现在进程参数中）
+  --from-relay-env <路径>  直接从本地中继 .env 读取 CHATDSH_PUBLIC_URL 与 CHATDSH_PAIRING_CODE（不经命令行传密）
+  --redact-secrets         脱敏输出模式：不向终端打印真实域名与凭据详情（供 AI Agent 调用）
+  --approval-timeout <秒>  等待中继管理员审批的超时秒数（默认 600 秒）
   --profile <名称>         目标官方 DSH profile（默认 web）
   --name <设备名>          向中继登记的设备名称（默认主机名）
   --port <端口>            传递给 dsh 的本地监听端口
@@ -274,6 +278,8 @@ pair_device() {
   local endpoint="$1"
   local code="$2"
   local name="$3"
+  local redact="${4:-0}"
+  local approval_timeout_sec="${5:-600}"
   local platform_name
   case "$(uname -s)" in
     Darwin) platform_name="darwin" ;;
@@ -294,24 +300,103 @@ pair_device() {
   resp_text="$(cat "$response_file")"
   rm -f "$response_file"
 
-  if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-    printf '设备配对失败（%s，HTTP %s）：%s\n' "$url" "$status" "$resp_text" >&2
+  if [ "$status" -eq 200 ]; then
+    node -e '
+      const parsed = JSON.parse(process.argv[1]);
+      if (typeof parsed.deviceId !== "string" || !parsed.deviceId || typeof parsed.token !== "string" || !parsed.token) {
+        throw new Error("设备配对响应缺少 deviceId 或 token");
+      }
+      console.log(parsed.deviceId + "\t" + parsed.token);
+    ' "$resp_text"
+    return 0
+  fi
+
+  if [ "$status" -ne 202 ]; then
+    if [ "$redact" -eq 1 ]; then
+      printf '设备配对失败（HTTP %s，详细地址与响应已脱敏）\n' "$status" >&2
+    else
+      printf '设备配对失败（%s，HTTP %s）：%s\n' "$url" "$status" "$resp_text" >&2
+    fi
     return 1
   fi
 
-  node -e '
+  local pending_meta
+  pending_meta="$(node -e '
     const parsed = JSON.parse(process.argv[1]);
-    if (typeof parsed.deviceId !== "string" || !parsed.deviceId || typeof parsed.token !== "string" || !parsed.token) {
-      throw new Error("设备配对响应缺少 deviceId 或 token");
+    if (typeof parsed.requestId !== "string" || !parsed.requestId || typeof parsed.pollToken !== "string" || !parsed.pollToken) {
+      throw new Error("待审批配对响应缺少 requestId 或 pollToken");
     }
-    console.log(parsed.deviceId + "\t" + parsed.token);
-  ' "$resp_text"
+    console.log(parsed.requestId + "\t" + parsed.pollToken);
+  ' "$resp_text")"
+  local request_id="${pending_meta%%$'\t'*}"
+  local poll_token="${pending_meta#*$'\t'}"
+
+  printf '配对申请已提交（requestId=%s），等待中继服务端审批放行...\n' "$request_id" >&2
+  printf '请在中继宿主机执行以下命令审批：\n' >&2
+  printf '  bash scripts/relay-approve.sh approve %s\n' "$request_id" >&2
+  printf '（拒绝可执行：bash scripts/relay-approve.sh reject %s）\n' "$request_id" >&2
+
+  local claim_url="${endpoint%/}/chatdsh/gateway/devices/pair/claim"
+  local claim_body
+  claim_body="$(node -e 'console.log(JSON.stringify({ requestId: process.argv[1], pollToken: process.argv[2] }));' "$request_id" "$poll_token")"
+  local deadline=$(( $(date +%s) + approval_timeout_sec ))
+  local poll_sleep="${CHATDSH_PAIRING_POLL_SEC:-1}"
+
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    sleep "$poll_sleep"
+    local claim_file
+    claim_file="$(mktemp "${DSH_HOME_RESOLVED}/pair-claim.XXXXXX")"
+    chmod 600 "$claim_file"
+    local claim_status
+    claim_status="$(curl -sS --max-time 15 -o "$claim_file" -w '%{http_code}' -X POST "$claim_url" -H 'content-type: application/json' --data-binary "$claim_body")"
+    local claim_text
+    claim_text="$(cat "$claim_file")"
+    rm -f "$claim_file"
+
+    if [ "$claim_status" -eq 202 ]; then
+      continue
+    fi
+    if [ "$claim_status" -eq 200 ]; then
+      node -e '
+        const parsed = JSON.parse(process.argv[1]);
+        if (typeof parsed.deviceId !== "string" || !parsed.deviceId || typeof parsed.token !== "string" || !parsed.token) {
+          throw new Error("审批领取响应缺少 deviceId 或 token");
+        }
+        console.log(parsed.deviceId + "\t" + parsed.token);
+      ' "$claim_text"
+      return 0
+    fi
+    if [ "$claim_status" -eq 403 ]; then
+      printf '配对申请已被中继管理员拒绝（requestId=%s）。\n' "$request_id" >&2
+      return 1
+    fi
+    if [ "$claim_status" -eq 410 ]; then
+      printf '配对申请已过期（requestId=%s），请重新发起配对。\n' "$request_id" >&2
+      return 1
+    fi
+    if [ "$redact" -eq 1 ]; then
+      printf '领取审批结果失败（HTTP %s，详细地址与响应已脱敏）\n' "$claim_status" >&2
+    else
+      printf '领取审批结果失败（%s，HTTP %s）：%s\n' "$claim_url" "$claim_status" "$claim_text" >&2
+    fi
+    return 1
+  done
+
+  printf '等待中继审批超时（requestId=%s，超时 %s 秒）。\n' "$request_id" "$approval_timeout_sec" >&2
+  return 1
 }
 
 main() {
   local relay_arg=""
   local pair_url_arg=""
   local code_arg=""
+  local code_stdin=0
+  local from_relay_env=""
+  local approval_timeout=600
+  local redact_secrets=0
+  if [ "${CHATDSH_REDACT_SECRETS:-0}" = "1" ]; then
+    redact_secrets=1
+  fi
   local profile="web"
   local name_arg=""
   local bundle_arg=""
@@ -342,6 +427,30 @@ main() {
         ;;
       --no-start)
         no_start=1
+        shift
+        ;;
+      --code-stdin)
+        code_stdin=1
+        shift
+        ;;
+      --redact-secrets)
+        redact_secrets=1
+        shift
+        ;;
+      --approval-timeout)
+        approval_timeout="$2"
+        shift 2
+        ;;
+      --approval-timeout=*)
+        approval_timeout="${1#--approval-timeout=}"
+        shift
+        ;;
+      --from-relay-env)
+        from_relay_env="$2"
+        shift 2
+        ;;
+      --from-relay-env=*)
+        from_relay_env="${1#--from-relay-env=}"
         shift
         ;;
       --relay)
@@ -420,6 +529,19 @@ main() {
     printf '%s\n' '[1/3] 已跳过插件安装。'
   fi
 
+  if [ -n "$from_relay_env" ]; then
+    if [ ! -f "$from_relay_env" ]; then
+      printf '未找到中继配置文件：%s\n' "$from_relay_env" >&2
+      return 1
+    fi
+    if [ -z "$relay_arg" ]; then
+      relay_arg="$(read_env_value "$from_relay_env" CHATDSH_PUBLIC_URL)"
+    fi
+    if [ -z "$code_arg" ]; then
+      code_arg="$(read_env_value "$from_relay_env" CHATDSH_PAIRING_CODE)"
+    fi
+  fi
+
   printf '%s\n' '[2/3] 正在检查设备配对凭据...'
   local env_file="${DSH_HOME_RESOLVED}/chatdsh-device.env"
   local saved_url=""
@@ -437,7 +559,7 @@ main() {
   elif [ -n "$saved_url" ]; then
     control_url="$(normalize_public_url "$saved_url")"
   else
-    printf '%s\n' '缺少中继地址：首次接入请传入 --relay <中继地址> --code <配对口令>（在中继宿主机执行 bash scripts/relay-up.sh --print-join-command 获取）' >&2
+    printf '%s\n' '缺少中继地址：首次接入请传入 --relay <中继地址> --code <配对口令>，或传入 --from-relay-env .env' >&2
     return 1
   fi
 
@@ -450,8 +572,17 @@ main() {
   else
     local code
     code="$(trim "$code_arg")"
+    if [ -z "$code" ] && [ "$code_stdin" -eq 1 ]; then
+      IFS= read -r code || true
+      code="$(trim "$code")"
+    elif [ -z "$code" ] && [ -t 0 ]; then
+      printf '%s' '请输入中继配对口令（输入不回显）: ' >&2
+      IFS= read -rs code || true
+      printf '\n' >&2
+      code="$(trim "$code")"
+    fi
     if [ -z "$code" ]; then
-      printf '%s\n' '缺少配对口令：首次配对或切换中继请传入 --code <配对口令>（在中继宿主机执行 bash scripts/relay-up.sh --print-join-command 获取）' >&2
+      printf '%s\n' '缺少配对口令：请在交互终端输入、使用 --code-stdin、传入 --from-relay-env .env 或 --code <配对口令>' >&2
       return 1
     fi
     local pair_endpoint="$control_url"
@@ -463,7 +594,7 @@ main() {
     [ -n "$dev_name" ] || dev_name="chatdsh-device"
 
     local pair_out
-    pair_out="$(pair_device "$pair_endpoint" "$code" "$dev_name")"
+    pair_out="$(pair_device "$pair_endpoint" "$code" "$dev_name" "$redact_secrets" "$approval_timeout")"
     device_id="${pair_out%%$'\t'*}"
     node_token="${pair_out#*$'\t'}"
     write_device_env "$env_file" "$control_url" "$device_id" "$node_token"
@@ -485,7 +616,11 @@ main() {
     dsh_args+=("${dsh_extra_args[@]}")
   fi
 
-  printf '[3/3] 正在启动官方 DSH（连接中继 %s）...\n' "$control_url"
+  if [ "$redact_secrets" -eq 1 ]; then
+    printf '%s\n' '[3/3] 正在启动官方 DSH（连接地址已由凭据文件注入，脱敏隐藏）...'
+  else
+    printf '[3/3] 正在启动官方 DSH（连接中继 %s）...\n' "$control_url"
+  fi
   printf '%s\n' '提示：后续在本机重启只需执行 bash scripts/device-join.sh；接入新设备时在中继宿主机执行 bash scripts/relay-up.sh --print-join-command 获取命令。'
 
   exec env \

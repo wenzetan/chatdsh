@@ -37,14 +37,14 @@ ChatDSH is a cross-device plugin bundle and self-hosted lightweight relay server
 The recommended way to deploy ChatDSH is to let an AI Agent with terminal access (such as official DSH, Claude Code, or Codex) follow [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md):
 
 ```text
-Please read runtime/docs/agent-deploy-guide.md and follow it to deploy the ChatDSH relay server and connect my local DSH instance.
+Please read runtime/docs/agent-deploy-guide.md and follow its zero-leakage rules to deploy the ChatDSH relay server and connect my local DSH instance. Never print any secrets, tokens, pairing codes, .env contents, or real domains into the conversation context (avoid docker compose config / docker inspect / systemctl show / ps eww / curl -v); never bind the host port to 0.0.0.0; reference environment files/variables directly in services, and prompt me to print secrets or approve pairing requests manually.
 ```
 
-The Agent follows a safe, interactive four-stage workflow:
+The Agent follows a safe, zero-leakage workflow:
 
-1. **Network & Tunnel Inspection**: Probes host network interfaces, existing tunneling tools (Tailscale, Cloudflare Tunnel, FRP, WireGuard, ZeroTier), and active reverse proxies before asking you for the required public domain and preferred connectivity method.
-2. **Relay Container Deployment & Network Checklist**: Runs `bash scripts/relay-up.sh` to start the Docker Compose relay (auto-generating and persisting a random pairing secret with `0600` permissions), checks public reachability, and asks for confirmation before modifying any reverse proxy or tunnel config.
-3. **Optional DSH Plugin Installation with Persistent-Service Gate**: Asks whether you want the Agent to install `@chatdsh/bundle` and pair your local DSH. If you confirm, it first checks for persistent DSH services (`systemd` / `systemctl`, `launchd`, `pm2`, `supervisorctl`). Whenever a persistent service is found, the Agent must show the service file path, proposed `EnvironmentFile` update, and restart impact, and obtain your explicit approval before editing or restarting the service.
+1. **Zero-Leakage Boundary & Network Inspection**: Never prints `.env`, device credential files, pairing secrets, or real domains into context; probes host network interface types, tunneling tools (Tailscale, Cloudflare Tunnel, FRP, WireGuard, ZeroTier), and active reverse proxies, then guides you to record your domain and bind address (never `0.0.0.0`; only `127.0.0.1` or a specific tunnel interface IP) locally and choose the connectivity mode.
+2. **Redacted Relay Deployment & Pairing Approval**: Runs `bash scripts/relay-up.sh --redact-secrets` to start the Docker Compose relay (`CHATDSH_PAIRING_APPROVAL=required` by default, so pairing requests stay pending until explicitly approved on the relay host; auto-generating and persisting a random pairing secret with `0600` permissions without echoing secrets or domains), references environment files in reverse proxy/tunnel configs with your approval, and instructs you to run `bash scripts/relay-up.sh --print-join-command` manually when needed.
+3. **Optional DSH Plugin Installation with Persistent-Service Gate**: Asks whether you want the Agent to install `@chatdsh/bundle` and pair your local DSH (using `--from-relay-env .env --redact-secrets` on the same host, or silent interactive code input across machines so secrets stay out of shell history). If you confirm, it first checks for persistent DSH services (`systemd` / `systemctl`, `launchd`, `pm2`, `supervisorctl`). Whenever a persistent service is found, the Agent must show the service file path, run user, proposed `EnvironmentFile` reference update, and restart impact, and obtain your explicit approval before editing or restarting the service. Once all devices are paired, run `bash scripts/relay-up.sh --disable-pairing` to close the pairing endpoint.
 
 ### Manual CLI Setup
 
@@ -77,13 +77,20 @@ If installing from a fresh source checkout, build once first:
 cd dsh-adapter && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && cd ../runtime && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && pnpm build:client && cd ..
 ```
 
-Then run the one-line command printed by `relay-up.sh`:
+Then run the one-line command printed by `relay-up.sh` (prompts silently for the pairing secret so it never enters shell history):
 
 ```sh
-bash scripts/device-join.sh --relay https://relay.example.com --code '<pairing-code-from-relay-up>'
+bash scripts/device-join.sh --relay https://relay.example.com
 ```
 
-This single command installs `@chatdsh/bundle` into the official `web` profile, pairs the device with the relay (saving credentials to `$DSH_HOME/chatdsh-device.env` with `0600` permissions), and starts official DSH connected to the relay. Subsequent starts on the same device only require `bash scripts/device-join.sh`.
+The client submits a pending request and waits for approval. On the relay host, inspect and approve it:
+
+```sh
+bash scripts/relay-approve.sh list
+bash scripts/relay-approve.sh approve <requestId>
+```
+
+Once approved, `device-join.sh` claims the one-time device token, saves credentials to `$DSH_HOME/chatdsh-device.env` (`0600`), and starts official DSH. Subsequent starts on the same device only require `bash scripts/device-join.sh`. After all devices are onboarded, run `bash scripts/relay-up.sh --disable-pairing` on the relay host to close the pairing endpoint.
 
 Once connected, open `/` on the relay for the mobile PWA, open `/d/<deviceId>/` to interact with a live online device through the official DSH interface, or use the Remote panel in your local official DSH sidebar.
 

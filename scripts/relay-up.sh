@@ -20,6 +20,10 @@ print_help() {
   --domain <域名或 origin>  指定对外访问域名（未指定且 .env 未保存时会通过命令行询问，必填）
   --reconfigure             重新询问并更新对外域名（已保存的配对口令保持复用）
   --print-join-command      打印设备一行接入命令（读取已保存的 .env，不重启容器）
+  --redact-secrets          脱敏输出模式：不向标准输出打印配对口令与真实域名（供 AI Agent 调用）
+  --disable-pairing         清空 .env 中的配对口令并重启容器，关闭新设备配对入口（返回 404）
+  --rotate-pairing-code     重新生成随机配对口令并重启容器，旧口令立即失效
+  --bind-host <IP>          指定宿主机监听 IP（默认 127.0.0.1；严禁 0.0.0.0 或 ::，仅限回环或具体内网穿透网卡 IP）
   --config <路径>           指定环境变量文件路径（默认仓库根目录 .env）
   --no-build                跳过镜像重新构建，直接启动容器
   --prepare-only            仅检查/生成并保存 .env，不启动 Docker Compose
@@ -313,31 +317,66 @@ print_network_checklist() {
   local public_url="$1"
   local probe_host="$2"
   local bind_port="$3"
+  local redact="${4:-0}"
   local domain_host
-  domain_host="$(extract_host_from_origin "$public_url")"
+  local display_url
+  if [ "$redact" -eq 1 ]; then
+    domain_host='<你在 .env 中配置的域名>'
+    display_url='<你在 .env 中配置的 CHATDSH_PUBLIC_URL>'
+  else
+    domain_host="$(extract_host_from_origin "$public_url")"
+    display_url="$public_url"
+  fi
 
   printf '\n'
   printf '%s\n' '公网接入前置提醒（中继容器仅监听本机 HTTP 端口，TLS 与域名路由由前置反向代理/网关承担）：'
   printf '  1. 域名解析：将 %s 的 A / AAAA（或 CNAME）记录解析到当前服务器公网 IP。\n' "$domain_host"
-  printf '  2. 反向代理：在 Nginx / Caddy / 网关中为 %s 配置 HTTPS，并转发到 http://%s:%s。\n' "$public_url" "$probe_host" "$bind_port"
+  printf '  2. 反向代理：在 Nginx / Caddy / 网关中为 %s 配置 HTTPS，并转发到 http://%s:%s。\n' "$display_url" "$probe_host" "$bind_port"
   printf '%s\n' '     转发规则需开启 WebSocket 升级（Upgrade / Connection）并关闭响应缓冲（proxy_buffering off），'
   printf '%s\n' '     以确保 /chatdsh/gateway/device-link、/d/<deviceId>/api/remote.mux 与 /chatdsh/gateway/events 长连接正常。'
-  printf '  3. 验证公网连通：curl -fsS %s/healthz（返回 ok:true 后再在设备端执行接入命令）。\n' "$public_url"
+  printf '  3. 访问保护：公网暴露建议开启 CHATDSH_ACCESS_MODE=required 或在反向代理配置身份认证（Cloudflare Access / OIDC / mTLS）；仅 Tailscale 私有网络访问可保持默认。\n'
+  printf '  4. 验证公网连通：curl -fsS %s/healthz（返回 ok:true 后再在设备端执行接入命令）。\n' "$display_url"
+}
+
+print_redacted_join_hint() {
+  local env_file="$1"
+  local config_arg=""
+  if [ "$env_file" != "$DEFAULT_ENV_FILE" ]; then
+    config_arg=" --config $(shell_quote "$env_file")"
+  fi
+  printf '\n'
+  printf '%s\n' '已启用脱敏输出模式，配对口令与域名未打印到终端输出。'
+  printf '%s\n' '如需查看完整设备接入命令，请在自己的本地终端手动执行：'
+  printf '  bash scripts/relay-up.sh --print-join-command%s\n' "$config_arg"
+  printf '%s\n' '同机设备接入可直接引用 .env 变量文件（不传递明文口令）：'
+  printf '  bash scripts/device-join.sh --from-relay-env %s --redact-secrets\n' "$(shell_quote "$env_file")"
+  printf '%s\n' '客户端发起配对申请后，在中继宿主机审批放行：'
+  printf '  bash scripts/relay-approve.sh%s list\n' "$config_arg"
+  printf '  bash scripts/relay-approve.sh%s approve <requestId>\n' "$config_arg"
+  printf '%s\n' '全部设备配对完成后可关闭配对入口：'
+  printf '  bash scripts/relay-up.sh%s --disable-pairing\n' "$config_arg"
 }
 
 print_join_instructions() {
   local env_file="$1"
   local public_url="$2"
   local pairing_code="$3"
-  local join_cmd
-  join_cmd="$(build_device_join_command "$public_url" "$pairing_code")"
   local config_arg=""
   if [ "$env_file" != "$DEFAULT_ENV_FILE" ]; then
     config_arg=" --config $(shell_quote "$env_file")"
   fi
   printf '\n'
-  printf '%s\n' '在需要接入的设备上执行以下一行命令（自动安装插件、配对连接中继并启动 DSH）：'
-  printf '  %s\n' "$join_cmd"
+  printf '%s\n' '在需要接入的设备上执行以下一行命令（交互静默输入口令，不留 Shell 历史，自动安装插件、等待审批并启动 DSH）：'
+  printf '  bash scripts/device-join.sh --relay %s\n' "$(shell_quote "$public_url")"
+  printf '%s\n' '按提示输入下方配对口令（仅用于提交配对申请，仍需中继管理员审批才会放行）：'
+  printf '  %s\n' "$pairing_code"
+  printf '\n'
+  printf '%s\n' '客户端提交配对申请后，在中继宿主机审批放行：'
+  printf '  bash scripts/relay-approve.sh%s list\n' "$config_arg"
+  printf '  bash scripts/relay-approve.sh%s approve <requestId>\n' "$config_arg"
+  printf '\n'
+  printf '%s\n' '全部设备配对完成后建议关闭配对入口（需要接入新设备时再执行 --rotate-pairing-code 重新启用）：'
+  printf '  bash scripts/relay-up.sh%s --disable-pairing\n' "$config_arg"
   printf '\n'
   printf '%s\n' '后续如需再次打印该命令，在中继宿主机执行：'
   printf '  bash scripts/relay-up.sh --print-join-command%s\n' "$config_arg"
@@ -360,14 +399,38 @@ wait_for_health() {
   return 1
 }
 
+validate_bind_host() {
+  local host
+  host="$(trim "$1")"
+  if [ -z "$host" ]; then
+    printf '%s\n' 'CHATDSH_GATEWAY_BIND_HOST 不能为空，请使用 127.0.0.1 或具体内网穿透网卡 IP' >&2
+    return 1
+  fi
+  case "$host" in
+    0.0.0.0|::|"[::]"|"*"|0:0:0:0:0:0:0:0)
+      printf 'CHATDSH_GATEWAY_BIND_HOST 不允许绑定通配地址（%s），请仅绑定 127.0.0.1 或具体内网穿透服务网卡 IP\n' "$host" >&2
+      return 1
+      ;;
+  esac
+  printf '%s' "$host"
+}
+
 main() {
   local env_file="$DEFAULT_ENV_FILE"
   local domain_arg=""
   local has_domain_arg=0
+  local bind_host_arg=""
+  local has_bind_host_arg=0
   local reconfigure=0
   local prepare_only=0
   local print_join_only=0
   local no_build=0
+  local disable_pairing=0
+  local rotate_pairing_code=0
+  local redact_secrets=0
+  if [ "${CHATDSH_REDACT_SECRETS:-0}" = "1" ]; then
+    redact_secrets=1
+  fi
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -387,6 +450,18 @@ main() {
         print_join_only=1
         shift
         ;;
+      --redact-secrets)
+        redact_secrets=1
+        shift
+        ;;
+      --disable-pairing)
+        disable_pairing=1
+        shift
+        ;;
+      --rotate-pairing-code)
+        rotate_pairing_code=1
+        shift
+        ;;
       --no-build)
         no_build=1
         shift
@@ -403,6 +478,20 @@ main() {
       --domain=*)
         domain_arg="${1#--domain=}"
         has_domain_arg=1
+        shift
+        ;;
+      --bind-host)
+        if [ "$#" -lt 2 ]; then
+          printf '%s\n' '--bind-host 缺少参数' >&2
+          return 1
+        fi
+        bind_host_arg="$2"
+        has_bind_host_arg=1
+        shift 2
+        ;;
+      --bind-host=*)
+        bind_host_arg="${1#--bind-host=}"
+        has_bind_host_arg=1
         shift
         ;;
       --config)
@@ -424,6 +513,25 @@ main() {
     esac
   done
 
+  if [ "$disable_pairing" -eq 1 ] && [ "$rotate_pairing_code" -eq 1 ]; then
+    printf '%s\n' '--disable-pairing 与 --rotate-pairing-code 不能同时使用' >&2
+    return 1
+  fi
+
+  if [ "$disable_pairing" -eq 1 ]; then
+    if [ ! -f "$env_file" ]; then
+      printf '未找到配置文件 %s\n' "$env_file" >&2
+      return 1
+    fi
+    upsert_env_file "$env_file" "CHATDSH_PAIRING_CODE="
+    printf '已清空 %s 中的 CHATDSH_PAIRING_CODE，新设备配对入口已关闭。\n' "$env_file"
+    if [ "$prepare_only" -eq 0 ]; then
+      (cd "$REPO_ROOT" && docker compose --env-file "$env_file" -f "$COMPOSE_FILE" up -d --no-build)
+      printf '%s\n' '已更新中继容器，/chatdsh/gateway/devices/pair 现返回 404 pairing-disabled。'
+    fi
+    return 0
+  fi
+
   if [ "$print_join_only" -eq 1 ]; then
     if [ ! -f "$env_file" ]; then
       printf '未找到配置文件 %s，请先执行 bash scripts/relay-up.sh 初始化并启动中继服务端\n' "$env_file" >&2
@@ -433,8 +541,12 @@ main() {
     local saved_code
     saved_url="$(read_env_value "$env_file" CHATDSH_PUBLIC_URL)"
     saved_code="$(read_env_value "$env_file" CHATDSH_PAIRING_CODE)"
-    if [ -z "$saved_url" ] || [ -z "$saved_code" ]; then
-      printf '%s 缺少 CHATDSH_PUBLIC_URL 或 CHATDSH_PAIRING_CODE，请先执行 bash scripts/relay-up.sh\n' "$env_file" >&2
+    if [ -z "$saved_url" ]; then
+      printf '%s 缺少 CHATDSH_PUBLIC_URL，请先执行 bash scripts/relay-up.sh\n' "$env_file" >&2
+      return 1
+    fi
+    if [ -z "$saved_code" ]; then
+      printf '%s 中的配对口令已关闭；如需接入新设备，请先执行 bash scripts/relay-up.sh --rotate-pairing-code\n' "$env_file" >&2
       return 1
     fi
     local normalized_saved_url
@@ -447,11 +559,13 @@ main() {
   local existing_code=""
   local existing_bind_host=""
   local existing_bind_port=""
+  local existing_approval=""
   if [ -f "$env_file" ]; then
     existing_url="$(read_env_value "$env_file" CHATDSH_PUBLIC_URL)"
     existing_code="$(read_env_value "$env_file" CHATDSH_PAIRING_CODE)"
     existing_bind_host="$(read_env_value "$env_file" CHATDSH_GATEWAY_BIND_HOST)"
     existing_bind_port="$(read_env_value "$env_file" CHATDSH_GATEWAY_BIND_PORT)"
+    existing_approval="$(read_env_value "$env_file" CHATDSH_PAIRING_APPROVAL)"
   fi
 
   local public_url=""
@@ -467,7 +581,10 @@ main() {
   local pairing_generated=0
   local env_code
   env_code="$(trim "${CHATDSH_PAIRING_CODE:-}")"
-  if [ -n "$existing_code" ]; then
+  if [ "$rotate_pairing_code" -eq 1 ]; then
+    pairing_code="$(generate_pairing_code)"
+    pairing_generated=1
+  elif [ -n "$existing_code" ]; then
     pairing_code="$existing_code"
   elif [ -n "$env_code" ]; then
     pairing_code="$env_code"
@@ -476,12 +593,20 @@ main() {
     pairing_generated=1
   fi
 
+  local raw_bind_host
+  if [ "$has_bind_host_arg" -eq 1 ]; then
+    raw_bind_host="$bind_host_arg"
+  else
+    raw_bind_host="${CHATDSH_GATEWAY_BIND_HOST:-${existing_bind_host:-127.0.0.1}}"
+  fi
   local bind_host
-  bind_host="$(trim "${CHATDSH_GATEWAY_BIND_HOST:-${existing_bind_host:-127.0.0.1}}")"
-  [ -n "$bind_host" ] || bind_host="127.0.0.1"
+  bind_host="$(validate_bind_host "$raw_bind_host")"
   local bind_port
   bind_port="$(trim "${CHATDSH_GATEWAY_BIND_PORT:-${existing_bind_port:-3170}}")"
   [ -n "$bind_port" ] || bind_port="3170"
+  local pairing_approval
+  pairing_approval="$(trim "${CHATDSH_PAIRING_APPROVAL:-${existing_approval:-required}}")"
+  [ -n "$pairing_approval" ] || pairing_approval="required"
 
   local updates=()
   if [ ! -f "$env_file" ] || [ "$existing_url" != "$public_url" ]; then
@@ -490,7 +615,10 @@ main() {
   if [ ! -f "$env_file" ] || [ "$existing_code" != "$pairing_code" ]; then
     updates+=("CHATDSH_PAIRING_CODE=${pairing_code}")
   fi
-  if ! has_env_key "$env_file" CHATDSH_GATEWAY_BIND_HOST; then
+  if ! has_env_key "$env_file" CHATDSH_PAIRING_APPROVAL; then
+    updates+=("CHATDSH_PAIRING_APPROVAL=${pairing_approval}")
+  fi
+  if ! has_env_key "$env_file" CHATDSH_GATEWAY_BIND_HOST || [ "$existing_bind_host" != "$bind_host" ]; then
     updates+=("CHATDSH_GATEWAY_BIND_HOST=${bind_host}")
   fi
   if ! has_env_key "$env_file" CHATDSH_GATEWAY_BIND_PORT; then
@@ -506,15 +634,23 @@ main() {
   else
     printf '复用已保存的配对口令（来源：%s）。\n' "$env_file"
   fi
-  printf '中继对外地址：%s\n' "$public_url"
+  if [ "$redact_secrets" -eq 1 ]; then
+    printf '中继对外地址：已从 %s 加载（脱敏隐藏）\n' "$env_file"
+  else
+    printf '中继对外地址：%s\n' "$public_url"
+  fi
 
   if [ "$prepare_only" -eq 1 ]; then
     local probe_host_prep="$bind_host"
     if [ "$probe_host_prep" = "0.0.0.0" ] || [ "$probe_host_prep" = "::" ]; then
       probe_host_prep="127.0.0.1"
     fi
-    print_network_checklist "$public_url" "$probe_host_prep" "$bind_port"
-    print_join_instructions "$env_file" "$public_url" "$pairing_code"
+    print_network_checklist "$public_url" "$probe_host_prep" "$bind_port" "$redact_secrets"
+    if [ "$redact_secrets" -eq 1 ]; then
+      print_redacted_join_hint "$env_file"
+    else
+      print_join_instructions "$env_file" "$public_url" "$pairing_code"
+    fi
     return 0
   fi
 
@@ -530,15 +666,26 @@ main() {
   fi
   local health_url="http://${probe_host}:${bind_port}/healthz"
   wait_for_health "$health_url" >/dev/null
-  printf '中继容器已就绪（对外来源：%s，本机回环入口：http://%s:%s）\n' "$public_url" "$probe_host" "$bind_port"
-  printf '手机端 PWA 入口：%s/\n' "$public_url"
-  if check_public_health "${public_url}/healthz"; then
-    printf '公网域名检查通过：%s/healthz\n' "$public_url"
+  if [ "$redact_secrets" -eq 1 ]; then
+    printf '中继容器已就绪（本机回环入口：http://%s:%s，对外来源已由 %s 注入）\n' "$probe_host" "$bind_port" "$env_file"
+    if check_public_health "${public_url}/healthz"; then
+      printf '%s\n' '公网域名检查通过（<CHATDSH_PUBLIC_URL>/healthz 返回 ok:true）'
+    else
+      printf '%s\n' '提示：尚未通过公网对外地址访问到中继（若尚未配置域名解析或反向代理属正常现象）。'
+      print_network_checklist "$public_url" "$probe_host" "$bind_port" 1
+    fi
+    print_redacted_join_hint "$env_file"
   else
-    printf '提示：尚未通过公网地址 %s/healthz 访问到中继（若尚未配置域名解析或反向代理属正常现象）。\n' "$public_url"
-    print_network_checklist "$public_url" "$probe_host" "$bind_port"
+    printf '中继容器已就绪（对外来源：%s，本机回环入口：http://%s:%s）\n' "$public_url" "$probe_host" "$bind_port"
+    printf '手机端 PWA 入口：%s/\n' "$public_url"
+    if check_public_health "${public_url}/healthz"; then
+      printf '公网域名检查通过：%s/healthz\n' "$public_url"
+    else
+      printf '提示：尚未通过公网地址 %s/healthz 访问到中继（若尚未配置域名解析或反向代理属正常现象）。\n' "$public_url"
+      print_network_checklist "$public_url" "$probe_host" "$bind_port" 0
+    fi
+    print_join_instructions "$env_file" "$public_url" "$pairing_code"
   fi
-  print_join_instructions "$env_file" "$public_url" "$pairing_code"
 }
 
 main "$@"

@@ -9,6 +9,7 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { BlockList, isIP } from 'node:net';
 import { join } from 'node:path';
 import type { Duplex } from 'node:stream';
 import type { ChatdshTelemetry } from '@chatdsh/core-contracts';
@@ -44,7 +45,7 @@ import { DEVICE_LINK_PATH, DeviceLinkError, nodeTokenOf, type DeviceLinkHub } fr
 import { aggregateSessions } from './sessions.ts';
 import { DevicePluginsError, fetchDevicePlugins } from './device-plugins.ts';
 import { AccessStore, type AccessSessionRow } from './access/store.ts';
-import { deriveAccessKey, loadAccessMasterKey } from './access/keys.ts';
+import { deriveAccessKey, loadAccessMasterKey, openAccessSecret, parseAccessEnvelope, sealAccessSecret } from './access/keys.ts';
 import { issueCsrfToken, verifyCsrfToken } from './access/csrf.ts';
 import {
   ACCESS_SESSION_TTL_MS,
@@ -126,6 +127,31 @@ const DEVICE_PROXY_BODY_LIMIT = 8 * 1024 * 1024;
 const DEVICE_PROXY_TIMEOUT_MS = 60_000;
 const CLIENT_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const OWNER_CLIENT_ID = 'owner';
+const PAIRING_REQUEST_TTL_MS = 10 * 60 * 1000;
+const PAIRING_CLAIM_PATH = '/chatdsh/gateway/devices/pair/claim';
+const MOBILE_PAIR_CLAIM_PATH = '/chatdsh/gateway/mobile/pair/claim';
+const PAIRING_REQUESTS_PATH = '/chatdsh/gateway/pairing/requests';
+const PAIRING_REQUEST_DECIDE_PATH = /^\/chatdsh\/gateway\/pairing\/requests\/([^/]+)\/(approve|reject)$/;
+
+const LOOPBACK_LIST = new BlockList();
+LOOPBACK_LIST.addSubnet('127.0.0.0', 8, 'ipv4');
+LOOPBACK_LIST.addAddress('::1', 'ipv6');
+LOOPBACK_LIST.addSubnet('::ffff:127.0.0.0', 104, 'ipv6');
+
+function isLoopbackRemote(address: string | undefined): boolean {
+  if (address === undefined || address === '') return false;
+  const normalized = address.startsWith('[') && address.endsWith(']') ? address.slice(1, -1) : address;
+  const family = isIP(normalized);
+  if (family === 4) return LOOPBACK_LIST.check(normalized, 'ipv4');
+  if (family === 6) return LOOPBACK_LIST.check(normalized, 'ipv6');
+  return false;
+}
+
+function hasProxyForwardingHeader(request: IncomingMessage): boolean {
+  return request.headers['x-forwarded-for'] !== undefined
+    || request.headers['x-forwarded-host'] !== undefined
+    || request.headers.forwarded !== undefined;
+}
 
 type EntryHandler = (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
 
@@ -134,12 +160,16 @@ function routeOf(_method: string, path: string): string {
   if (path === '/' || path === '/index.html') return 'pwa-index';
   if (path === BROWSER_TELEMETRY_PATH) return 'browser-telemetry';
   if (path === MOBILE_TELEMETRY_PATH) return 'mobile-telemetry';
+  if (path === MOBILE_PAIR_CLAIM_PATH) return 'pairing-claim';
   if (path === MOBILE_PAIR_PATH) return 'mobile-pair';
   if (path === '/chatdsh/gateway/mobile/devices') return 'mobile-devices';
   if (path === '/chatdsh/gateway/ownership') return 'ownership';
   if (path === '/chatdsh/gateway/settings') return 'settings';
   if (path === '/chatdsh/gateway/sessions') return 'sessions';
+  if (path === PAIRING_CLAIM_PATH) return 'pairing-claim';
   if (path === '/chatdsh/gateway/devices/pair') return 'device-pair';
+  if (path === PAIRING_REQUESTS_PATH) return 'pairing-requests';
+  if (PAIRING_REQUEST_DECIDE_PATH.test(path)) return 'pairing-decide';
   if (DEVICE_PROBE_PATH.test(path)) return 'device-probe';
   if (DEVICE_PLUGINS_PATH.test(path)) return 'device-plugins';
   if (path === '/chatdsh/gateway/devices') return 'devices';
@@ -745,6 +775,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
   const accessStore = new AccessStore(store.handle());
   const accessMasterKey = loadAccessMasterKey(join(dataRoot(), 'access', 'master.key'));
   const accessCsrfKey = deriveAccessKey(accessMasterKey, 'csrf');
+  const accessEnvelopeKey = deriveAccessKey(accessMasterKey, 'envelope');
   const cursorKey = createHmac('sha256', accessMasterKey).update('chatdsh/gateway/cursor/v1', 'utf8').digest();
   const continuityStore = new ReplicaContinuityStore(new SqliteDatabase(store.handle()));
   const notifications: NotificationHost = createNotificationHost({
@@ -1248,6 +1279,37 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
             ? payload.deviceName
             : (typeof payload.name === 'string' ? payload.name : '');
           const deviceName = nameValue.trim() === '' ? platform : nameValue.trim().slice(0, 80);
+          if (config.pairingApproval === 'required') {
+            const now = Date.now();
+            const pollToken = randomBytes(32).toString('base64url');
+            const pending = store.createPairingRequest({
+              id: randomUUID(),
+              kind: 'mobile',
+              name: deviceName,
+              platform,
+              role: 'mobile',
+              capabilities: [],
+              pollSecretHash: deviceTokenHash(pollToken),
+              createdAt: now,
+              expiresAt: now + PAIRING_REQUEST_TTL_MS,
+            });
+            span.setAttribute('outcome', 'pending');
+            telemetry.event('chatdsh.gateway.device.pairing.requested', {
+              kind: 'mobile',
+              platform,
+              outcome: 'pending',
+            });
+            telemetry.counter('chatdsh_mobile_devices_total', { description: '手机设备管理操作' })
+              .add(1, { action: 'pair', outcome: 'pending' });
+            response.setHeader('Cache-Control', 'no-store');
+            sendJson(response, 202, {
+              status: 'pending',
+              requestId: pending.id,
+              pollToken,
+              expiresAt: pending.expiresAt,
+            });
+            return;
+          }
           const token = randomBytes(32).toString('base64url');
           const record = store.registerMobileDevice({
             id: randomUUID(),
@@ -1382,6 +1444,38 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
           const deviceName = typeof payload.name === 'string' && payload.name.trim() !== ''
             ? payload.name.trim().slice(0, 80)
             : platform;
+          if (config.pairingApproval === 'required') {
+            const now = Date.now();
+            const pollToken = randomBytes(32).toString('base64url');
+            const pending = store.createPairingRequest({
+              id: randomUUID(),
+              kind: 'node',
+              name: deviceName,
+              platform,
+              role,
+              capabilities,
+              pollSecretHash: deviceTokenHash(pollToken),
+              createdAt: now,
+              expiresAt: now + PAIRING_REQUEST_TTL_MS,
+            });
+            span.setAttribute('platform', platform);
+            span.setAttribute('outcome', 'pending');
+            telemetry.event('chatdsh.gateway.device.pairing.requested', {
+              kind: 'node',
+              platform,
+              outcome: 'pending',
+            });
+            telemetry.counter('chatdsh_gateway_device_pairs_total', { description: '节点配对次数' })
+              .add(1, { outcome: 'pending' });
+            response.setHeader('Cache-Control', 'no-store');
+            sendJson(response, 202, {
+              status: 'pending',
+              requestId: pending.id,
+              pollToken,
+              expiresAt: pending.expiresAt,
+            });
+            return;
+          }
           const token = randomBytes(32).toString('base64url');
           const record = store.registerNode({
             id: randomUUID(),
@@ -1397,6 +1491,218 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
             .add(1, { outcome: 'ok' });
           response.setHeader('Cache-Control', 'no-store');
           sendJson(response, 200, { deviceId: record.id, token });
+        });
+        return;
+      }
+
+      if (route === 'pairing-claim') {
+        await telemetry.runSpan('chatdsh.gateway.device.pairing.claim', {}, async (span) => {
+          const reject = (status: number, errorType: string, errorCode: string, extra?: Record<string, unknown>): void => {
+            span.setAttribute('outcome', 'rejected');
+            span.setAttribute('error.type', errorType);
+            span.setAttribute('error.code', errorCode);
+            telemetry.counter('chatdsh_gateway_device_pairing_approvals_total', { description: '配对审批操作次数' })
+              .add(1, { action: 'claim', outcome: 'rejected' });
+            response.setHeader('Cache-Control', 'no-store');
+            sendJson(response, status, { ...extra, error: errorCode });
+          };
+          if (request.method !== 'POST') {
+            reject(405, 'request', 'method-not-allowed');
+            return;
+          }
+          const body = await readLimitedBody(request, 16 * 1024);
+          if (body === undefined) {
+            reject(413, 'request', 'payload-too-large');
+            return;
+          }
+          let payload: { requestId?: unknown; pollToken?: unknown };
+          try {
+            payload = JSON.parse(body) as typeof payload;
+          } catch {
+            reject(400, 'payload', 'invalid-json');
+            return;
+          }
+          if (typeof payload.requestId !== 'string' || payload.requestId.trim() === ''
+            || typeof payload.pollToken !== 'string' || payload.pollToken.trim() === '') {
+            reject(400, 'payload', 'invalid-claim-request');
+            return;
+          }
+          const outcome = store.claimPairingRequest(payload.requestId.trim(), deviceTokenHash(payload.pollToken.trim()));
+          if (outcome.kind === 'not-found') {
+            reject(404, 'request', 'pairing-request-not-found');
+            return;
+          }
+          if (outcome.kind === 'unauthorized') {
+            reject(401, 'auth', 'poll-token-invalid');
+            return;
+          }
+          if (outcome.kind === 'pending') {
+            span.setAttribute('outcome', 'pending');
+            telemetry.counter('chatdsh_gateway_device_pairing_approvals_total', { description: '配对审批操作次数' })
+              .add(1, { action: 'claim', outcome: 'pending' });
+            response.setHeader('Cache-Control', 'no-store');
+            sendJson(response, 202, { status: 'pending', requestId: payload.requestId.trim(), expiresAt: outcome.expiresAt });
+            return;
+          }
+          if (outcome.kind === 'rejected') {
+            reject(403, 'auth', 'pairing-rejected', { status: 'rejected' });
+            return;
+          }
+          if (outcome.kind === 'already-claimed') {
+            reject(409, 'state', 'pairing-already-claimed', { status: 'claimed' });
+            return;
+          }
+          if (outcome.kind === 'expired') {
+            reject(410, 'state', 'pairing-expired', { status: 'expired' });
+            return;
+          }
+          const token = openAccessSecret(
+            accessEnvelopeKey,
+            parseAccessEnvelope(outcome.sealedToken),
+            'pairing-claim',
+          ).toString('utf8');
+          span.setAttribute('outcome', 'claimed');
+          telemetry.counter('chatdsh_gateway_device_pairing_approvals_total', { description: '配对审批操作次数' })
+            .add(1, { action: 'claim', outcome: 'claimed' });
+          response.setHeader('Cache-Control', 'no-store');
+          sendJson(response, 200, { status: 'approved', deviceId: outcome.deviceId, token });
+        });
+        return;
+      }
+
+      if (route === 'pairing-requests' || route === 'pairing-decide') {
+        await telemetry.runSpan('chatdsh.gateway.device.pairing.approve', {}, async (span) => {
+          const action = route === 'pairing-requests'
+            ? 'list'
+            : (PAIRING_REQUEST_DECIDE_PATH.exec(path)?.[2] ?? 'unknown');
+          span.setAttribute('action', action);
+          const reject = (status: number, errorType: string, errorCode: string): void => {
+            span.setAttribute('outcome', 'rejected');
+            span.setAttribute('error.type', errorType);
+            span.setAttribute('error.code', errorCode);
+            telemetry.event('chatdsh.gateway.device.pairing.decided', {
+              action,
+              kind: 'unknown',
+              outcome: 'rejected',
+              'error.type': errorType,
+              'error.code': errorCode,
+            });
+            telemetry.counter('chatdsh_gateway_device_pairing_approvals_total', { description: '配对审批操作次数' })
+              .add(1, { action, outcome: 'rejected' });
+            response.setHeader('Cache-Control', 'no-store');
+            sendJson(response, status, { error: errorCode });
+          };
+          if (!isLoopbackRemote(request.socket.remoteAddress) || hasProxyForwardingHeader(request)) {
+            reject(403, 'security', 'loopback-only');
+            return;
+          }
+          if (config.pairingCode !== undefined) {
+            const supplied = request.headers['x-chatdsh-pairing-code'];
+            const provided = typeof supplied === 'string' ? supplied : '';
+            if (!sameSecret(provided, config.pairingCode)) {
+              reject(401, 'auth', 'pairing-admin-unauthorized');
+              return;
+            }
+          }
+          if (route === 'pairing-requests') {
+            if (request.method !== 'GET') {
+              reject(405, 'request', 'method-not-allowed');
+              return;
+            }
+            const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+            const rawStatus = url.searchParams.get('status') ?? undefined;
+            const allowedStatus = rawStatus === 'pending' || rawStatus === 'approved' || rawStatus === 'rejected'
+              || rawStatus === 'expired' || rawStatus === 'claimed'
+              ? rawStatus
+              : undefined;
+            if (rawStatus !== undefined && allowedStatus === undefined) {
+              reject(400, 'request', 'status-invalid');
+              return;
+            }
+            const requests = store.listPairingRequests(allowedStatus);
+            span.setAttribute('outcome', 'ok');
+            telemetry.counter('chatdsh_gateway_device_pairing_approvals_total', { description: '配对审批操作次数' })
+              .add(1, { action: 'list', outcome: 'ok' });
+            response.setHeader('Cache-Control', 'no-store');
+            sendJson(response, 200, { requests });
+            return;
+          }
+          if (request.method !== 'POST') {
+            reject(405, 'request', 'method-not-allowed');
+            return;
+          }
+          const match = PAIRING_REQUEST_DECIDE_PATH.exec(path);
+          const requestId = match?.[1] === undefined ? '' : decodeURIComponent(match[1]);
+          const decision = match?.[2];
+          const existing = store.getPairingRequest(requestId);
+          if (existing === undefined) {
+            reject(404, 'request', 'pairing-request-not-found');
+            return;
+          }
+          if (existing.status !== 'pending') {
+            reject(409, 'state', `pairing-request-${existing.status}`);
+            return;
+          }
+          if (decision === 'reject') {
+            if (!store.rejectPairingRequest(existing.id)) {
+              reject(409, 'state', 'pairing-request-already-decided');
+              return;
+            }
+            span.setAttribute('outcome', 'rejected-by-admin');
+            telemetry.event('chatdsh.gateway.device.pairing.decided', {
+              action: 'reject',
+              kind: existing.kind,
+              outcome: 'rejected',
+            });
+            telemetry.counter('chatdsh_gateway_device_pairing_approvals_total', { description: '配对审批操作次数' })
+              .add(1, { action: 'reject', outcome: 'ok' });
+            response.setHeader('Cache-Control', 'no-store');
+            sendJson(response, 200, { id: existing.id, status: 'rejected' });
+            return;
+          }
+          const deviceId = randomUUID();
+          const token = randomBytes(32).toString('base64url');
+          const tokenHash = deviceTokenHash(token);
+          const sealed = JSON.stringify(sealAccessSecret(accessEnvelopeKey, Buffer.from(token, 'utf8'), 'pairing-claim'));
+          if (!store.approvePairingRequest(existing.id, { deviceId, sealedToken: sealed })) {
+            reject(409, 'state', 'pairing-request-already-decided');
+            return;
+          }
+          if (existing.kind === 'mobile') {
+            store.registerMobileDevice({
+              id: deviceId,
+              name: existing.name,
+              platform: existing.platform,
+              tokenHash,
+            });
+          } else {
+            store.registerNode({
+              id: deviceId,
+              name: existing.name,
+              platform: existing.platform,
+              role: (existing.role === 'host' || existing.role === 'executor' ? existing.role : 'both') as NodeRole,
+              capabilities: existing.capabilities,
+              tokenHash,
+            });
+          }
+          span.setAttribute('outcome', 'approved');
+          telemetry.event('chatdsh.gateway.device.pairing.decided', {
+            action: 'approve',
+            kind: existing.kind,
+            outcome: 'approved',
+          });
+          telemetry.counter('chatdsh_gateway_device_pairing_approvals_total', { description: '配对审批操作次数' })
+            .add(1, { action: 'approve', outcome: 'approved' });
+          response.setHeader('Cache-Control', 'no-store');
+          sendJson(response, 200, {
+            id: existing.id,
+            status: 'approved',
+            deviceId,
+            kind: existing.kind,
+            name: existing.name,
+            platform: existing.platform,
+            role: existing.role,
+          });
         });
         return;
       }

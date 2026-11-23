@@ -66,7 +66,7 @@ bash scripts/relay-up.sh
 bash scripts/relay-up.sh --print-join-command
 ```
 
-默认环境变量模板见 [`.env.example`](../../.env.example)。容器内固定监听 `0.0.0.0:3170`，数据持久化在命名卷 `chatdsh-relay-data`（挂载点 `/data`），宿主机默认仅绑定 `127.0.0.1:3170` 供反向代理转发。监听通配地址时必须设置精确 `CHATDSH_PUBLIC_URL`（不含路径、查询串、片段与登录凭据）。
+默认环境变量模板见 [`.env.example`](../../.env.example)。容器内固定监听 `0.0.0.0:3170`，数据持久化在命名卷 `chatdsh-relay-data`（挂载点 `/data`），宿主机默认仅绑定 `127.0.0.1:3170`（或通过 `--bind-host <穿透网卡具体 IP>` 绑定到对应内网穿透网卡 IP，脚本强制禁止宿主机绑定 `0.0.0.0` 或 `::`）。容器默认开启 `CHATDSH_PAIRING_APPROVAL=required`，客户端提交配对申请后必须由中继宿主机执行 `bash scripts/relay-approve.sh approve <requestId>` 审批放行。公网暴露建议同时启用 `CHATDSH_ACCESS_MODE=required` 或在反向代理层开启身份认证。
 
 如需在宿主机直接以 Node 进程运行（不使用容器）：
 
@@ -77,22 +77,38 @@ CHATDSH_GATEWAY_HOST=127.0.0.1 \
 CHATDSH_GATEWAY_PORT=3170 \
 CHATDSH_PUBLIC_URL=https://relay.example.com \
 CHATDSH_PAIRING_CODE='替换为随机口令' \
+CHATDSH_PAIRING_APPROVAL=required \
 node gateway/lib/main.js
 ```
 
-## 四、设备一行安装插件并配对启动
+## 四、设备一行安装插件、审批放行与配对启动
 
-复制上一步 `relay-up.sh` 输出的命令并在设备端执行：
+在设备端执行（交互终端静默提示输入配对口令，避免留存 Shell 历史；同机部署可使用 `--from-relay-env .env --redact-secrets`）：
 
 ```sh
-bash scripts/device-join.sh --relay https://relay.example.com --code '<中继配对口令>'
+bash scripts/device-join.sh --relay https://relay.example.com
 ```
 
 该命令自动依次完成：
 
 1. 将当前仓库的 `@chatdsh/bundle` 打包并经官方 `dsh plugin --profile web add` 安装到官方 `web` profile（可通过 `--profile desktop` 指定桌面端，或 `--bundle @chatdsh/bundle` 指定远端包）。
-2. 调用 `POST <中继地址>/chatdsh/gateway/devices/pair` 完成设备配对，并将 `CHATDSH_CONTROL_URL`、`CHATDSH_DEVICE_ID` 与 `CHATDSH_NODE_TOKEN` 写入 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）。节点令牌只通过运行环境变量注入，不进入配置树，也不出现在 `dsh --dump-config` 输出里。
+2. 调用 `POST <中继地址>/chatdsh/gateway/devices/pair` 提交配对申请，返回 `202 pending` 后打印 `requestId` 并等待中继宿主机审批；审批放行后自动经 `POST /chatdsh/gateway/devices/pair/claim` 一次性领取凭据，并将 `CHATDSH_CONTROL_URL`、`CHATDSH_DEVICE_ID` 与 `CHATDSH_NODE_TOKEN` 写入 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）。节点令牌只通过运行环境变量注入，不进入配置树，也不出现在 `dsh --dump-config` 输出里。
 3. 注入配对凭据启动官方 DSH 运行时。
+
+在中继宿主机审批配对请求：
+
+```sh
+bash scripts/relay-approve.sh list
+bash scripts/relay-approve.sh approve <requestId>
+# 或拒绝：bash scripts/relay-approve.sh reject <requestId>
+```
+
+全部目标设备完成接入后，建议关闭配对入口（需要接入新设备时再轮换启用）：
+
+```sh
+bash scripts/relay-up.sh --disable-pairing
+# 后续重新启用并生成新口令：bash scripts/relay-up.sh --rotate-pairing-code
+```
 
 后续在同一台设备上重启 DSH 时无需再次传入配对口令，直接执行：
 
@@ -106,7 +122,7 @@ bash scripts/device-join.sh
 bash scripts/relay-up.sh --print-join-command
 ```
 
-设备连接成功后，`GET /chatdsh/gateway/devices` 会列出该设备并标记 `online: true`。配对码在 `.env` 中持久化；如需轮换配对码，修改 `.env` 中的 `CHATDSH_PAIRING_CODE` 后重新执行 `bash scripts/relay-up.sh`。缺少 `CHATDSH_PAIRING_CODE` 时配对端点返回 `404 pairing-disabled`。
+设备连接成功后，`GET /chatdsh/gateway/devices` 会列出该设备并标记 `online: true`。缺少 `CHATDSH_PAIRING_CODE` 时配对端点返回 `404 pairing-disabled`。
 
 手机端使用独立入口：
 

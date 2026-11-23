@@ -1,21 +1,21 @@
-// 中继 Docker Compose 引导脚本（relay-up.sh）与设备一行接入脚本（device-join.sh）单元测试。
+// 中继 Docker Compose 引导脚本、配对审批机制与设备一行接入脚本的单元测试。
 //
-// 验证域名必填校验与归一化、首次运行自动生成随机口令并落盘、二次运行复用口令、
-// `--print-join-command` 输出以及真实中继 HTTP 配对与凭据复用。
+// 验证域名归一化、禁止绑定 0.0.0.0/:: 通配地址、首次自动生成随机口令与二次复用、
+// 脱敏输出、`--disable-pairing` / `--rotate-pairing-code`、以及配对审批状态机
+// （202 pending -> 管理员回环审批 -> 一次性领取 -> 409 重领拒绝 / 403 拒绝）与 device-join.sh 轮询。
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { allocateIndependentHome, releaseIndependentHome } from '../lib/environment.mjs';
-
-const execFileAsync = promisify(execFile);
 import { createGatewayServer, createPushHub, DeviceLinkHub, GatewayStore, PushQueue, ReceiptStore, ReplicaStore, SettingsStore } from '../../gateway/lib/index.js';
 import { createTelemetryClient } from '../../packages/core/diagnostics/lib/client.js';
 import { defaultTelemetryConfig } from '../../packages/core/diagnostics/lib/config.js';
 
+const execFileAsync = promisify(execFile);
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
 const RELAY_UP = join(REPO_ROOT, 'scripts/relay-up.sh');
 const DEVICE_JOIN = join(REPO_ROOT, 'scripts/device-join.sh');
@@ -38,6 +38,9 @@ function runRelayUp(args, options = {}) {
   const env = { ...process.env, ...(options.env ?? {}) };
   delete env.CHATDSH_PAIRING_CODE;
   delete env.CHATDSH_PUBLIC_URL;
+  delete env.CHATDSH_GATEWAY_BIND_HOST;
+  delete env.CHATDSH_PAIRING_APPROVAL;
+  if (options.env) Object.assign(env, options.env);
   return spawnSync('bash', [RELAY_UP, ...args], {
     cwd: REPO_ROOT,
     env,
@@ -46,7 +49,7 @@ function runRelayUp(args, options = {}) {
   });
 }
 
-test('relay-up.sh 归一化裸域名与精确 origin，并拒绝空值、路径、查询串、片段与凭据', () => {
+test('relay-up.sh 归一化裸域名与精确 origin，并拒绝非法域名与 0.0.0.0/:: 通配绑定', () => {
   const home = allocateIndependentHome('relay-sh-domain');
   try {
     const cases = [
@@ -61,6 +64,8 @@ test('relay-up.sh 归一化裸域名与精确 origin，并拒绝空值、路径�
       assert.equal(res.status, 0, res.stderr);
       const parsed = parseSimpleEnv(readFileSync(cfg, 'utf8'));
       assert.equal(parsed.get('CHATDSH_PUBLIC_URL'), expected);
+      assert.equal(parsed.get('CHATDSH_PAIRING_APPROVAL'), 'required');
+      assert.equal(parsed.get('CHATDSH_GATEWAY_BIND_HOST'), '127.0.0.1');
     }
 
     const bad = [
@@ -78,21 +83,33 @@ test('relay-up.sh 归一化裸域名与精确 origin，并拒绝空值、路径�
       assert.notEqual(res.status, 0, `非法域名应当被拒绝：${input}`);
       assert.equal(existsSync(cfg), false);
     }
+
+    // 严禁绑定 0.0.0.0 或 ::
+    for (const badHost of ['0.0.0.0', '::', '[::]', '*']) {
+      const cfg = join(home, `bad-host-${badHost.replaceAll(/[^a-z0-9]/gi, '_')}.env`);
+      const res = runRelayUp(['--prepare-only', '--config', cfg, '--domain', 'relay.example.com', '--bind-host', badHost]);
+      assert.notEqual(res.status, 0, `通配绑定地址应当被拒绝：${badHost}`);
+      assert.equal(existsSync(cfg), false);
+    }
+
+    // 允许绑定具体内网穿透网卡 IP（RFC5737 示例地址）
+    const specificCfg = join(home, 'specific-host.env');
+    const okHost = runRelayUp(['--prepare-only', '--config', specificCfg, '--domain', 'relay.example.com', '--bind-host', '192.0.2.10']);
+    assert.equal(okHost.status, 0, okHost.stderr);
+    assert.equal(parseSimpleEnv(readFileSync(specificCfg, 'utf8')).get('CHATDSH_GATEWAY_BIND_HOST'), '192.0.2.10');
   } finally {
     releaseIndependentHome(home);
   }
 });
 
-test('relay-up.sh 首次运行询问必填域名、自动生成随机口令保存，二次运行复用且支持 --print-join-command', () => {
+test('relay-up.sh 支持自动生成口令、二次复用、脱敏输出、轮换口令与关闭配对', () => {
   const home = allocateIndependentHome('relay-sh-lifecycle');
   const envFile = join(home, '.env');
   try {
-    // 非交互空输入必须失败（域名必填）
     const empty = runRelayUp(['--prepare-only', '--config', envFile], { input: '\n' });
     assert.notEqual(empty.status, 0);
     assert.equal(existsSync(envFile), false);
 
-    // 首次运行：从 stdin 读取域名，自动生成 32 位 base64url 随机口令并保存 0600
     const first = runRelayUp(['--prepare-only', '--config', envFile], { input: 'relay.example.com\n' });
     assert.equal(first.status, 0, first.stderr);
     assert.equal(statSync(envFile).mode & 0o777, 0o600);
@@ -100,14 +117,16 @@ test('relay-up.sh 首次运行询问必填域名、自动生成随机口令保�
     const parsed1 = parseSimpleEnv(readFileSync(envFile, 'utf8'));
     const code = parsed1.get('CHATDSH_PAIRING_CODE');
     assert.equal(parsed1.get('CHATDSH_PUBLIC_URL'), 'https://relay.example.com');
+    assert.equal(parsed1.get('CHATDSH_PAIRING_APPROVAL'), 'required');
     assert.match(code, /^[A-Za-z0-9_-]{32}$/);
-    assert.ok(first.stdout.includes(`bash scripts/device-join.sh --relay https://relay.example.com --code ${code}`));
+    assert.ok(first.stdout.includes('bash scripts/device-join.sh --relay https://relay.example.com'));
+    assert.ok(first.stdout.includes(code));
+    assert.ok(first.stdout.includes('bash scripts/relay-approve.sh'));
     assert.ok(first.stdout.includes('--print-join-command'));
-    assert.ok(first.stdout.includes('域名解析'), '应提醒用户配置域名解析');
-    assert.ok(first.stdout.includes('反向代理'), '应提醒用户配置反向代理转发到本机 IP 端口');
-    assert.ok(first.stdout.includes('http://127.0.0.1:3170'), '应明确给出反向代理转发的目标地址与端口');
+    assert.ok(first.stdout.includes('域名解析'));
+    assert.ok(first.stdout.includes('反向代理'));
+    assert.ok(first.stdout.includes('http://127.0.0.1:3170'));
 
-    // 追加用户自定义配置并验证二次运行保留
     writeFileSync(envFile, `${readFileSync(envFile, 'utf8')}CUSTOM_KEEP_ME=hello-world\n`, { mode: 0o600 });
 
     const second = runRelayUp(['--prepare-only', '--config', envFile], { input: '' });
@@ -116,21 +135,38 @@ test('relay-up.sh 首次运行询问必填域名、自动生成随机口令保�
     assert.equal(parsed2.get('CHATDSH_PAIRING_CODE'), code);
     assert.equal(parsed2.get('CUSTOM_KEEP_ME'), 'hello-world');
 
-    // --print-join-command 直接输出接入命令与再次打印提示
-    const printed = runRelayUp(['--print-join-command', '--config', envFile]);
-    assert.equal(printed.status, 0, printed.stderr);
-    assert.ok(printed.stdout.includes(`bash scripts/device-join.sh --relay https://relay.example.com --code ${code}`));
-    assert.ok(printed.stdout.includes('--print-join-command'));
+    const redacted = runRelayUp(['--prepare-only', '--redact-secrets', '--config', envFile], { input: '' });
+    assert.equal(redacted.status, 0, redacted.stderr);
+    assert.equal(redacted.stdout.includes(code), false, '脱敏模式不得输出配对口令');
+    assert.equal(redacted.stderr.includes(code), false);
+    assert.equal(redacted.stdout.includes('relay.example.com'), false, '脱敏模式不得输出真实域名');
+    assert.equal(redacted.stderr.includes('relay.example.com'), false);
+    assert.ok(redacted.stdout.includes('--print-join-command'));
+    assert.ok(redacted.stdout.includes('--from-relay-env'));
+
+    // 轮换配对口令
+    const rotated = runRelayUp(['--prepare-only', '--rotate-pairing-code', '--redact-secrets', '--config', envFile]);
+    assert.equal(rotated.status, 0, rotated.stderr);
+    const rotatedCode = parseSimpleEnv(readFileSync(envFile, 'utf8')).get('CHATDSH_PAIRING_CODE');
+    assert.match(rotatedCode, /^[A-Za-z0-9_-]{32}$/);
+    assert.notEqual(rotatedCode, code);
+
+    // 关闭配对口令
+    const disabled = runRelayUp(['--prepare-only', '--disable-pairing', '--config', envFile]);
+    assert.equal(disabled.status, 0, disabled.stderr);
+    assert.equal(parseSimpleEnv(readFileSync(envFile, 'utf8')).get('CHATDSH_PAIRING_CODE'), '');
+    const printWhenDisabled = runRelayUp(['--print-join-command', '--config', envFile]);
+    assert.notEqual(printWhenDisabled.status, 0);
   } finally {
     releaseIndependentHome(home);
   }
 });
 
-test('device-join.sh 与真实中继配对并持久化凭据，再次运行复用不重复配对', async () => {
-  const home = allocateIndependentHome('device-sh-pair');
+test('配对审批模式：客户端 202 等待审批，拒绝转发头冒充，批准后一次性领取并支持 device-join.sh 轮询', async () => {
+  const home = allocateIndependentHome('pairing-approval-flow');
   const dbPath = join(home, 'gateway.sqlite');
   const deviceHome = join(home, 'device-home');
-  const pairingCode = 'test-shell-join-code-2026';
+  const pairingCode = 'test-approval-code-2026';
 
   const telemetry = createTelemetryClient({
     config: defaultTelemetryConfig({ surface: 'gateway' }),
@@ -159,6 +195,7 @@ test('device-join.sh 与真实中继配对并持久化凭据，再次运行复�
       pushMode: 'two-stage',
       pushEscalationMs: 120_000,
       accessMode: 'disabled',
+      pairingApproval: 'required',
       pwaVersion: '0.1.0',
       pairingCode,
     },
@@ -175,30 +212,156 @@ test('device-join.sh 与真实中继配对并持久化凭据，再次运行复�
   await server.start();
   try {
     const relayUrl = server.url();
-    const envFile = join(deviceHome, 'chatdsh-device.env');
+    const adminHeaders = { 'x-chatdsh-pairing-code': pairingCode };
 
-    // 首次配对（使用异步 execFile 避免阻塞同进程内的测试 HTTP 服务器事件循环）
-    await execFileAsync(
+    // 1. 客户端发起配对申请 -> 返回 202 pending，尚未登记节点
+    const req1 = await fetch(`${relayUrl}/chatdsh/gateway/devices/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: pairingCode, name: 'approval-node-1', platform: 'linux' }),
+    });
+    assert.equal(req1.status, 202);
+    const pending1 = await req1.json();
+    assert.equal(pending1.status, 'pending');
+    assert.ok(pending1.requestId && pending1.pollToken);
+    assert.equal(store.listNodes().length, 0, '审批前不得登记设备');
+
+    // 2. 带 X-Forwarded-For 的代理请求访问审批端点被拒绝 403
+    const spoofed = await fetch(`${relayUrl}/chatdsh/gateway/pairing/requests`, {
+      headers: { ...adminHeaders, 'x-forwarded-for': '192.0.2.50' },
+    });
+    assert.equal(spoofed.status, 403);
+
+    // 3. 缺少或错误管理员头被拒绝 401
+    const unauth = await fetch(`${relayUrl}/chatdsh/gateway/pairing/requests`);
+    assert.equal(unauth.status, 401);
+
+    // 4. 审批前列举可见待审批申请，客户端错误 pollToken 返回 401，正确 pollToken 返回 202 pending
+    const listed = await (await fetch(`${relayUrl}/chatdsh/gateway/pairing/requests?status=pending`, { headers: adminHeaders })).json();
+    assert.equal(listed.requests.length, 1);
+    assert.equal(listed.requests[0].id, pending1.requestId);
+    assert.equal(listed.requests[0].pollSecretHash, undefined);
+
+    const badClaim = await fetch(`${relayUrl}/chatdsh/gateway/devices/pair/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: pending1.requestId, pollToken: 'wrong-token' }),
+    });
+    assert.equal(badClaim.status, 401);
+
+    const { requestId: reqId1, pollToken: poll1 } = pending1;
+
+    const stillPending = await fetch(`${relayUrl}/chatdsh/gateway/devices/pair/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: reqId1, pollToken: poll1 }),
+    });
+    assert.equal(stillPending.status, 202);
+
+    // 5. 本机管理员批准申请 -> 客户端一次性领取令牌，再次领取返回 409
+    const approvedRes = await fetch(`${relayUrl}/chatdsh/gateway/pairing/requests/${reqId1}/approve`, {
+      method: 'POST',
+      headers: adminHeaders,
+    });
+    assert.equal(approvedRes.status, 200);
+    const approvedBody = await approvedRes.json();
+    assert.equal(approvedBody.status, 'approved');
+    assert.equal(approvedBody.token, undefined, '审批响应不得回显明文令牌');
+    assert.equal(store.listNodes().length, 1);
+
+    const claimed = await fetch(`${relayUrl}/chatdsh/gateway/devices/pair/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: reqId1, pollToken: poll1 }),
+    });
+    assert.equal(claimed.status, 200);
+    const claimedBody = await claimed.json();
+    assert.equal(claimedBody.status, 'approved');
+    assert.equal(claimedBody.deviceId, approvedBody.deviceId);
+    assert.ok(typeof claimedBody.token === 'string' && claimedBody.token.length >= 32);
+
+    const reclaim = await fetch(`${relayUrl}/chatdsh/gateway/devices/pair/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: reqId1, pollToken: poll1 }),
+    });
+    assert.equal(reclaim.status, 409);
+
+    // 6. 拒绝路径：管理员拒绝后客户端领取返回 403 且设备数不增加
+    const req2 = await (await fetch(`${relayUrl}/chatdsh/gateway/devices/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: pairingCode, name: 'rejected-node', platform: 'linux' }),
+    })).json();
+    const rejRes = await fetch(`${relayUrl}/chatdsh/gateway/pairing/requests/${req2.requestId}/reject`, {
+      method: 'POST',
+      headers: adminHeaders,
+    });
+    assert.equal(rejRes.status, 200);
+    const rejClaim = await fetch(`${relayUrl}/chatdsh/gateway/devices/pair/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ requestId: req2.requestId, pollToken: req2.pollToken }),
+    });
+    assert.equal(rejClaim.status, 403);
+    assert.equal(store.listNodes().length, 1);
+
+    // 7. device-join.sh --code-stdin + --redact-secrets 等待审批，后台批准后自动领取落盘
+    const child = spawn(
       'bash',
-      [DEVICE_JOIN, '--skip-install', '--no-start', '--relay', relayUrl, '--code', pairingCode, '--name', 'shell-device-a'],
-      { cwd: REPO_ROOT, env: { ...process.env, DSH_HOME: deviceHome }, encoding: 'utf8' },
+      [DEVICE_JOIN, '--skip-install', '--no-start', '--relay', relayUrl, '--code-stdin', '--redact-secrets', '--name', 'shell-approved-node'],
+      { cwd: REPO_ROOT, env: { ...process.env, DSH_HOME: deviceHome, CHATDSH_PAIRING_POLL_SEC: '0.2' }, stdio: ['pipe', 'pipe', 'pipe'] },
     );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.stdin.end(`${pairingCode}\n`);
+
+    const requestId = await new Promise((resolveId, rejectId) => {
+      const timer = setTimeout(() => rejectId(new Error(`等待待审批 requestId 超时：${stderr}`)), 10_000);
+      const check = () => {
+        const match = stderr.match(/requestId=([0-9a-f-]{36})/);
+        if (match) {
+          clearTimeout(timer);
+          resolveId(match[1]);
+        }
+      };
+      child.stderr.on('data', check);
+      child.once('exit', (code) => {
+        clearTimeout(timer);
+        rejectId(new Error(`device-join.sh 提前退出（${code}）：${stderr}`));
+      });
+    });
+
+    const approveChild = await fetch(`${relayUrl}/chatdsh/gateway/pairing/requests/${requestId}/approve`, {
+      method: 'POST',
+      headers: adminHeaders,
+    });
+    assert.equal(approveChild.status, 200);
+
+    const exitCode = await new Promise((resolveExit) => child.once('exit', resolveExit));
+    assert.equal(exitCode, 0, stderr);
+
+    const envFile = join(deviceHome, 'chatdsh-device.env');
     assert.equal(existsSync(envFile), true);
     assert.equal(statSync(envFile).mode & 0o777, 0o600);
-    const saved1 = parseSimpleEnv(readFileSync(envFile, 'utf8'));
-    assert.equal(saved1.get('CHATDSH_CONTROL_URL'), relayUrl);
-    assert.ok((saved1.get('CHATDSH_DEVICE_ID') ?? '').length > 0);
-    assert.ok((saved1.get('CHATDSH_NODE_TOKEN') ?? '').length > 0);
-    assert.equal(store.listNodes().length, 1);
+    const saved = parseSimpleEnv(readFileSync(envFile, 'utf8'));
+    assert.equal(saved.get('CHATDSH_CONTROL_URL'), relayUrl);
+    assert.ok((saved.get('CHATDSH_NODE_TOKEN') ?? '').length >= 32);
+    assert.equal(stdout.includes(pairingCode), false, '脱敏模式不得输出配对口令');
+    assert.equal(stdout.includes(saved.get('CHATDSH_NODE_TOKEN')), false, '脱敏模式不得输出节点令牌');
+    assert.equal(stdout.includes(relayUrl), false, '脱敏模式不得输出中继地址');
+    assert.equal(store.listNodes().length, 2);
 
-    // 二次运行不传 --relay 与 --code，直接复用已保存凭据
-    const second = await execFileAsync(
+    // 二次运行直接复用已保存凭据，不重复申请审批
+    const reuse = await execFileAsync(
       'bash',
-      [DEVICE_JOIN, '--skip-install', '--no-start'],
+      [DEVICE_JOIN, '--skip-install', '--no-start', '--redact-secrets'],
       { cwd: REPO_ROOT, env: { ...process.env, DSH_HOME: deviceHome }, encoding: 'utf8' },
     );
-    assert.equal(store.listNodes().length, 1);
-    assert.ok(second.stdout.includes('复用已保存的设备凭据'));
+    assert.ok(reuse.stdout.includes('复用已保存的设备凭据'));
+    assert.equal(store.listNodes().length, 2);
   } finally {
     deviceLink.stop();
     await server.stop();
