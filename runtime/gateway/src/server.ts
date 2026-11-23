@@ -1720,7 +1720,7 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
     });
   });
 
-  server.on('upgrade', (request, socket) => {
+  server.on('upgrade', (request, socket, head) => {
     upgradedSockets.add(socket);
     socket.once('close', () => upgradedSockets.delete(socket));
     const path = (request.url ?? '/').split('?')[0] ?? '/';
@@ -1729,23 +1729,32 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
       return;
     }
     if (DEVICE_PREFIX_PATH.test(path)) {
-      const body = JSON.stringify({ error: 'device-websocket-unsupported' });
-      socket.write(
-        'HTTP/1.1 501 Not Implemented\r\n' +
-        'Content-Type: application/json; charset=utf-8\r\n' +
-        `Content-Length: ${Buffer.byteLength(body)}\r\n` +
-        'Connection: close\r\n\r\n' +
-        body,
-      );
-      socket.destroy();
-      telemetry.event('chatdsh.gateway.device.rejected', {
-        action: 'proxy',
-        outcome: 'rejected',
-        'error.type': 'unsupported',
-        'error.code': 'device-websocket-unsupported',
+      const matched = DEVICE_PREFIX_PATH.exec(path);
+      let deviceId = '';
+      try {
+        deviceId = matched?.[1] === undefined ? '' : decodeURIComponent(matched[1]);
+      } catch {
+        deviceId = '';
+      }
+      void telemetry.runSpan('chatdsh.gateway.device.proxy', {
+        deviceId,
+        'http.method': request.method ?? 'GET',
+      }, async (span) => {
+        const result = await context.deviceLink.handleDeviceUpgrade(request, socket, head);
+        span.setAttribute('outcome', result.outcome);
+        span.setAttribute('http.status_code', result.status);
+        if (result.errorType !== undefined) {
+          span.setAttribute('error.type', result.errorType);
+          span.setAttribute('error.code', result.code);
+        }
+        telemetry.counter('chatdsh_gateway_device_proxies_total', { description: '按设备路由的转发次数' })
+          .add(1, { outcome: result.outcome });
+      }).catch((error: unknown) => {
+        telemetry.log('error', 'gateway device upgrade failed', {
+          'error.type': error instanceof Error ? error.name : 'Unknown',
+        });
+        if (!socket.destroyed) socket.destroy();
       });
-      telemetry.counter('chatdsh_gateway_device_proxies_total', { description: '按设备路由的转发次数' })
-        .add(1, { outcome: 'websocket-unsupported' });
       return;
     }
     const body = JSON.stringify({ error: 'not-found' });

@@ -127,3 +127,8 @@ runtime/e2e/unit/client-complete-wp39-surfaces.test.mjs:chatdsh-provider-credent
 # 十、界面设计稿里的输入框生成函数被密码赋值规则命中：`password` 是 `autocomplete`
 #     属性的取值分支，用于决定输入框的浏览器自动填充行为，不含任何密码。
 runtime/docs/ui-design/complete.js:chatdsh-password-assignment:7
+
+#
+# 十一、设备通道测试用 RFC 6455 示例握手的 Sec-WebSocket-Key 公开测试向量，
+#     非真实凭据，仅用于驱动一次合法的 WebSocket 升级。
+runtime/e2e/unit/device-link-v2.test.mjs:chatdsh-provider-credential:243

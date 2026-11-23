@@ -16,10 +16,10 @@
 |---|---|---|
 | 顶层适配层 | [dsh-adapter/](../../dsh-adapter/) | 已收窄至 7 个 DSH peer 依赖，6 项单元测试通过 |
 | 核心基础包 | [runtime/packages/core/](../packages/core/) | `diagnostics` 与 `remote-client` 精简完备；`contracts` 待 P05 清理废弃领域类型文件 |
-| 宿主插件 | [runtime/packages/host/](../packages/host/) | `telemetry`、`push`、`import`、`settings-sync` 已就位；`device-link` 目前实现 v1 单次帧转发，待 P02 补齐 v2 多路复用通道与 WebSocket 升级 |
+| 宿主插件 | [runtime/packages/host/](../packages/host/) | `telemetry`、`push`、`import`、`settings-sync` 已就位；`device-link` 已实现 v2 多路复用通道、HTTP 流式转发与 WebSocket 隧道 |
 | 客户端插件 | [runtime/packages/client/](../packages/client/) | `telemetry` 与 `pwa` 已就位；官方客户端远程设备侧栏与状态条插件 `remote` 待 P03 实现 |
 | 纯附加组合包 | [runtime/packages/bundle/chatdsh/](../packages/bundle/chatdsh/) | 已声明纯 `insert` 补丁层与完整依赖，待 P01 在官方 profile 下完成真实 `dsh plugin add` 验收 |
-| 轻量中继服务端 | [runtime/gateway/](../gateway/) | 已剥离所有非中继模块，保留设备长连接枢纽（v2 通道协议已在 [device-link.ts](../gateway/src/device-link.ts) 实现）、副本、回执、导入、设置同步、通知推送、访问认证与 PWA 静态入口；`/d/<deviceId>/*` 的 WebSocket 隧道转发待 P02 接通 |
+| 轻量中继服务端 | [runtime/gateway/](../gateway/) | 已剥离所有非中继模块，保留设备长连接枢纽（v2 通道协议在 [device-link.ts](../gateway/src/device-link.ts)）、副本、回执、导入、设置同步、通知推送、访问认证与 PWA 静态入口；`/d/<deviceId>/*` 的 WebSocket 隧道已接通 |
 
 ---
 
