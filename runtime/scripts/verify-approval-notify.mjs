@@ -89,6 +89,18 @@ async function reportEvents(base, deviceId, sessionId, events) {
   return response.json();
 }
 
+/** 构造一条带完整信封的副本事件。 */
+function replicaEvent(seq, kind, data) {
+  const time = Date.now();
+  return {
+    seq,
+    kind,
+    time,
+    bytes: 1,
+    payload: { type: kind, seq, time, data },
+  };
+}
+
 const port = await findFreePort(20190);
 const base = `http://127.0.0.1:${port}`;
 const home = tempHome('verify-approval-notify');
@@ -130,9 +142,10 @@ try {
   // 断言一：approval/asked 进副本后，在线设备收到 kind=approval 提醒。
   const sessionId = `session-${randomUUID()}`;
   const callId = `call-${randomUUID()}`;
+  const requestId = `request-${randomUUID()}`;
   await reportEvents(base, deviceId, sessionId, [
-    { seq: 0, kind: 'turn/start', time: Date.now(), bytes: 1, payload: { turn: 1 } },
-    { seq: 1, kind: 'approval/asked', time: Date.now(), bytes: 1, payload: { toolName: 'bash', callId, reason: '需要执行命令' } },
+    replicaEvent(0, 'turn/start', { turn: 1 }),
+    replicaEvent(1, 'approval/asked', { id: requestId, toolName: 'bash', callId, reason: '需要执行命令' }),
   ]);
   const noticed = await waitFor(async () => {
     const hit = online.received.flatMap(approvalItemsOf)[0];
@@ -140,18 +153,20 @@ try {
       ? { ok: false, detail: `收到 ${online.received.length} 条：${JSON.stringify(online.received.map((raw) => JSON.parse(raw).kind))}` }
       : { ok: true, detail: hit };
   }, 10_000);
-  check(noticed.ok, '断言一：approval/asked 进副本后在线设备收到审批提醒', JSON.stringify(noticed.detail));
+  const noticedCallId = noticed.detail?.callId ?? noticed.detail?.objectId;
+  check(noticed.ok && noticedCallId === callId, '断言一：approval/asked 进副本后在线设备收到审批提醒', JSON.stringify(noticed.detail));
 
   // 断言二：approval/decided 撤回尚未投递的提醒。
   // 先让设备离线，让同一会话的另一条审批提醒落进离线队列，再上报 decided，最后重连确认没有补发。
   online.close();
   await new Promise((settle) => setTimeout(settle, 150));
   const pendingCallId = `call-pending-${randomUUID()}`;
+  const pendingRequestId = `request-pending-${randomUUID()}`;
   await reportEvents(base, deviceId, sessionId, [
-    { seq: 2, kind: 'approval/asked', time: Date.now(), bytes: 1, payload: { toolName: 'bash', callId: pendingCallId } },
+    { seq: 2, kind: 'approval/asked', time: Date.now(), bytes: 1, payload: { id: pendingRequestId, toolName: 'bash', callId: pendingCallId } },
   ]);
   await reportEvents(base, deviceId, sessionId, [
-    { seq: 3, kind: 'approval/decided', time: Date.now(), bytes: 1, payload: { callId: pendingCallId, outcome: 'allowed-once' } },
+    replicaEvent(3, 'approval/decided', { id: pendingRequestId, outcome: 'allowed-once' }),
   ]);
   const back = await openConnection(port, deviceId);
   connections.push(back);
