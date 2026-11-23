@@ -34,6 +34,8 @@ import type {
 export interface RemoteControllerOptions {
   /** 当前文档路径；缺省读取 `location.pathname`。 */
   readonly pathname?: () => string;
+  /** 当前页面来源；缺省读取 `location.origin`。 */
+  readonly origin?: () => string;
 }
 
 /** 一次设置读取的结果。 */
@@ -83,7 +85,12 @@ export class RemoteController {
       }
     }
     this.controlUrlValue = controlUrl;
-    this.gateway = new RemoteGateway(() => this.controlUrlValue, () => this.hostBase(), telemetry);
+    this.gateway = new RemoteGateway(
+      () => this.controlUrlValue,
+      () => this.hostBase(),
+      this.options.origin ?? (() => (typeof location === 'undefined' ? '' : location.origin)),
+      telemetry,
+    );
     const settings: RemoteSettingsSnapshot = {
       controlUrl,
       identity: null,

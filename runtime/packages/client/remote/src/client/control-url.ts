@@ -61,3 +61,18 @@ export function endpointOf(base: string, path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return base === '' ? normalizedPath : `${base}${normalizedPath}`;
 }
+
+/** 取数通道模式。 */
+export type RelayMode = 'same-origin' | 'direct' | 'proxy';
+
+/**
+ * 判断取数通道模式。
+ * @param controlUrl - 归一化后的中继地址；空字符串表示同源。
+ * @param origin - 当前页面的来源。
+ * @returns 同源、直达中继或经本机宿主代理。
+ */
+export function relayMode(controlUrl: string, origin: string): RelayMode {
+  const value = controlUrl.trim();
+  if (value === '') return 'same-origin';
+  return new URL(value).origin === origin ? 'direct' : 'proxy';
+}

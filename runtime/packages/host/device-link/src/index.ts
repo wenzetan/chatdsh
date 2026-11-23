@@ -16,6 +16,7 @@ import { Service, schema as z, connectionOf, hostWebServerOf, telemetryOf, type 
 import type { ChatdshTelemetry } from '@chatdsh/core-contracts';
 import { DeviceLinkClient } from './client.ts';
 import { mintCookie, type LocalCredential } from './credential.ts';
+import { registerRelayProxy } from './relay-proxy.ts';
 
 export { DEVICE_LINK_PATH, DeviceLinkClient, RECONNECT_BASE_MS, linkOrigin } from './client.ts';
 export type { DeviceLinkClientOptions, DeviceLinkClientStats, DeviceLinkWelcome } from './client.ts';
@@ -24,6 +25,21 @@ export type { CredentialProvider, LocalCredential } from './credential.ts';
 export { DeviceLinkSession } from './v2-channel.ts';
 export type { DeviceLinkSessionOptions, DeviceLinkStats } from './v2-channel.ts';
 export { PROTOCOL_VERSION } from './protocol.ts';
+export {
+  CONTROL_URL_HEADER,
+  CSRF_HEADER,
+  DEFAULT_TIMEOUT_MS,
+  PAIR_BODY_LIMIT,
+  RELAY_DEVICES_PATH,
+  RELAY_PAIR_PATH,
+  RELAY_REPLICA_PATH,
+  RELAY_SESSIONS_PATH,
+  RelayProxyError,
+  isLoopbackAddress,
+  normalizeRelayControlUrl,
+  registerRelayProxy,
+} from './relay-proxy.ts';
+export type { RelayProxyOptions } from './relay-proxy.ts';
 
 /** 插件名。 */
 export const name = 'chatdsh-device-link';
@@ -71,7 +87,7 @@ export function nodeTokenFrom(env: NodeJS.ProcessEnv): string {
  */
 export class ChatdshDeviceLinkService extends Service {
   /** 依赖本地 HTTP 服务：转发目标地址与 `/healthz` 都由它提供。 */
-  static inject = ['webServer', 'chatdshTelemetry'];
+  static inject = ['webServer'];
 
   /** 配置 schema。 */
   static Config: z<DeviceLinkConfig> = Config;
@@ -92,6 +108,12 @@ export class ChatdshDeviceLinkService extends Service {
    */
   async [Service.init](): Promise<void> {
     this.token = nodeTokenFrom(process.env);
+    const releaseRelayProxy = registerRelayProxy({
+      webServer: hostWebServerOf(this.ctx),
+      fallbackControlUrl: () => this.config.controlUrl,
+      telemetry: () => telemetryOf<ChatdshTelemetry>(this.ctx),
+    });
+    this.ctx.effect(() => () => releaseRelayProxy(), `${name}/relay-proxy`);
     if (this.config.deviceId !== '') {
       const releaseIdentity = hostWebServerOf(this.ctx).register({
         kind: 'exact',
