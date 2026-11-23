@@ -4,7 +4,7 @@
 
 ChatDSH 是面向官方 DSH（DeepSeek Harness）的跨设备互联插件集与自托管轻量中继服务端。用户直接使用官方 DSH 运行时与官方客户端（Web 端与 Desktop 端），通过标准插件命令安装仅追加的组合包 `@chatdsh/bundle`，配合自托管的轻量中继服务端 `@chatdsh/gateway`，即可实现公网跨设备访问、离线只读会话副本、本机恢复继续、白名单偏好设置同步、审批提醒推送与手机端 PWA 入口。
 
-![ChatDSH 系统架构](assets/architecture.jpg)
+![ChatDSH 系统架构](assets/architecture.zh.jpg)
 
 ## 核心能力
 
@@ -34,58 +34,40 @@ ChatDSH 是面向官方 DSH（DeepSeek Harness）的跨设备互联插件集与�
 
 ### 1. 环境要求
 
-- Node.js 22 及以上
-- pnpm 11.21.0
-- 官方 DSH（`@deepseek-ai/dsh`，当前验证基线 `0.2.2-rc.3`）
+- 中继宿主机：Docker 与 Docker Compose、Bash 与 `curl`（无需在宿主机安装 Node.js）
+- 接入设备：Node.js 22 及以上、pnpm 11.21.0、官方 DSH（`@deepseek-ai/dsh`，当前验证基线 `0.2.2-rc.3`）
 
-### 2. 构建适配层与运行时
-
-```sh
-cd dsh-adapter
-pnpm install
-node scripts/link-dsh-deps.mjs
-pnpm build
-pnpm test
-
-cd ../runtime
-pnpm install
-node scripts/link-dsh-deps.mjs
-pnpm build
-pnpm build:client
-```
-
-### 3. 启动轻量中继服务端
+### 2. 一行命令启动中继服务端（Docker Compose）
 
 ```sh
-cd runtime
-DSH_HOME=/srv/chatdsh \
-CHATDSH_GATEWAY_HOST=127.0.0.1 \
-CHATDSH_GATEWAY_PORT=3170 \
-CHATDSH_PUBLIC_URL=https://relay.example.com \
-CHATDSH_PAIRING_CODE='替换为随机口令' \
-node gateway/lib/main.js
+bash scripts/relay-up.sh
 ```
 
-执行 `curl -fsS http://127.0.0.1:3170/healthz` 确认返回 `{"ok":true,"service":"chatdsh-gateway",...}`。生产环境建议通过 Nginx 或其他反向代理终止 TLS，并保持 WebSocket 升级与关闭响应缓冲（配置示例见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md)）。
+首次运行时脚本会通过命令行询问中继对外域名（必填，例如 `relay.example.com` 或 `https://relay.example.com`），检查 `.env` 是否已配置配对口令，未配置时自动生成高熵随机口令并保存（文件权限 `0600`，下次运行自动复用），随后通过 [`docker-compose.yml`](docker-compose.yml) 构建并拉起中继容器。
 
-### 4. 在设备安装插件并配对
+容器就绪后，终端会直接打印一条可在任意设备上复制执行的一行接入命令。后续如需再次查看该命令，在中继宿主机执行：
 
 ```sh
-# 1. 向中继申请设备配对，获取 deviceId 与 token
-curl -fsS -X POST http://127.0.0.1:3170/chatdsh/gateway/devices/pair \
-  -H 'content-type: application/json' \
-  -d '{"code":"替换为配对码","name":"device-a","platform":"linux","role":"both","capabilities":["shell"]}'
-
-# 2. 将组合包安装到官方 web profile
-DSH_HOME=/srv/dsh-device-a dsh plugin --profile web add /path/to/chatdsh/runtime/packages/bundle/chatdsh
-
-# 3. 携带配对凭据启动官方 DSH 运行时
-DSH_HOME=/srv/dsh-device-a \
-CHATDSH_CONTROL_URL=https://relay.example.com \
-CHATDSH_DEVICE_ID='配对返回的 deviceId' \
-CHATDSH_NODE_TOKEN='配对返回的 token' \
-dsh --profile web --no-open --port 3080
+bash scripts/relay-up.sh --print-join-command
 ```
+
+生产环境建议在宿主机通过 Nginx 或其他反向代理向 `127.0.0.1:3170` 转发流量并终止 TLS（配置示例见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md)）。
+
+### 3. 一行命令在设备安装插件、配对并启动 DSH
+
+如果是首次从本仓库源码安装，先完成一次本地构建：
+
+```sh
+cd dsh-adapter && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && cd ../runtime && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && pnpm build:client && cd ..
+```
+
+随后直接粘贴上一步中继启动后输出的一行命令：
+
+```sh
+bash scripts/device-join.sh --relay https://relay.example.com --code '<上一步输出的配对口令>'
+```
+
+该命令自动完成三件事：将 `@chatdsh/bundle` 安装到官方 `web` profile、向中继完成配对并将设备凭据保存到 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）、以配对凭据启动官方 DSH。后续在同一设备重启只需执行 `bash scripts/device-join.sh`。
 
 连接成功后，可通过中继地址 `/` 使用手机端 PWA，通过 `/d/<deviceId>/` 直接进入对应在线设备的官方 DSH 界面，或在本地官方客户端侧栏打开「远程设备」面板。
 

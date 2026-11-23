@@ -4,7 +4,7 @@
 
 ChatDSH is a cross-device plugin bundle and self-hosted lightweight relay server for the official DSH (DeepSeek Harness). Users run the official DSH runtime and official Web/Desktop clients directly, install the append-only plugin bundle `@chatdsh/bundle` via `dsh plugin add`, and pair devices with a self-hosted `@chatdsh/gateway` relay to enable remote device switching, offline read-only session replicas, local session resume and fork, allowlisted preference synchronization, approval push notifications, and a built-in mobile PWA.
 
-![ChatDSH System Architecture](assets/architecture.jpg)
+![ChatDSH System Architecture](assets/architecture.en.jpg)
 
 ## Key Capabilities
 
@@ -34,58 +34,40 @@ ChatDSH is a cross-device plugin bundle and self-hosted lightweight relay server
 
 ### 1. Prerequisites
 
-- Node.js 22+
-- pnpm 11.21.0
-- Official DSH (`@deepseek-ai/dsh`, verified baseline `0.2.2-rc.3`)
+- Relay host: Docker & Docker Compose, Bash, and `curl` (no host Node.js required)
+- Client devices: Node.js 22+, pnpm 11.21.0, Official DSH (`@deepseek-ai/dsh`, verified baseline `0.2.2-rc.3`)
 
-### 2. Build Adapter and Runtime
-
-```sh
-cd dsh-adapter
-pnpm install
-node scripts/link-dsh-deps.mjs
-pnpm build
-pnpm test
-
-cd ../runtime
-pnpm install
-node scripts/link-dsh-deps.mjs
-pnpm build
-pnpm build:client
-```
-
-### 3. Start the Lightweight Relay
+### 2. Start the Relay in One Command (Docker Compose)
 
 ```sh
-cd runtime
-DSH_HOME=/srv/chatdsh \
-CHATDSH_GATEWAY_HOST=127.0.0.1 \
-CHATDSH_GATEWAY_PORT=3170 \
-CHATDSH_PUBLIC_URL=https://relay.example.com \
-CHATDSH_PAIRING_CODE='replace-with-random-secret' \
-node gateway/lib/main.js
+bash scripts/relay-up.sh
 ```
 
-Verify readiness with `curl -fsS http://127.0.0.1:3170/healthz`, which returns `{"ok":true,"service":"chatdsh-gateway",...}`. Terminate TLS in front of the relay with a reverse proxy such as Nginx with WebSocket upgrades enabled and response buffering disabled (see [`runtime/docs/deployment.md`](runtime/docs/deployment.md)).
+On first run, the script prompts for the public relay domain (required, e.g. `relay.example.com` or `https://relay.example.com`), checks `.env` for `CHATDSH_PAIRING_CODE`, automatically generates and saves a random secret (`0600` permissions, reused on subsequent runs), and starts the relay container via [`docker-compose.yml`](docker-compose.yml).
 
-### 4. Install the Bundle and Pair a Device
+Once `/healthz` is ready, the script prints a copy-pasteable one-line device join command. To print that command again anytime, run on the relay host:
 
 ```sh
-# 1. Pair a device node to obtain deviceId and token
-curl -fsS -X POST http://127.0.0.1:3170/chatdsh/gateway/devices/pair \
-  -H 'content-type: application/json' \
-  -d '{"code":"replace-with-pairing-code","name":"device-a","platform":"linux","role":"both","capabilities":["shell"]}'
-
-# 2. Install @chatdsh/bundle into the official web profile
-DSH_HOME=/srv/dsh-device-a dsh plugin --profile web add /path/to/chatdsh/runtime/packages/bundle/chatdsh
-
-# 3. Start the official DSH runtime with pairing credentials
-DSH_HOME=/srv/dsh-device-a \
-CHATDSH_CONTROL_URL=https://relay.example.com \
-CHATDSH_DEVICE_ID='deviceId-from-pairing' \
-CHATDSH_NODE_TOKEN='token-from-pairing' \
-dsh --profile web --no-open --port 3080
+bash scripts/relay-up.sh --print-join-command
 ```
+
+Terminate TLS in front of `127.0.0.1:3170` with a reverse proxy such as Nginx with WebSocket upgrades enabled and response buffering disabled (see [`runtime/docs/deployment.md`](runtime/docs/deployment.md)).
+
+### 3. Install, Pair & Start DSH on a Device in One Command
+
+If installing from a fresh source checkout, build once first:
+
+```sh
+cd dsh-adapter && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && cd ../runtime && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && pnpm build:client && cd ..
+```
+
+Then run the one-line command printed by `relay-up.sh`:
+
+```sh
+bash scripts/device-join.sh --relay https://relay.example.com --code '<pairing-code-from-relay-up>'
+```
+
+This single command installs `@chatdsh/bundle` into the official `web` profile, pairs the device with the relay (saving credentials to `$DSH_HOME/chatdsh-device.env` with `0600` permissions), and starts official DSH connected to the relay. Subsequent starts on the same device only require `bash scripts/device-join.sh`.
 
 Once connected, open `/` on the relay for the mobile PWA, open `/d/<deviceId>/` to interact with a live online device through the official DSH interface, or use the Remote panel in your local official DSH sidebar.
 
