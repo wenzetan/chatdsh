@@ -1,4 +1,0 @@
-# 技能目录行：读取宿主的技能注册表，维护本项目的启用状态。
-- insert:
-    - id: chatdsh-skills
-      name: '@chatdsh/host-skills'

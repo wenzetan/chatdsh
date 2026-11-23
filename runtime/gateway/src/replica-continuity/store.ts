@@ -11,7 +11,7 @@
  */
 
 import { createHash, timingSafeEqual } from 'node:crypto';
-import type { SqlRow, SqlExecutor } from '../storage/sqlite.ts';
+import type { SqlRow, SqlExecutor } from './sqlite.ts';
 import { REPLICA_ERROR_CODES, ReplicaContinuityError } from './errors.ts';
 
 /** 一条待写入副本的事件。 */

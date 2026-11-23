@@ -1,0 +1,37 @@
+{
+  "name": "@chatdsh/bundle",
+  "version": "0.1.0",
+  "description": "ChatDSH 纯附加组合包：向官方 DSH Web 与 Desktop profile 追加跨设备长连接、副本上报、导入恢复、设置同步、PWA 与遥测插件",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/client-pwa": "workspace:*",
+    "@chatdsh/client-telemetry": "workspace:*",
+    "@chatdsh/host-device-link": "workspace:*",
+    "@chatdsh/host-import": "workspace:*",
+    "@chatdsh/host-push": "workspace:*",
+    "@chatdsh/host-settings-sync": "workspace:*",
+    "@chatdsh/host-telemetry": "workspace:*"
+  }
+}

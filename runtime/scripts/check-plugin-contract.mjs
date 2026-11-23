@@ -1,6 +1,6 @@
 // 插件契约的静态检查。
 //
-// 架构文档要求自建插件包声明 `engines.dsh` 与 `dsh.client`，组合包声明 `dsh.bundle.patch`，
+// 架构文档要求客户端插件声明 `dsh.client`，组合包声明 `dsh.bundle.patch`，
 // profile 声明 `dsh.profile.bundles`。这些都能在清单层面核对；`dsh plugin add` 从登记处
 // 拉取那一半需要已发布的包，本机做不到。
 //
@@ -64,12 +64,11 @@ for (const dir of dirs) {
     else if (bundles.some((name) => typeof name !== 'string')) failures.push(`${where} 的 bundles 里有非字符串项`);
   }
 
-  // 角色目录：packages/<角色>/<对象> 一律声明 engines.dsh，包名前缀必须与角色目录一致。
+  // 角色目录：包名前缀必须与角色目录一致。DSH 版本由发布标签与实际组合检查管理。
   const where_ = relative(ROOT, dir).split('\\').join('/');
   const roleMatch = where_.match(/^packages\/([a-z]+)\/([^/]+)$/);
   if (roleMatch !== null) {
     const [, role, objectName] = roleMatch;
-    if (manifest.engines?.dsh === undefined) failures.push(`${where} 缺少 engines.dsh`);
     const expected = `@chatdsh/${role}-${objectName}`;
     if (manifest.name !== expected) failures.push(`${where} 的包名应为 ${expected}，实际 ${manifest.name}`);
     if (dsh.bundle === undefined && dsh.profile === undefined && dsh.client === undefined) counts.plugin += 1;

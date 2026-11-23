@@ -18,10 +18,7 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-llm": "npm:@deepseek-ai/dsh-llm@next",
     "zod": "4.4.3"
-  },
-  "engines": {
-    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
   }
 }
