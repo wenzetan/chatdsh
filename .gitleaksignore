@@ -139,3 +139,5 @@ runtime/e2e/unit/device-link-v2.test.mjs:chatdsh-provider-credential:243
 runtime/packages/client/remote/src/client/controller.ts:chatdsh-private-hostname:240
 # 报告迁移到 runtime/docs/reports/ 后的同一行指纹。
 runtime/docs/reports/P03-REPORT.md:chatdsh-private-hostname:96
+# 历史提交中该报告尚未迁移目录时的同一行指纹（宿主主目录字段说明，不含网络位置）。
+424a55098d86aa16a2c01084c186283ca06d1cb0:P03-REPORT.md:chatdsh-private-hostname:96
