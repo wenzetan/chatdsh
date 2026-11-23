@@ -25,7 +25,7 @@
     }
   },
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/adapter": "0.1.0",
     "@chatdsh/client-pwa": "workspace:*",
     "@chatdsh/client-telemetry": "workspace:*",
     "@chatdsh/host-device-link": "workspace:*",
