@@ -76,8 +76,8 @@ export interface ReplicaContinuityOptions {
   readonly deviceId: string;
   /** 节点令牌。 */
   readonly nodeToken: string;
-  /** 遥测出口。 */
-  readonly telemetry?: ChatdshTelemetry;
+  /** 遥测出口；传函数时在每次记录前读取当前实例。 */
+  readonly telemetry?: ChatdshTelemetry | undefined | (() => ChatdshTelemetry | undefined);
   /** 单批条数上限。 */
   readonly batchSize?: number;
   /** 单批字节上限。 */
@@ -111,7 +111,7 @@ export class ReplicaContinuity {
   private readonly controlUrl: string;
   private readonly deviceId: string;
   private readonly nodeToken: string;
-  private readonly telemetry: ChatdshTelemetry | undefined;
+  private readonly telemetrySource: ReplicaContinuityOptions['telemetry'];
   private readonly batchSize: number;
   private readonly batchBytes: number;
   private readonly requestTimeoutMs: number;
@@ -124,7 +124,7 @@ export class ReplicaContinuity {
     this.controlUrl = options.controlUrl.replace(/\/+$/, '');
     this.deviceId = options.deviceId;
     this.nodeToken = options.nodeToken;
-    this.telemetry = options.telemetry;
+    this.telemetrySource = options.telemetry;
     this.batchSize = options.batchSize ?? BATCH_LIMIT;
     this.batchBytes = options.batchBytes ?? BATCH_BYTES;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
@@ -336,6 +336,7 @@ export class ReplicaContinuity {
 
   /** 把一条已提交事件上报一批。 */
   private async sendBatch(sessionId: string, generation: number, events: readonly SessionEvent[]): Promise<AppendReply> {
+    const telemetry = this.telemetry();
     const body = JSON.stringify({
       sessionId,
       retentionGeneration: generation,
@@ -350,8 +351,8 @@ export class ReplicaContinuity {
     const run = async (span: TelemetrySpan | undefined): Promise<AppendReply> => {
       const headers = this.authHeaders();
       headers['content-type'] = 'application/json';
-      if (this.telemetry !== undefined) {
-        const carrier = this.telemetry.inject({});
+      if (telemetry !== undefined) {
+        const carrier = telemetry.inject({});
         if (carrier.traceparent !== undefined) headers.traceparent = carrier.traceparent;
         if (carrier.tracestate !== undefined) headers.tracestate = carrier.tracestate;
       }
@@ -407,8 +408,8 @@ export class ReplicaContinuity {
       return { kind: 'invalid' };
     };
 
-    if (this.telemetry === undefined) return run(undefined);
-    return this.telemetry.runSpan('chatdsh.sync.event.push', {
+    if (telemetry === undefined) return run(undefined);
+    return telemetry.runSpan('chatdsh.sync.event.push', {
       'session.id': sessionId,
       seq: lastSeq,
     }, run);
@@ -443,13 +444,20 @@ export class ReplicaContinuity {
 
   /** 记一次水位事件；事件正文与路径都不进遥测。 */
   private recordWatermark(sessionId: string, remaining: number): void {
-    if (this.telemetry === undefined) return;
-    this.telemetry.event('chatdsh.sync.watermark', {
+    const telemetry = this.telemetry();
+    if (telemetry === undefined) return;
+    telemetry.event('chatdsh.sync.watermark', {
       'session.id': sessionId,
       'lag.events': remaining,
     });
-    this.telemetry.gauge('chatdsh_replica_lag_sessions', { description: '副本落后会话数' })
+    telemetry.gauge('chatdsh_replica_lag_sessions', { description: '副本落后会话数' })
       .record(this.pendingSessions());
+  }
+
+  /** 当前生效的遥测出口；传入函数时每次读取。 */
+  private telemetry(): ChatdshTelemetry | undefined {
+    const source = this.telemetrySource;
+    return typeof source === 'function' ? source() : source;
   }
 
   /** 请求头里的认证信息。 */

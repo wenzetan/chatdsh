@@ -47,8 +47,8 @@ export interface DeviceLinkClientOptions {
   readonly localOrigin: string;
   /** 本机界面凭据入口。 */
   readonly credentials: CredentialProvider;
-  /** 遥测出口。 */
-  readonly telemetry?: ChatdshTelemetry;
+  /** 遥测出口；传函数时在每次记录前读取当前实例。 */
+  readonly telemetry?: ChatdshTelemetry | (() => ChatdshTelemetry | undefined);
   /** 重连退避的上限，单位毫秒。 */
   readonly reconnectMaxMs?: number;
   /** 心跳间隔，单位毫秒。 */
@@ -187,6 +187,12 @@ export class DeviceLinkClient {
     return this.statsValue;
   }
 
+  /** 当前生效的遥测出口；传入函数时每次读取。 */
+  private telemetry(): ChatdshTelemetry | undefined {
+    const source = this.options.telemetry;
+    return typeof source === 'function' ? source() : source;
+  }
+
   /** 开始连接与重连。 */
   start(): void {
     this.stopped = false;
@@ -244,7 +250,7 @@ export class DeviceLinkClient {
   /** 建立一次连接。 */
   private connect(): void {
     if (this.stopped) return;
-    const telemetry = this.options.telemetry;
+    const telemetry = this.telemetry();
     const span = telemetry?.startSpan('chatdsh.runtime.device.link', {
       role: this.options.role,
       platform: this.options.platform,
@@ -279,7 +285,7 @@ export class DeviceLinkClient {
     });
 
     socket.addEventListener('error', () => {
-      telemetry?.event('chatdsh.runtime.device.rejected', {
+      this.telemetry()?.event('chatdsh.runtime.device.rejected', {
         outcome: 'rejected',
         'error.type': 'link',
         'error.code': opened ? 'link-error' : 'connect-failed',
@@ -352,7 +358,7 @@ export class DeviceLinkClient {
       credentials: this.options.credentials,
       send: (deviceFrame: DeviceFrameV2) => this.send(deviceFrame),
       close: (code: number, reason: string) => this.closeWith(code, reason),
-      telemetry: this.options.telemetry,
+      telemetry: () => this.telemetry(),
       stats: this.statsValue,
       headerTimeoutMs: this.options.headerTimeoutMs as number,
       idleTimeoutMs: this.options.idleTimeoutMs as number,
@@ -360,7 +366,7 @@ export class DeviceLinkClient {
     this.reconnectDelayMs = RECONNECT_BASE_MS;
     this.startHeartbeat();
     this.linkSpan?.setAttribute('outcome', 'connected');
-    this.options.telemetry?.counter('chatdsh_runtime_device_links_total', {
+    this.telemetry()?.counter('chatdsh_runtime_device_links_total', {
       description: '设备长连接生命周期',
     }).add(1, { outcome: 'connected' });
     for (const waiter of [...this.waiters]) {
@@ -383,11 +389,11 @@ export class DeviceLinkClient {
     this.linkSpan?.end();
     this.linkSpan = undefined;
     if (opened) {
-      this.options.telemetry?.counter('chatdsh_runtime_device_links_total', {
+      this.telemetry()?.counter('chatdsh_runtime_device_links_total', {
         description: '设备长连接生命周期',
       }).add(1, { outcome: hadWelcome ? 'closed' : 'failed' });
     } else {
-      this.options.telemetry?.counter('chatdsh_runtime_device_links_total', {
+      this.telemetry()?.counter('chatdsh_runtime_device_links_total', {
         description: '设备长连接生命周期',
       }).add(1, { outcome: 'failed' });
     }
@@ -396,7 +402,7 @@ export class DeviceLinkClient {
       waiter.reject(new Error(`device-link: connection closed before welcome (${code} ${reason})`));
     }
     if (this.stopped) return;
-    this.options.telemetry?.counter('chatdsh_runtime_device_links_total', {
+    this.telemetry()?.counter('chatdsh_runtime_device_links_total', {
       description: '设备长连接生命周期',
     }).add(1, { outcome: 'reconnect' });
     this.scheduleReconnect();
@@ -431,7 +437,7 @@ export class DeviceLinkClient {
   private armDeadTimer(): void {
     if (this.deadTimer !== undefined) clearTimeout(this.deadTimer);
     this.deadTimer = setTimeout(() => {
-      this.options.telemetry?.event('chatdsh.runtime.device.rejected', {
+      this.telemetry()?.event('chatdsh.runtime.device.rejected', {
         outcome: 'rejected',
         'error.type': 'timeout',
         'error.code': 'heartbeat-timeout',
@@ -457,7 +463,7 @@ export class DeviceLinkClient {
 
   /** 协议违规：记一条事件并断开。 */
   private protocolViolation(code: string): void {
-    this.options.telemetry?.event('chatdsh.runtime.device.rejected', {
+    this.telemetry()?.event('chatdsh.runtime.device.rejected', {
       outcome: 'rejected',
       'error.type': 'protocol',
       'error.code': code,

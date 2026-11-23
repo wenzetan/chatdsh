@@ -83,7 +83,7 @@ export const Config: z<PushConfig> = z.object({
  */
 export class ChatdshPushService extends Service {
   /** 会话持久化用于读取已提交日志。 */
-  static inject = ['sessionPersistence', 'chatdshTelemetry'];
+  static inject = ['sessionPersistence'];
 
   /** 配置 schema。 */
   static Config: z<PushConfig> = Config;
@@ -111,7 +111,7 @@ export class ChatdshPushService extends Service {
       controlUrl: this.config.gatewayUrl,
       deviceId: this.config.deviceId,
       nodeToken: this.config.nodeToken ?? '',
-      telemetry: telemetryOf<ChatdshTelemetry>(this.ctx),
+      telemetry: () => telemetryOf<ChatdshTelemetry>(this.ctx),
       batchSize: this.config.batchSize,
       batchBytes: this.config.batchBytes,
     });
@@ -136,7 +136,7 @@ export class ChatdshPushService extends Service {
     try {
       await runner.scanAll();
     } catch (error) {
-      this.telemetry()?.log('warn', 'replica startup scan failed', {
+      telemetryOf<ChatdshTelemetry>(this.ctx)?.log('warn', 'replica startup scan failed', {
         'error.type': error instanceof Error ? error.name : 'Unknown',
       });
     }
@@ -182,7 +182,7 @@ export class ChatdshPushService extends Service {
       if (failed) this.scheduleRetry();
       else this.failures = 0;
     } catch (error) {
-      this.telemetry()?.log('warn', 'replica sync failed', {
+      telemetryOf<ChatdshTelemetry>(this.ctx)?.log('warn', 'replica sync failed', {
         'error.type': error instanceof Error ? error.name : 'Unknown',
       });
       this.scheduleRetry();
@@ -211,11 +211,6 @@ export class ChatdshPushService extends Service {
       void this.tick();
     }, delay + Math.floor(Math.random() * 250));
     this.retryTimer.unref();
-  }
-
-  /** 遥测出口；没有宿主平面遥测时为空。 */
-  private telemetry(): ChatdshTelemetry | undefined {
-    return telemetryOf<ChatdshTelemetry>(this.ctx);
   }
 }
 

@@ -70,8 +70,8 @@ export interface DeviceLinkSessionOptions {
   readonly send: (frame: DeviceFrameV2) => void;
   /** 协议违规时断开连接。 */
   readonly close: (code: number, reason: string) => void;
-  /** 遥测出口。 */
-  readonly telemetry?: ChatdshTelemetry;
+  /** 遥测出口；传函数时在每次记录前读取当前实例。 */
+  readonly telemetry?: ChatdshTelemetry | undefined | (() => ChatdshTelemetry | undefined);
   /** 统计对象；由连接持有，跨通道累加。 */
   readonly stats: DeviceLinkStats;
   /** 等待本机响应头的时长上限。 */
@@ -90,7 +90,6 @@ interface CreditWaiter {
 
 /** 版本 2 会话：解析控制帧、维护通道表、把通道上的工作交给具体实现。 */
 export class DeviceLinkSession {
-  readonly telemetry: ChatdshTelemetry | undefined;
   readonly credentials: CredentialProvider;
   readonly localOrigin: string;
   readonly limits: LinkLimits;
@@ -99,6 +98,7 @@ export class DeviceLinkSession {
   readonly idleTimeoutMs: number;
 
   private readonly generation: number;
+  private readonly telemetrySource: DeviceLinkSessionOptions['telemetry'];
   private readonly sendFrame: (frame: DeviceFrameV2) => void;
   private readonly closeLink: (code: number, reason: string) => void;
   private readonly channels = new Map<string, DeviceChannel>();
@@ -111,7 +111,7 @@ export class DeviceLinkSession {
     this.credentials = options.credentials;
     this.sendFrame = options.send;
     this.closeLink = options.close;
-    this.telemetry = options.telemetry;
+    this.telemetrySource = options.telemetry;
     this.stats = options.stats;
     this.headerTimeoutMs = options.headerTimeoutMs;
     this.idleTimeoutMs = options.idleTimeoutMs;
@@ -120,6 +120,12 @@ export class DeviceLinkSession {
   /** 当前打开的通道数。 */
   get channelCount(): number {
     return this.channels.size;
+  }
+
+  /** 当前生效的遥测出口；传入函数时每次读取。 */
+  telemetry(): ChatdshTelemetry | undefined {
+    const source = this.telemetrySource;
+    return typeof source === 'function' ? source() : source;
   }
 
   /** 写一帧。 */
@@ -224,11 +230,12 @@ export class DeviceLinkSession {
       this.stats.channelsOpened += 1;
       channel.start();
     };
-    if (this.telemetry === undefined) {
+    const telemetry = this.telemetry();
+    if (telemetry === undefined) {
       start();
       return;
     }
-    this.telemetry.withContext(carrier, start);
+    telemetry.withContext(carrier, start);
   }
 
   /** 通道收尾时从表里移除。 */
@@ -246,7 +253,7 @@ export class DeviceLinkSession {
 
   /** 协议违规：记一条事件并断开连接。 */
   violation(code: string): void {
-    this.telemetry?.event('chatdsh.runtime.device.rejected', {
+    this.telemetry()?.event('chatdsh.runtime.device.rejected', {
       outcome: 'rejected',
       'error.type': 'protocol',
       'error.code': code,
@@ -257,7 +264,7 @@ export class DeviceLinkSession {
   /** 给一条尚未登记的通道回终止帧。 */
   private sendReset(channelId: string, generation: number, code: string): void {
     this.send({ type: 'reset', channelId, generation, code });
-    this.telemetry?.event('chatdsh.runtime.device.rejected', {
+    this.telemetry()?.event('chatdsh.runtime.device.rejected', {
       action: 'channel',
       outcome: 'reset',
       'error.type': 'channel',
@@ -304,7 +311,7 @@ abstract class DeviceChannel {
     this.headers = frame.headers;
     this.sendCreditValue = session.limits.initialCreditBytes;
     this.recvGrantedValue = session.limits.initialCreditBytes;
-    this.span = session.telemetry?.startSpan('chatdsh.runtime.device.forward', {
+    this.span = session.telemetry()?.startSpan('chatdsh.runtime.device.forward', {
       method: frame.method,
     });
     this.headerTimer = setTimeout(() => {
@@ -379,7 +386,7 @@ abstract class DeviceChannel {
       this.grantCredit(bytes);
     }).catch((error: unknown) => {
       if (this.closedValue) return;
-      this.session.telemetry?.log('warn', 'device-link local consumer failed', {
+      this.session.telemetry()?.log('warn', 'device-link local consumer failed', {
         'error.type': error instanceof Error ? error.name : 'Unknown',
       });
       this.reset('consumer-failed');
@@ -403,7 +410,7 @@ abstract class DeviceChannel {
       if (this.localEndedValue) this.finish('ended');
     }).catch((error: unknown) => {
       if (this.closedValue) return;
-      this.session.telemetry?.log('warn', 'device-link local end failed', {
+      this.session.telemetry()?.log('warn', 'device-link local end failed', {
         'error.type': error instanceof Error ? error.name : 'Unknown',
       });
       this.reset('consumer-failed');
@@ -498,7 +505,7 @@ abstract class DeviceChannel {
   protected reset(code: string): void {
     if (this.closedValue) return;
     this.send({ type: 'reset', channelId: this.channelId, generation: this.generation, code });
-    this.session.telemetry?.event('chatdsh.runtime.device.rejected', {
+    this.session.telemetry()?.event('chatdsh.runtime.device.rejected', {
       action: 'channel',
       outcome: 'reset',
       'error.type': 'channel',
@@ -524,11 +531,12 @@ abstract class DeviceChannel {
     this.span?.setAttribute('outcome', outcome);
     if (errorType !== undefined) this.span?.setAttribute('error.type', errorType);
     if (errorCode !== undefined) this.span?.setAttribute('error.code', errorCode);
-    this.session.telemetry?.counter('chatdsh_runtime_device_forwards_total', {
+    const telemetry = this.session.telemetry();
+    telemetry?.counter('chatdsh_runtime_device_forwards_total', {
       description: '设备侧转发到本地运行时的请求数',
     }).add(1, { outcome });
     if (outcome === 'failed' && errorType !== undefined && errorCode !== undefined) {
-      this.session.telemetry?.event('chatdsh.runtime.device.forward.failed', {
+      telemetry?.event('chatdsh.runtime.device.forward.failed', {
         outcome: 'failed',
         'error.type': errorType,
         'error.code': errorCode,
@@ -725,7 +733,7 @@ class HttpChannel extends DeviceChannel {
           this.injectedCredential = injected;
         }
       } catch (error) {
-        this.session.telemetry?.event('chatdsh.runtime.device.forward.failed', {
+        this.session.telemetry()?.event('chatdsh.runtime.device.forward.failed', {
           outcome: 'failed',
           'error.type': error instanceof Error ? error.name : 'Unknown',
           'error.code': 'credential-unavailable',
@@ -876,7 +884,7 @@ class WebSocketChannel extends DeviceChannel {
           this.injectedCredential = injected;
         }
       } catch (error) {
-        this.session.telemetry?.event('chatdsh.runtime.device.forward.failed', {
+        this.session.telemetry()?.event('chatdsh.runtime.device.forward.failed', {
           outcome: 'failed',
           'error.type': error instanceof Error ? error.name : 'Unknown',
           'error.code': 'credential-unavailable',
