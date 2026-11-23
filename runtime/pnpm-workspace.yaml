@@ -6,3 +6,5 @@ packages:
   - gateway
 allowBuilds:
   esbuild: true
+overrides:
+  '@chatdsh/adapter': link:../dsh-adapter

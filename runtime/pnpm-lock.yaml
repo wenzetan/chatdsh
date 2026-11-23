@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@chatdsh/adapter': link:../dsh-adapter
+
 importers:
 
   .:
