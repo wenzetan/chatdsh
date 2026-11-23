@@ -6,7 +6,7 @@
 // dump-config、启动真实 Web 服务核对遥测与客户端模块图，最后以
 // CHATDSH_TELEMETRY=off 重启同一 profile 核对关闭状态。
 //
-// 安装方式：先打包组合包、它的直接依赖与传递工作区依赖（共 11 个 tarball），
+// 安装方式：先打包组合包、它的直接依赖与传递工作区依赖（共 13 个 tarball），
 // 在 profile 的 pnpm-workspace.yaml 写入 @chatdsh/* -> file:<tarball> 的
 // overrides，再用一条 dsh plugin add 安装组合包 tarball。profile 内不创建
 // 符号链接，仓库内也不存在指向工作区目录的链接。
@@ -48,6 +48,7 @@ const EXPECTED_ENTRIES = [
   ['chatdsh-settings-sync', '@chatdsh/host-settings-sync'],
   ['chatdsh-client-telemetry', '@chatdsh/client-telemetry'],
   ['chatdsh-client-pwa', '@chatdsh/client-pwa'],
+  ['chatdsh-client-remote', '@chatdsh/client-remote'],
 ];
 
 /** 参与打包的包目录，包含组合包、它的直接依赖与传递工作区依赖。 */
@@ -56,8 +57,10 @@ const PACKAGE_DIRS = [
   join(ROOT, 'packages/bundle/chatdsh'),
   join(ROOT, 'packages/client/pwa'),
   join(ROOT, 'packages/client/telemetry'),
+  join(ROOT, 'packages/client/remote'),
   join(ROOT, 'packages/core/contracts'),
   join(ROOT, 'packages/core/diagnostics'),
+  join(ROOT, 'packages/core/remote-client'),
   join(ROOT, 'packages/host/device-link'),
   join(ROOT, 'packages/host/import'),
   join(ROOT, 'packages/host/push'),
@@ -73,8 +76,11 @@ const REQUIRED_ARTIFACTS = [
   join(ROOT, 'packages/client/pwa/lib/client.js'),
   join(ROOT, 'packages/client/telemetry/lib/index.js'),
   join(ROOT, 'packages/client/telemetry/lib/client.js'),
+  join(ROOT, 'packages/client/remote/lib/index.js'),
+  join(ROOT, 'packages/client/remote/lib/client.js'),
   join(ROOT, 'packages/core/contracts/lib/index.js'),
   join(ROOT, 'packages/core/diagnostics/lib/index.js'),
+  join(ROOT, 'packages/core/remote-client/lib/index.js'),
   join(ROOT, 'packages/host/device-link/lib/index.js'),
   join(ROOT, 'packages/host/import/lib/index.js'),
   join(ROOT, 'packages/host/push/lib/index.js'),
@@ -394,7 +400,8 @@ function bootGraph(html) {
  */
 async function assertClientModules(url, cookie, html) {
   const graph = bootGraph(html);
-  for (const id of ['@chatdsh/client-telemetry', '@chatdsh/client-pwa']) {
+  const ids = ['@chatdsh/client-telemetry', '@chatdsh/client-pwa', '@chatdsh/client-remote'];
+  for (const id of ids) {
     const entry = graph.entries.find((item) => item.id === id);
     if (entry === undefined) throw new Error(`__DSH_BOOT__ 缺少 ${id}`);
     if (entry.url !== `plugins/??${id}/client.js&rev=${entry.rev}`) {
@@ -411,6 +418,7 @@ async function assertClientModules(url, cookie, html) {
     if (!body.includes('__ModuleLoader__')) throw new Error(`${id} 的客户端产物没有注册模块`);
     if (!body.includes(id)) throw new Error(`${id} 的客户端产物没有包含模块标识`);
   }
+  return ids;
 }
 
 /**
@@ -457,6 +465,8 @@ function reportFailure(error) {
   console.error('本次执行过的命令：');
   for (const command of commands) console.error(`  ${command}`);
 }
+
+let clientModuleIds = [];
 
 try {
   for (const artifact of REQUIRED_ARTIFACTS) {
@@ -506,7 +516,7 @@ try {
     const origin = new URL(enabledServer.url).origin;
     await assertTelemetryEnabled(origin);
     const { cookie, html } = await openHome(enabledServer.url);
-    await assertClientModules(enabledServer.url, cookie, html);
+    clientModuleIds = await assertClientModules(enabledServer.url, cookie, html);
   } finally {
     await stopWeb(enabledServer);
   }
@@ -524,7 +534,7 @@ try {
   console.log(`安装命令：DSH_HOME=${HOME} dsh plugin --profile web --config.store-dir=${STORE} add ${bundleTarball}`);
   console.log(`dump-config：${EXPECTED_ENTRIES.length} 个组合包条目全部出现，且没有改动上游条目`);
   console.log('遥测开启：status.enabled=true；遥测关闭：status.enabled=false、reason=env、browser 上报 404');
-  console.log(`客户端模块：@chatdsh/client-telemetry 与 @chatdsh/client-pwa 的产物均返回 200`);
+  console.log(`客户端模块：${clientModuleIds.join('、')} 的产物均返回 200`);
   console.log('临时 DSH_HOME 会在进程退出时清理；设置 CHATDSH_KEEP_RUN=1 可以保留现场。');
 } catch (error) {
   reportFailure(error);

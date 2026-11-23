@@ -31,3 +31,7 @@
 
     - id: chatdsh-client-pwa
       name: '@chatdsh/client-pwa'
+
+    # 远程设备面板：设备与会话列表、离线只读副本、本机继续与中继设置区段。
+    - id: chatdsh-client-remote
+      name: '@chatdsh/client-remote'

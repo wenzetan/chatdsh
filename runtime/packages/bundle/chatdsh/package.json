@@ -27,6 +27,7 @@
   "dependencies": {
     "@chatdsh/adapter": "0.1.0",
     "@chatdsh/client-pwa": "workspace:*",
+    "@chatdsh/client-remote": "workspace:*",
     "@chatdsh/client-telemetry": "workspace:*",
     "@chatdsh/host-device-link": "workspace:*",
     "@chatdsh/host-import": "workspace:*",

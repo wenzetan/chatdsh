@@ -132,3 +132,9 @@ runtime/docs/ui-design/complete.js:chatdsh-password-assignment:7
 # 十一、设备通道测试用 RFC 6455 示例握手的 Sec-WebSocket-Key 公开测试向量，
 #     非真实凭据，仅用于驱动一次合法的 WebSocket 升级。
 runtime/e2e/unit/device-link-v2.test.mjs:chatdsh-provider-credential:243
+#
+#
+# 十二、远程设备插件的宿主字段访问被私有域名规则命中：`ctx.remote.$host` 服务的 `home`
+#     字段表示宿主主目录，本身不含网络位置；报告里的同一行是这条访问的说明文字。
+runtime/packages/client/remote/src/client/controller.ts:chatdsh-private-hostname:240
+P03-REPORT.md:chatdsh-private-hostname:96
