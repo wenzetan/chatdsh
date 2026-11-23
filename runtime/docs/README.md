@@ -39,3 +39,7 @@
 3. 阅读 [implementation-guide.md](implementation-guide.md)，定位所负责工作包（P01–P06）的精确文件清单、契约、遥测要求与验收命令。
 4. 若涉及新增遥测信号，阅读 [telemetry.md](telemetry.md) 第五至九节并同步登记第六节清单与包内 `chatdsh.telemetry`。
 5. 若涉及部署、运行、环境变量或升级，阅读 [deployment.md](deployment.md) 并按其中的顺序执行。
+
+## 附：工作包执行报告
+
+P01–P06 的执行报告收录在 [reports/](reports/)，记录每个工作包改动的文件、验收命令与原始结论，供评审时逐条核对。
