@@ -20,6 +20,7 @@ export {
 import type {} from '@deepseek-ai/dsh-host-webserver';
 import type {} from '@deepseek-ai/dsh-session';
 import type {} from '@deepseek-ai/dsh-session-persistence';
+export type { Loader } from '@deepseek-ai/cordis-plugin-loader';
 
 export {
   SESSION_EVENTS,

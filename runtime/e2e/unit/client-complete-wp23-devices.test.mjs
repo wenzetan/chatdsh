@@ -15,8 +15,6 @@ import assert from 'node:assert/strict';
 import { allocateIndependentHome, releaseIndependentHome } from '../lib/environment.mjs';
 import { GatewayStore, ReplicaStore } from '../../gateway/lib/store.js';
 import { DeviceLinkHub } from '../../gateway/lib/device-link.js';
-import { WebSocketHandshake } from '../../gateway/lib/websocket.js';
-import { handleMobileChannel } from '../../gateway/lib/mobile-channel.js';
 import {
   DeviceLifecycle,
   DeviceTransportRegistry,
@@ -154,22 +152,6 @@ async function startApp(options = {}) {
     const path = (request.url ?? '/').split('?')[0] ?? '/';
     if (path === '/chatdsh/gateway/device-link') {
       deviceLink.handleUpgrade(request, socket);
-      return;
-    }
-    if (path === '/ws/mobile' && options.mobile === true) {
-      const decision = handleMobileChannel(request, socket, {
-        pairingCode: undefined,
-        pairing,
-        transports,
-        store,
-        telemetry,
-        runtimeUrl: 'http://127.0.0.1:9',
-        revoked: (deviceId) => state.lifecycle.isRevoked(deviceId),
-      });
-      if (decision.bridgePath === undefined) return;
-      const handshake = WebSocketHandshake.accept(socket, request, ['dsh-mobile-v1']);
-      handshake.writeHead();
-      if (decision.preamble !== undefined) handshake.writeText(decision.preamble);
       return;
     }
     if (host !== undefined && host.handleUpgrade(request, socket, head)) return;
@@ -579,56 +561,6 @@ test('链路检查给出在线状态、往返耗时与不可达原因', async ()
     } finally {
       device.close();
     }
-  } finally {
-    await app.close();
-  }
-});
-
-test('手机通道用一次性配对码建立，撤销后立即关闭并拒绝旧令牌', async () => {
-  const app = await startApp({ mobile: true });
-  try {
-    const issued = await (await fetch(`${app.origin}${DEVICE_PAIRING_PATH}`, { headers: app.headers })).json();
-    const channelUrl = `${app.origin.replace(/^http/, 'ws')}/ws/mobile`;
-    const phone = new WebSocket(channelUrl, ['dsh-mobile-v1', `dsh-pair.${issued.code}`]);
-    const paired = await new Promise((resolve, reject) => {
-      phone.addEventListener('message', (event) => resolve(JSON.parse(event.data)));
-      phone.addEventListener('error', () => reject(new Error('手机通道升级失败')));
-    });
-    assert.equal(paired.kind, 'paired');
-    assert.ok(paired.token.length >= 32);
-    assert.equal(app.store.mobileDeviceByTokenHash(hash(paired.token)).id, paired.device.id);
-    const row = app.store.handle().prepare('select token_hash from mobile_devices where id = ?').get(paired.device.id);
-    assert.equal(row.token_hash, hash(paired.token));
-    assert.notEqual(row.token_hash, paired.token);
-    const listed = await (await fetch(`${app.origin}${DEVICE_LIST_PATH}`, { headers: app.headers })).json();
-    assert.equal(JSON.stringify(listed).includes(paired.token), false);
-    assert.equal(JSON.stringify(listed).includes(hash(paired.token)), false);
-    assert.equal(listed.accessClients.find((client) => client.id === paired.device.id).current, false);
-
-    const reused = new WebSocket(channelUrl, ['dsh-mobile-v1', `dsh-pair.${issued.code}`]);
-    const reusedOutcome = await new Promise((resolve) => {
-      reused.addEventListener('open', () => resolve('open'));
-      reused.addEventListener('error', () => resolve('error'));
-      reused.addEventListener('close', () => resolve('closed'));
-    });
-    assert.notEqual(reusedOutcome, 'open');
-
-    const closed = new Promise((resolve) => phone.addEventListener('close', resolve));
-    const revoke = await fetch(`${app.origin}${DEVICE_REVOKE_PATH}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...app.headers },
-      body: JSON.stringify({ deviceId: paired.device.id, reason: 'user' }),
-    });
-    assert.equal(revoke.status, 200);
-    await closed;
-
-    const revokedChannel = new WebSocket(channelUrl, ['dsh-mobile-v1', `dsh-auth.${paired.token}`]);
-    const revokedOutcome = await new Promise((resolve) => {
-      revokedChannel.addEventListener('open', () => resolve('open'));
-      revokedChannel.addEventListener('error', () => resolve('error'));
-      revokedChannel.addEventListener('close', () => resolve('closed'));
-    });
-    assert.notEqual(revokedOutcome, 'open');
   } finally {
     await app.close();
   }

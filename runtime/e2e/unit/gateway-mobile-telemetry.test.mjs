@@ -1,16 +1,18 @@
-// 移动端接入面与控制平面遥测中转的端到端测试。
+// 移动端遥测中转与设备管理接口的端到端测试。
 //
-// 起真实控制平面与替身运行时，覆盖配对、设备令牌、启动路径、设备吊销与遥测上报。
-// 遥测出口换成记录器，只为观察控制平面实际写入的信号；配对、鉴权、限流与校验
-// 全部走真实路由与存储。
+// 起真实中继服务端，覆盖设备令牌鉴权、设备吊销、遥测上报、禁止字段、批量上限与限流。
+// 遥测出口换成记录器，只为观察中继服务端实际写入的信号；设备登记、鉴权、限流与校验
+// 全部走真实路由与 SQLite 存储。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { tempHome } from '../../scripts/lib/cleanup.mjs';
-import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ShareStore } from '../../gateway/lib/store.js';
+import { useHome } from '../lib/environment.mjs';
+import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, SettingsStore } from '../../gateway/lib/store.js';
 import { createPushHub } from '../../gateway/lib/push.js';
 import { createGatewayServer } from '../../gateway/lib/server.js';
+import { deviceTokenHash } from '../../gateway/lib/mobile-http.js';
 import { createTelemetryClient } from '../../packages/core/diagnostics/lib/client.js';
 import { defaultTelemetryConfig } from '../../packages/core/diagnostics/lib/config.js';
 
@@ -96,31 +98,13 @@ class RecordingTelemetry {
   async shutdown() {}
 }
 
-/** 起一个只回固定 JSON 的替身运行时。 */
-async function startUpstream() {
-  const server = createServer((request, response) => {
-    response.writeHead(200, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify({ ok: true }));
-  });
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : 0;
-  return {
-    url: `http://127.0.0.1:${port}`,
-    close: () => new Promise((resolve) => server.close(resolve)),
-  };
-}
-
 /** 起一个完整装配的控制平面。 */
-async function startGateway({ telemetry = new RecordingTelemetry(), runtimeReady = true } = {}) {
+async function startGateway({ telemetry = new RecordingTelemetry() } = {}) {
   const home = tempHome('gateway-mobile');
+  const restoreHome = useHome(home);
   const databasePath = join(home, 'gateway.sqlite');
   const store = new GatewayStore(databasePath);
   const replica = new ReplicaStore(store.handle());
-  const share = new ShareStore(store.handle());
   const receipts = new ReceiptStore(store.handle());
   const push = createPushHub({
     queue: new PushQueue(store.handle()),
@@ -129,32 +113,22 @@ async function startGateway({ telemetry = new RecordingTelemetry(), runtimeReady
     escalationMs: 1000,
     telemetry: { counter: () => ({ add: () => {} }) },
   });
-  const upstream = await startUpstream();
   const server = createGatewayServer({
     config: {
       host: '127.0.0.1',
       port: 0,
-      runtimeUrl: upstream.url,
       databasePath,
       environment: 'test',
       version: '0.0.0',
       pushMode: 'all-at-once',
       pushEscalationMs: 1000,
-      llmGateway: { quota: {} },
-      pairingCode: 'pair-me',
     },
     store,
     replica,
-    share,
     receipts,
+    settings: new SettingsStore(store.handle()),
     push,
     telemetry,
-    runtime: {
-      url: () => upstream.url,
-      bootPath: () => (runtimeReady ? '/?token=test-token' : undefined),
-      ready: () => runtimeReady,
-    },
-    bootstrapSecret: 'launch-secret',
   });
   await server.start();
   return {
@@ -163,21 +137,27 @@ async function startGateway({ telemetry = new RecordingTelemetry(), runtimeReady
     telemetry,
     async close() {
       await server.stop();
-      await upstream.close();
       store.close();
+      restoreHome();
     },
   };
 }
 
-/** 配一对设备并返回配对结果。 */
-async function pair(gateway, deviceName = 'Pixel 9') {
-  const response = await fetch(`${gateway.url}/chatdsh/gateway/mobile/pair`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: 'pair-me', deviceName, platform: 'android' }),
+/** 在真实存储里登记一台客户端设备并返回令牌。 */
+function seedDevice(gateway, options = {}) {
+  const device = {
+    id: options.id ?? 'mobile-device',
+    name: options.name ?? 'Pixel 9',
+    platform: options.platform ?? 'android',
+    token: options.token ?? 'mobile-device-token',
+  };
+  gateway.store.registerMobileDevice({
+    id: device.id,
+    name: device.name,
+    platform: device.platform,
+    tokenHash: deviceTokenHash(device.token),
   });
-  assert.equal(response.status, 200);
-  return response.json();
+  return device;
 }
 
 /** 一条合法的移动端记录。 */
@@ -195,107 +175,31 @@ async function settle() {
   await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
-test('配对成功并签发设备令牌，配对码错误被拒绝', async () => {
+test('吊销设备后令牌立即失效', async () => {
   const gateway = await startGateway();
   try {
-    const rejected = await fetch(`${gateway.url}/chatdsh/gateway/mobile/pair`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: 'wrong', deviceName: 'Pixel' }),
-    });
-    assert.equal(rejected.status, 401);
-    assert.equal((await rejected.json()).error, 'pairing-code-invalid');
-    assert.ok(gateway.telemetry.events.some((entry) => entry.name === 'chatdsh.gateway.mobile.rejected'
-      && entry.attributes['error.code'] === 'pairing-code-invalid'));
-
-    const pairing = await pair(gateway);
-    assert.ok(typeof pairing.token === 'string' && pairing.token.length > 20);
-    assert.equal(pairing.bootPath, '/?token=test-token');
-    assert.equal(pairing.platform, 'android');
-    assert.equal(pairing.name, 'Pixel 9');
-    const stored = gateway.store.mobileDeviceByTokenHash(
-      (await import('node:crypto')).createHash('sha256').update(pairing.token).digest('hex'),
-    );
-    assert.equal(stored.id, pairing.deviceId);
-    assert.equal(stored.name, 'Pixel 9');
-  } finally {
-    await gateway.close();
-  }
-});
-
-test('设备令牌取启动路径，Authorization Bearer 同样可用', async () => {
-  const gateway = await startGateway();
-  try {
-    const pairing = await pair(gateway);
-    const session = await fetch(`${gateway.url}/chatdsh/gateway/mobile/session`, {
-      headers: { 'x-chatdsh-device-token': pairing.token },
-    });
-    assert.equal(session.status, 200);
-    const payload = await session.json();
-    assert.equal(payload.deviceId, pairing.deviceId);
-    assert.equal(payload.bootPath, '/?token=test-token');
-
-    const bearer = await fetch(`${gateway.url}/chatdsh/gateway/mobile/session`, {
-      headers: { Authorization: `Bearer ${pairing.token}` },
-    });
-    assert.equal(bearer.status, 200);
-
-    const missing = await fetch(`${gateway.url}/chatdsh/gateway/mobile/session`);
-    assert.equal(missing.status, 401);
-    assert.equal((await missing.json()).error, 'device-token-required');
-
-    const invalid = await fetch(`${gateway.url}/chatdsh/gateway/mobile/session`, {
-      headers: { 'x-chatdsh-device-token': 'not-a-real-token' },
-    });
-    assert.equal(invalid.status, 401);
-    assert.equal((await invalid.json()).error, 'device-token-invalid');
-  } finally {
-    await gateway.close();
-  }
-});
-
-test('运行时未就绪时配对与取启动路径都返回 503 并计数', async () => {
-  const gateway = await startGateway({ runtimeReady: false });
-  try {
-    const rejected = await fetch(`${gateway.url}/chatdsh/gateway/mobile/pair`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: 'pair-me', deviceName: 'Pixel' }),
-    });
-    assert.equal(rejected.status, 503);
-    assert.equal((await rejected.json()).error, 'runtime-not-ready');
-    assert.ok(gateway.telemetry.counters.some((entry) => entry.name === 'chatdsh_mobile_pairings_total'
-      && entry.attributes.outcome === 'rejected'));
-    assert.ok(gateway.telemetry.events.some((entry) => entry.name === 'chatdsh.gateway.mobile.rejected'
-      && entry.attributes['error.code'] === 'runtime-not-ready'));
-  } finally {
-    await gateway.close();
-  }
-});
-
-test('吊销设备后取启动路径立即被拒绝', async () => {
-  const gateway = await startGateway();
-  try {
-    const pairing = await pair(gateway);
+    const pairing = seedDevice(gateway);
     const listed = await fetch(`${gateway.url}/chatdsh/gateway/mobile/devices`);
     assert.equal(listed.status, 200);
     const devices = (await listed.json()).devices;
-    assert.ok(devices.some((device) => device.id === pairing.deviceId && device.revokedAt === undefined));
+    assert.ok(devices.some((device) => device.id === pairing.id && device.revokedAt === undefined));
 
-    const revoked = await fetch(`${gateway.url}/chatdsh/gateway/mobile/devices?id=${pairing.deviceId}`, {
+    const revoked = await fetch(`${gateway.url}/chatdsh/gateway/mobile/devices?id=${pairing.id}`, {
       method: 'DELETE',
     });
     assert.equal(revoked.status, 200);
     assert.equal((await revoked.json()).revoked, true);
 
-    const session = await fetch(`${gateway.url}/chatdsh/gateway/mobile/session`, {
+    const session = await fetch(`${gateway.url}/chatdsh/telemetry/mobile`, {
+      method: 'POST',
       headers: { 'x-chatdsh-device-token': pairing.token },
+      body: JSON.stringify({ records: [mobileRecord()] }),
     });
     assert.equal(session.status, 401);
     assert.equal((await session.json()).error, 'device-token-invalid');
 
     const after = await (await fetch(`${gateway.url}/chatdsh/gateway/mobile/devices`)).json();
-    assert.ok(after.devices.some((device) => device.id === pairing.deviceId && typeof device.revokedAt === 'number'));
+    assert.ok(after.devices.some((device) => device.id === pairing.id && typeof device.revokedAt === 'number'));
     assert.ok(gateway.telemetry.spans.some((span) => span.name === 'chatdsh.gateway.mobile.devices'
       && span.attributes.outcome === 'revoked'));
   } finally {
@@ -306,7 +210,7 @@ test('吊销设备后取启动路径立即被拒绝', async () => {
 test('遥测上报成功并补写形态与设备类别', async () => {
   const gateway = await startGateway();
   try {
-    const pairing = await pair(gateway);
+    const pairing = seedDevice(gateway);
     const response = await fetch(`${gateway.url}/chatdsh/telemetry/mobile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-chatdsh-device-token': pairing.token },
@@ -352,7 +256,7 @@ test('遥测上报成功并补写形态与设备类别', async () => {
 test('遥测含禁止字段被拒并写入拒绝信号', async () => {
   const gateway = await startGateway();
   try {
-    const pairing = await pair(gateway);
+    const pairing = seedDevice(gateway);
     const response = await fetch(`${gateway.url}/chatdsh/telemetry/mobile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-chatdsh-device-token': pairing.token },
@@ -382,7 +286,7 @@ test('遥测含禁止字段被拒并写入拒绝信号', async () => {
 test('遥测批量超限与单条超限都被拒绝', async () => {
   const gateway = await startGateway();
   try {
-    const pairing = await pair(gateway);
+    const pairing = seedDevice(gateway);
     const records = Array.from({ length: 65 }, () => mobileRecord());
     const batch = await fetch(`${gateway.url}/chatdsh/telemetry/mobile`, {
       method: 'POST',
@@ -435,7 +339,7 @@ test('遥测令牌无效与缺失都被拒绝', async () => {
 test('单台设备超过每分钟批次数被限流', async () => {
   const gateway = await startGateway();
   try {
-    const pairing = await pair(gateway);
+    const pairing = seedDevice(gateway);
     let limited;
     for (let index = 0; index < 61; index += 1) {
       const response = await fetch(`${gateway.url}/chatdsh/telemetry/mobile`, {
@@ -501,7 +405,7 @@ test('真实遥测管道把移动端记录转发到 OTLP 接收端', async () =>
   });
   const gateway = await startGateway({ telemetry });
   try {
-    const pairing = await pair(gateway);
+    const pairing = seedDevice(gateway);
     const response = await fetch(`${gateway.url}/chatdsh/telemetry/mobile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-chatdsh-device-token': pairing.token },

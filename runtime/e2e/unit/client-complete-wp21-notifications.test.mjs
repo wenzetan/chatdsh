@@ -12,10 +12,10 @@ import assert from 'node:assert/strict';
 import { createDecipheriv, createECDH, createPublicKey, hkdfSync, randomBytes, verify } from 'node:crypto';
 import { createServer, get } from 'node:http';
 import { join } from 'node:path';
-import { allocateIndependentHome, releaseIndependentHome } from '../lib/environment.mjs';
+import { allocateIndependentHome, releaseIndependentHome, useHome } from '../lib/environment.mjs';
 import { createTelemetryClient } from '../../packages/core/diagnostics/lib/client.js';
 import { defaultTelemetryConfig } from '../../packages/core/diagnostics/lib/config.js';
-import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, SettingsStore, ShareStore } from '../../gateway/lib/store.js';
+import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, SettingsStore } from '../../gateway/lib/store.js';
 import { createPushHub } from '../../gateway/lib/push.js';
 import { DeviceLinkHub } from '../../gateway/lib/device-link.js';
 import { createGatewayServer } from '../../gateway/lib/server.js';
@@ -213,6 +213,7 @@ function createOtlpReceiver() {
 /** 起一整套真实服务：控制平面、通知中心、推送服务与遥测接收端。 */
 async function startEnvironment(prefix, options = {}) {
   const home = allocateIndependentHome(prefix);
+  const restoreHome = useHome(home);
   const databasePath = join(home, 'gateway.sqlite');
   const otlp = createOtlpReceiver();
   const otlpPort = await listen(otlp.server);
@@ -245,27 +246,19 @@ async function startEnvironment(prefix, options = {}) {
     config: {
       host: '127.0.0.1',
       port: 0,
-      runtimeUrl: 'http://127.0.0.1:9',
       databasePath,
       environment: 'test',
       version: '0.0.0',
       pushMode: 'all-at-once',
       pushEscalationMs: 1000,
-      llmGateway: { quota: {} },
     },
     store,
     replica: new ReplicaStore(store.handle()),
-    share: new ShareStore(store.handle()),
     receipts: new ReceiptStore(store.handle()),
     settings: new SettingsStore(store.handle()),
     push,
     telemetry,
     deviceLink,
-    runtime: {
-      url: () => 'http://127.0.0.1:9',
-      bootPath: () => '/?token=test-token',
-      ready: () => true,
-    },
   });
   await gateway.start();
   const gatewayPort = Number.parseInt(new URL(gateway.url()).port, 10);
@@ -307,6 +300,7 @@ async function startEnvironment(prefix, options = {}) {
       await telemetry.shutdown();
       store.close();
       releaseIndependentHome(home);
+      restoreHome();
     },
   };
 }

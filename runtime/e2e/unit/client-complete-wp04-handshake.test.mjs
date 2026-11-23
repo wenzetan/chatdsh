@@ -7,9 +7,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tempHome } from '../../scripts/lib/cleanup.mjs';
+import { useHome } from '../lib/environment.mjs';
 import { createTelemetryClient } from '../../packages/core/diagnostics/lib/client.js';
 import { defaultTelemetryConfig } from '../../packages/core/diagnostics/lib/config.js';
-import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, ShareStore } from '../../gateway/lib/store.js';
+import { GatewayStore, PushQueue, ReceiptStore, ReplicaStore, SettingsStore } from '../../gateway/lib/store.js';
 import { createPushHub } from '../../gateway/lib/push.js';
 import { DeviceLinkHub } from '../../gateway/lib/device-link.js';
 import { createGatewayServer } from '../../gateway/lib/server.js';
@@ -17,6 +18,7 @@ import { createGatewayServer } from '../../gateway/lib/server.js';
 /** 起一个完整装配的控制平面。 */
 async function startGateway(options = {}) {
   const home = tempHome('wp04-handshake');
+  const restoreHome = useHome(home);
   const databasePath = join(home, 'gateway.sqlite');
   const telemetry = createTelemetryClient({
     config: defaultTelemetryConfig({ surface: 'gateway' }),
@@ -25,7 +27,6 @@ async function startGateway(options = {}) {
   });
   const store = new GatewayStore(databasePath);
   const replica = new ReplicaStore(store.handle());
-  const share = new ShareStore(store.handle());
   const receipts = new ReceiptStore(store.handle());
   const push = createPushHub({
     queue: new PushQueue(store.handle()),
@@ -39,28 +40,20 @@ async function startGateway(options = {}) {
     config: {
       host: '127.0.0.1',
       port: 0,
-      runtimeUrl: 'http://127.0.0.1:9',
       databasePath,
       environment: 'test',
       version: '0.0.0',
       pushMode: 'all-at-once',
       pushEscalationMs: 1000,
-      llmGateway: { quota: {} },
       pairingCode: 'pair-wp04',
     },
     store,
     replica,
-    share,
     receipts,
+    settings: new SettingsStore(store.handle()),
     push,
     telemetry,
     deviceLink,
-    runtime: {
-      url: () => 'http://127.0.0.1:9',
-      bootPath: () => '/?token=test-token',
-      ready: () => true,
-    },
-    bootstrapSecret: 'launch-secret',
   });
   await server.start();
   return {
@@ -72,6 +65,7 @@ async function startGateway(options = {}) {
       await server.stop();
       await telemetry.shutdown();
       store.close();
+      restoreHome();
     },
   };
 }
