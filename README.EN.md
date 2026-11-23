@@ -32,12 +32,28 @@ ChatDSH is a cross-device plugin bundle and self-hosted lightweight relay server
 
 ## Quick Start
 
-### 1. Prerequisites
+### Recommended: AI Agent Guided Deployment & Onboarding
+
+The recommended way to deploy ChatDSH is to let an AI Agent with terminal access (such as official DSH, Claude Code, or Codex) follow [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md):
+
+```text
+Please read runtime/docs/agent-deploy-guide.md and follow it to deploy the ChatDSH relay server and connect my local DSH instance.
+```
+
+The Agent follows a safe, interactive four-stage workflow:
+
+1. **Network & Tunnel Inspection**: Probes host network interfaces, existing tunneling tools (Tailscale, Cloudflare Tunnel, FRP, WireGuard, ZeroTier), and active reverse proxies before asking you for the required public domain and preferred connectivity method.
+2. **Relay Container Deployment & Network Checklist**: Runs `bash scripts/relay-up.sh` to start the Docker Compose relay (auto-generating and persisting a random pairing secret with `0600` permissions), checks public reachability, and asks for confirmation before modifying any reverse proxy or tunnel config.
+3. **Optional DSH Plugin Installation with Persistent-Service Gate**: Asks whether you want the Agent to install `@chatdsh/bundle` and pair your local DSH. If you confirm, it first checks for persistent DSH services (`systemd` / `systemctl`, `launchd`, `pm2`, `supervisorctl`). Whenever a persistent service is found, the Agent must show the service file path, proposed `EnvironmentFile` update, and restart impact, and obtain your explicit approval before editing or restarting the service.
+
+### Manual CLI Setup
+
+#### 1. Prerequisites
 
 - Relay host: Docker & Docker Compose, Bash, and `curl` (no host Node.js required)
 - Client devices: Node.js 22+, pnpm 11.21.0, Official DSH (`@deepseek-ai/dsh`, verified baseline `0.2.2-rc.3`)
 
-### 2. Start the Relay in One Command (Docker Compose)
+#### 2. Start the Relay in One Command (Docker Compose)
 
 ```sh
 bash scripts/relay-up.sh
@@ -45,15 +61,15 @@ bash scripts/relay-up.sh
 
 On first run, the script prompts for the public relay domain (required, e.g. `relay.example.com` or `https://relay.example.com`), checks `.env` for `CHATDSH_PAIRING_CODE`, automatically generates and saves a random secret (`0600` permissions, reused on subsequent runs), and starts the relay container via [`docker-compose.yml`](docker-compose.yml).
 
-Once `/healthz` is ready, the script prints a copy-pasteable one-line device join command. To print that command again anytime, run on the relay host:
+Once `/healthz` is ready, the script checks public reachability (printing DNS and reverse-proxy forwarding instructions to `http://127.0.0.1:3170` if not yet configured) and outputs a copy-pasteable one-line device join command. To print that command again anytime, run on the relay host:
 
 ```sh
 bash scripts/relay-up.sh --print-join-command
 ```
 
-Terminate TLS in front of `127.0.0.1:3170` with a reverse proxy such as Nginx with WebSocket upgrades enabled and response buffering disabled (see [`runtime/docs/deployment.md`](runtime/docs/deployment.md)).
+Terminate TLS in front of `127.0.0.1:3170` with a reverse proxy such as Nginx, Caddy, or Tailscale Serve with WebSocket upgrades enabled and response buffering disabled (see [`runtime/docs/deployment.md`](runtime/docs/deployment.md)).
 
-### 3. Install, Pair & Start DSH on a Device in One Command
+#### 3. Install, Pair & Start DSH on a Device in One Command
 
 If installing from a fresh source checkout, build once first:
 

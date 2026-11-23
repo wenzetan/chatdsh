@@ -32,12 +32,28 @@ ChatDSH 是面向官方 DSH（DeepSeek Harness）的跨设备互联插件集与�
 
 ## 快速开始
 
-### 1. 环境要求
+### 推荐方式：由 AI Agent 协助完成部署与接入
+
+推荐直接将本项目交给具备终端执行能力的 AI Agent（如官方 DSH、Claude Code、Codex 等），发送以下指令按 [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md) 逐步完成部署：
+
+```text
+请先阅读 runtime/docs/agent-deploy-guide.md，按其中的流程帮我部署 ChatDSH 中继服务端并接入本机 DSH。
+```
+
+AI Agent 会严格按以下流程协作执行：
+
+1. **网络与穿透环境探测**：自动检查宿主机网卡、Tailscale / Cloudflare Tunnel / FRP / WireGuard 等内网穿透工具及现有反向代理端口，再结合本机实际情况向你询问必填的对外域名与联网方式。
+2. **中继容器部署与网络指引**：调用 `bash scripts/relay-up.sh` 以 Docker Compose 拉起中继容器（首次自动生成随机配对口令并按 `0600` 权限持久化复用），探测公网连通性；若需配置反向代理或穿透规则，先展示完整变更并征得同意后再操作。
+3. **代劳安装 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机安装 `@chatdsh/bundle` 并完成配对接入；确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、拟注入的 `EnvironmentFile` 变更及重启影响，取得你的明确同意后再修改服务文件与重启。
+
+### 手动命令行部署
+
+#### 1. 环境要求
 
 - 中继宿主机：Docker 与 Docker Compose、Bash 与 `curl`（无需在宿主机安装 Node.js）
 - 接入设备：Node.js 22 及以上、pnpm 11.21.0、官方 DSH（`@deepseek-ai/dsh`，当前验证基线 `0.2.2-rc.3`）
 
-### 2. 一行命令启动中继服务端（Docker Compose）
+#### 2. 一行命令启动中继服务端（Docker Compose）
 
 ```sh
 bash scripts/relay-up.sh
@@ -45,15 +61,15 @@ bash scripts/relay-up.sh
 
 首次运行时脚本会通过命令行询问中继对外域名（必填，例如 `relay.example.com` 或 `https://relay.example.com`），检查 `.env` 是否已配置配对口令，未配置时自动生成高熵随机口令并保存（文件权限 `0600`，下次运行自动复用），随后通过 [`docker-compose.yml`](docker-compose.yml) 构建并拉起中继容器。
 
-容器就绪后，终端会直接打印一条可在任意设备上复制执行的一行接入命令。后续如需再次查看该命令，在中继宿主机执行：
+容器就绪后，脚本会自动探测公网域名连通性（尚未配置域名解析或反向代理时输出明确的 DNS 与反向代理指向 `http://127.0.0.1:3170` 指引），并打印一条可在任意设备上复制执行的一行接入命令。后续如需再次查看该命令，在中继宿主机执行：
 
 ```sh
 bash scripts/relay-up.sh --print-join-command
 ```
 
-生产环境建议在宿主机通过 Nginx 或其他反向代理向 `127.0.0.1:3170` 转发流量并终止 TLS（配置示例见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md)）。
+生产环境建议在宿主机通过 Nginx、Caddy 或 Tailscale Serve 等前置网关向 `127.0.0.1:3170` 转发流量并终止 TLS（配置示例见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md)）。
 
-### 3. 一行命令在设备安装插件、配对并启动 DSH
+#### 3. 一行命令在设备安装插件、配对并启动 DSH
 
 如果是首次从本仓库源码安装，先完成一次本地构建：
 
