@@ -78,6 +78,7 @@ Detailed technical documentation is maintained in Chinese under `runtime/docs/`:
 - Documentation Index & Baseline: [`runtime/docs/README.md`](runtime/docs/README.md)
 - System Architecture: [`runtime/docs/architecture.md`](runtime/docs/architecture.md)
 - Deployment, Environment Variables, VAPID, Backup & Upgrade: [`runtime/docs/deployment.md`](runtime/docs/deployment.md)
+- AI Agent Deployment & Onboarding Guide: [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md)
 - Telemetry Specification & Signal Registry: [`runtime/docs/telemetry.md`](runtime/docs/telemetry.md)
 - DSH Compatibility & Upgrade Verification: [`runtime/docs/compatibility.md`](runtime/docs/compatibility.md)
 - Credential & Privacy Hooks: [`runtime/docs/secret-guard.md`](runtime/docs/secret-guard.md)

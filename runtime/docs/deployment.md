@@ -1,6 +1,6 @@
 # 部署与运行
 
-本文件面向单机与家庭服务器部署：安装官方 DSH、装入 `@chatdsh/bundle`、启动轻量中继、完成设备配对，并说明反向代理、TLS、Web Push、遥测开关、数据备份与 DSH 升级步骤。环境变量取值以 `gateway/src` 与 `packages/host/*`、`packages/client/*` 的实现为准。
+本文件面向单机与家庭服务器部署：安装官方 DSH、装入 `@chatdsh/bundle`、启动轻量中继、完成设备配对，并说明反向代理、TLS、Web Push、遥测开关、数据备份与 DSH 升级步骤。环境变量取值以 `gateway/src` 与 `packages/host/*`、`packages/client/*` 的实现为准。面向 AI Agent 执行自动化探测、部署与持久服务接入的操作流程见 [agent-deploy-guide.md](agent-deploy-guide.md)。
 
 ## 一、前置条件
 

@@ -76,6 +76,7 @@ bash scripts/device-join.sh --relay https://relay.example.com --code '<上一步
 - 文档总纲与构成基线：[`runtime/docs/README.md`](runtime/docs/README.md)
 - 总体架构与模块边界：[`runtime/docs/architecture.md`](runtime/docs/architecture.md)
 - 部署、环境变量、VAPID、备份与升级：[`runtime/docs/deployment.md`](runtime/docs/deployment.md)
+- AI Agent 自动化部署与接入指南：[`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md)
 - 遥测规范与信号登记清单：[`runtime/docs/telemetry.md`](runtime/docs/telemetry.md)
 - 上游 DSH 兼容性与升级验证：[`runtime/docs/compatibility.md`](runtime/docs/compatibility.md)
 - 凭据与隐私防护钩子：[`runtime/docs/secret-guard.md`](runtime/docs/secret-guard.md)

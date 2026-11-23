@@ -10,6 +10,7 @@
 |---|---|---|
 | 总体架构与模块边界 | [architecture.md](architecture.md) | 仅追加组合包 `@chatdsh/bundle`、Web 与 Desktop 共用机制、轻量中继与手机端 PWA 边界 |
 | 部署、运行、备份与升级 | [deployment.md](deployment.md) | 中继启动、设备配对、反向代理与 TLS、VAPID、环境变量全清单、数据目录备份与 DSH 升级步骤 |
+| AI Agent 自动化部署指南 | [agent-deploy-guide.md](agent-deploy-guide.md) | 面向 AI Agent 的网络/内网穿透探测、中继容器部署、DSH 持久服务检查与用户确认流程 |
 | 遥测规范与信号清单 | [telemetry.md](telemetry.md) | 信号命名规范、上下文传播边界、关闭开关与第六节信号登记表（由 `check-telemetry.mjs` 强制比对） |
 | 上游兼容性与升级流程 | [compatibility.md](compatibility.md) | `@chatdsh/adapter` 依赖版本策略、官方 profile 真实安装验收与升级步骤 |
 | 凭据与隐私防护 | [secret-guard.md](secret-guard.md) | 提交与推送钩子、规则扩展与误报处理 |
