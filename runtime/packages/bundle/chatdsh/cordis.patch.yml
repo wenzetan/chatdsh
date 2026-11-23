@@ -1,0 +1,37 @@
+# @chatdsh/bundle 的纯附加补丁层。
+#
+# 只使用 insert 追加 ChatDSH 自有条目，不禁用也不覆写任何 DSH 上游内部行，
+# 以便直接安装到官方 DSH Web 与 Desktop profile 并随上游版本平滑升级。
+
+- insert:
+    # 遥测：唯一宿主平面遥测出口，注册 ctx.chatdshTelemetry 与浏览器中继端点。
+    - id: chatdsh-telemetry
+      name: '@chatdsh/host-telemetry'
+
+    # 设备长连接：设备主动连向轻量中继服务端，接收并转发请求至本机运行时。
+    # 未配置 CHATDSH_CONTROL_URL 或 CHATDSH_NODE_TOKEN 时静默跳过。
+    - id: chatdsh-device-link
+      name: '@chatdsh/host-device-link'
+
+    # 会话副本上报：将设备权威会话日志增量同步到中继服务端形成只读副本。
+    - id: chatdsh-push
+      name: '@chatdsh/host-push'
+
+    # 会话恢复与分叉：从离线副本在本机恢复或分叉继续会话。
+    - id: chatdsh-import
+      name: '@chatdsh/host-import'
+
+    # 白名单设置同步：跨设备同步通用偏好，保留设备本地路径与运行参数独立。
+    - id: chatdsh-settings-sync
+      name: '@chatdsh/host-settings-sync'
+
+    # 浏览器侧插件：同时服务官方 Web 端与官方 Desktop 端渲染进程。
+    - id: chatdsh-client-telemetry
+      name: '@chatdsh/client-telemetry'
+
+    - id: chatdsh-client-pwa
+      name: '@chatdsh/client-pwa'
+
+    # 远程设备面板：设备与会话列表、离线只读副本、本机继续与中继设置区段。
+    - id: chatdsh-client-remote
+      name: '@chatdsh/client-remote'

@@ -17,9 +17,6 @@
     "lib/**/*.d.ts"
   ],
   "license": "MIT",
-  "engines": {
-    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
-  },
   "chatdsh": {
     "telemetry": {
       "events": [
@@ -37,7 +34,7 @@
     }
   },
   "dependencies": {
-    "@chatdsh/adapter": "link:../../../../dsh-adapter",
+    "@chatdsh/adapter": "0.1.0",
     "@chatdsh/core-contracts": "workspace:*"
   }
 }

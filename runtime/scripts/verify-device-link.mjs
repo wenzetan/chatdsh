@@ -1,20 +1,22 @@
 // 设备长连接的整机验收：一个真实控制平面加两台真实 dsh 运行时。
 //
 // 链路全部是真实进程：控制平面按 `gateway/lib/main.js` 启动，不托管运行时；两台设备各跑
-// 一个 `dsh --profile chatdsh-web`，用配对的节点令牌主动连到控制平面。断言按顺序打印：
-// 两台在线、两台各经长连接取一次 `/healthz`、杀掉一台后它离线且探测被拒、另一台仍在线。
+// 一个官方 `dsh --profile web` 并安装 `@chatdsh/bundle`，用配对的节点令牌主动连到控制平面。
+// 断言覆盖两台在线、各自自检、经 `/d/<deviceId>/api/remote.mux` 的 WebSocket 双向收发、
+// 非白名单路径拒绝、杀掉一台后隧道关闭与离线 409，以及另一台仍在线。
 //
 // 用法：node scripts/verify-device-link.mjs
 // 退出码 0 表示全部通过。端口从 20140 起；被占用时顺延，并在输出里写明实际端口。
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, symlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { tempHome } from './lib/cleanup.mjs';
 import { dshCommand } from './lib/dsh.mjs';
-import { findFreePort } from '../gateway/lib/runtime.js';
+import { installRuntimeProfile } from './lib/dsh-runtime.mjs';
+import { findFreePort } from './lib/ports.mjs';
+import { probeRemoteMux, upgradeStatus } from './lib/remote-mux.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const PAIRING_CODE = randomBytes(9).toString('base64url');
@@ -90,6 +92,7 @@ const gateway = startProcess(process.execPath, [join(ROOT, 'gateway', 'lib', 'ma
   cwd: ROOT,
   env: {
     ...process.env,
+    DSH_HOME: root,
     CHATDSH_TELEMETRY: 'off',
     CHATDSH_GATEWAY_HOST: '127.0.0.1',
     CHATDSH_GATEWAY_PORT: String(controlPort),
@@ -132,9 +135,8 @@ try {
   const ports = [portA, portB];
   for (const [index, node] of nodes.entries()) {
     const home = tempHome(`verify-device-link-${node.name}`);
-    mkdirSync(join(home, 'profiles'), { recursive: true });
-    symlinkSync(join(ROOT, 'profiles', 'chatdsh-web'), join(home, 'profiles', 'chatdsh-web'), 'dir');
-    const runtime = startProcess(dshCommand(), ['--profile', 'chatdsh-web', '--port', String(ports[index]), '--no-open'], {
+    installRuntimeProfile(home);
+    const runtime = startProcess(dshCommand(), ['--profile', 'web', '--port', String(ports[index]), '--no-open'], {
       cwd: ROOT,
       env: {
         ...process.env,
@@ -174,9 +176,40 @@ try {
     check(response.status === 200 && payload.status === 200, `${node.name} 自检返回 200`, JSON.stringify(payload));
   }
 
-  // 杀掉设备 A：它立刻离线，探测被拒绝；设备 B 仍然在线。
+  // 经 /d/<deviceId>/api/remote.mux 完成真实的 WebSocket 双向收发。
+  for (const node of nodes) {
+    const probe = await probeRemoteMux(base, node.deviceId);
+    const item = probe.frames.find((frame) => frame.type === 'item');
+    const value = item?.value;
+    const ok = probe.terminal.type === 'item'
+      && typeof value === 'object' && value !== null
+      && value.type === 'rows'
+      && Array.isArray(value.jobs);
+    check(ok, `${node.name} 的 Remote mux 双向收发`, JSON.stringify({ request: probe.request, frames: probe.frames }));
+  }
+
+  const pathRejected = await upgradeStatus(`${base}/d/${nodes[0].deviceId}/other`);
+  check(
+    pathRejected.status === 403 && JSON.parse(pathRejected.body).error === 'path-invalid',
+    '非白名单 WebSocket 路径回 403',
+    `${pathRejected.status} ${pathRejected.body}`,
+  );
+
+  // 打开一条真实隧道，然后杀掉设备：浏览器侧必须被关闭。
   const target = runtimes[0];
+  let tunnelClosed = false;
+  const tunnel = new WebSocket(`${base.replace(/^http/, 'ws')}/d/${target.node.deviceId}/api/remote.mux`);
+  tunnel.addEventListener('close', () => { tunnelClosed = true; });
+  await new Promise((resolve, reject) => {
+    tunnel.addEventListener('open', resolve, { once: true });
+    tunnel.addEventListener('error', () => reject(new Error('设备 A 的隧道升级失败')), { once: true });
+  });
+
+  // 杀掉设备 A：它立刻离线，探测被拒绝；设备 B 仍然在线。
   target.runtime.child.kill('SIGTERM');
+  const tunnelResult = await waitFor(() => ({ ok: tunnelClosed, detail: tunnelClosed ? '已关闭' : '仍打开' }), 10_000, 100);
+  check(tunnelResult.ok, '设备被终止后浏览器隧道关闭', tunnelResult.detail);
+
   const offline = await waitFor(async () => {
     const listed = await devices(base);
     const record = listed.devices.find((device) => device.id === target.node.deviceId);
@@ -189,6 +222,13 @@ try {
   const rejected = await fetch(`${base}/chatdsh/gateway/devices/${target.node.deviceId}/probe`);
   const rejectedBody = await rejected.json();
   check(rejected.status === 409 && rejectedBody.error === 'device-offline', '设备 A 的探测返回 409', `${rejected.status} ${JSON.stringify(rejectedBody)}`);
+
+  const rejectedUpgrade = await upgradeStatus(`${base}/d/${target.node.deviceId}/api/remote.mux`);
+  check(
+    rejectedUpgrade.status === 409 && JSON.parse(rejectedUpgrade.body).error === 'device-offline',
+    '设备 A 离线时 WebSocket 升级返回 409',
+    `${rejectedUpgrade.status} ${rejectedUpgrade.body}`,
+  );
 
   const stillOnline = await fetch(`${base}/chatdsh/gateway/devices/${runtimes[1].node.deviceId}/probe`);
   const stillBody = await stillOnline.json();

@@ -1,6 +1,0 @@
-# 模型路由器宿主行。路由标识由控制平面写入；缺省不接管任何提供方。
-- insert:
-    - id: chatdsh-llm-router
-      name: '@chatdsh/host-llm-router'
-      config:
-        routes: []

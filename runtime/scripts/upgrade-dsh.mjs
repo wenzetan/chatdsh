@@ -1,106 +1,133 @@
-// DSH 内核升级脚本。
+// DSH 升级验证入口。
 //
-// 升级顺序固定：先改适配层的版本声明与实现，再让业务包跟上。默认只打印计划（--dry-run），
-// 带 --apply 才写文件。版本号由 --to 给出，缺省取 `dsh --version`。
+// 顺序执行：读取 dsh 版本、投影并构建适配层、投影并构建运行时与客户端产物、
+// 四项静态检查、单元测试、官方 profile 真实安装验证。任一步失败立即以非零退出，
+// 并打印失败步骤与失败命令。
 //
-// 用法：
-//   node scripts/upgrade-dsh.mjs --dry-run            # 打印当前版本与五步计划
-//   node scripts/upgrade-dsh.mjs --to 0.3.0-rc.1      # 改文件
-//   node scripts/upgrade-dsh.mjs --to 0.3.0-rc.1 --dry-run
-//
-// 退出码 0 表示计划打印完成或全部步骤成功，1 表示任一步骤失败。
+// 用法：node scripts/upgrade-dsh.mjs
+// 退出码 0 表示全部通过。
 
-import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { dshCommand } from './lib/dsh.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const REPO = resolve(ROOT, '..');
-const ADAPTER = join(REPO, 'dsh-adapter');
-const APPLY = process.argv.includes('--apply');
-const TO_INDEX = process.argv.indexOf('--to');
-const TO = TO_INDEX < 0 ? undefined : process.argv[TO_INDEX + 1];
-const DSH_BIN = process.env.DSH_BIN ?? 'dsh';
+const ADAPTER = resolve(REPO, 'dsh-adapter');
+const DSH = dshCommand();
+const STATIC_CHECKS = [
+  'check:telemetry',
+  'check:plugins',
+  'check:upstream-names',
+  'check:layering',
+];
 
-/** 读当前 DSH 版本。 */
-function currentVersion() {
-  return execFileSync(DSH_BIN, ['--version'], { encoding: 'utf8' }).trim();
+/**
+ * 把命令渲染成可以复制执行的文本。
+ * @param command - 可执行文件。
+ * @param args - 参数列表。
+ * @returns 渲染后的命令。
+ */
+function printableCommand(command, args) {
+  return [command, ...args]
+    .map((part) => (/[^\w@%+=:,./-]/.test(part) ? `'${part.replaceAll("'", "'\\''")}'` : part))
+    .join(' ');
 }
 
-/** 五步计划。 */
-function plan(target, current) {
-  return [
-    { id: 1, title: `读当前版本：${current}` },
-    { id: 2, title: `改 dsh-adapter/package.json 的 engines.dsh 与 ${String(precisePeerCount())} 个精确版本 peer：${target}` },
-    { id: 3, title: '改 dsh-adapter/src/upstream.ts 的登记（仅在上游改名时）' },
-    { id: 4, title: '构建适配层：pnpm --dir dsh-adapter build' },
-    { id: 5, title: '构建运行时并核对上游包名：pnpm build 与 check:upstream-names' },
-  ];
-}
-
-/** 精确版本 peer 的数量。 */
-function precisePeerCount() {
-  const manifest = JSON.parse(readFileSync(join(ADAPTER, 'package.json'), 'utf8'));
-  return Object.keys(manifest.peerDependencies ?? {}).filter((name) => name.startsWith('@deepseek-ai/')).length;
-}
-
-/** 把适配层清单里的版本替换掉。 */
-function rewriteManifest(target) {
-  const path = join(ADAPTER, 'package.json');
-  const text = readFileSync(path, 'utf8');
-  const manifest = JSON.parse(text);
-  manifest.engines = { ...(manifest.engines ?? {}), dsh: target };
-  for (const name of Object.keys(manifest.peerDependencies ?? {})) {
-    if (name.startsWith('@deepseek-ai/dsh')) manifest.peerDependencies[name] = target;
+/**
+ * 执行一条命令。
+ * @param command - 可执行文件。
+ * @param args - 参数列表。
+ * @param cwd - 工作目录。
+ * @param capture - 是否捕获输出。
+ * @returns spawnSync 的结果。
+ */
+function run(command, args, cwd, capture = false) {
+  const printable = printableCommand(command, args);
+  console.log(`$ ${printable}`);
+  const result = spawnSync(command, args, {
+    cwd,
+    env: process.env,
+    stdio: capture ? 'pipe' : 'inherit',
+    encoding: capture ? 'utf8' : undefined,
+  });
+  if (result.error !== undefined) throw result.error;
+  if (result.status !== 0) {
+    const output = capture ? `\n${result.stdout ?? ''}${result.stderr ?? ''}` : '';
+    throw new Error(`命令失败（退出码 ${String(result.status)}）：${printable}${output}`);
   }
-  const next = `${JSON.stringify(manifest, null, 2)}\n`;
-  JSON.parse(next);
-  writeFileSync(path, next);
+  return result;
 }
 
-/** pnpm 的入口：跟随运行本脚本的那个 pnpm，缺省用 PATH 里的 pnpm。 */
-function pnpmEntry() {
-  const fromEnv = process.env.npm_execpath;
-  return fromEnv === undefined ? undefined : resolve(fromEnv);
-}
-
-/** 跑一条子命令，失败即抛。 */
-function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, stdio: 'inherit', env: process.env });
-  if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} 退出码 ${String(result.status)}`);
-}
-
-/** 用 pnpm 跑一个脚本。 */
+/**
+ * 用 pnpm 执行一条命令。
+ * @param args - pnpm 参数。
+ * @param cwd - 工作目录。
+ */
 function pnpm(args, cwd) {
-  const entry = pnpmEntry();
-  if (entry === undefined) throw new Error('找不到 pnpm：请用 pnpm 运行本脚本，或把 pnpm 加进 PATH');
-  run(process.execPath, [entry, ...args], cwd);
+  const entry = process.env.npm_execpath;
+  if (entry === undefined) run('pnpm', args, cwd);
+  else run(process.execPath, [entry, ...args], cwd);
 }
 
-const current = currentVersion();
-const target = TO ?? current;
-if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(target)) {
-  throw new Error(`版本号不合法：${target}`);
+/** 按顺序执行的步骤。 */
+const steps = [
+  {
+    title: '读取 dsh 版本',
+    run() {
+      const result = run(DSH, ['--version'], REPO, true);
+      console.log(`DSH ${result.stdout.trim()}`);
+    },
+  },
+  {
+    title: '投影并构建 dsh-adapter',
+    run() {
+      run(process.execPath, ['scripts/link-dsh-deps.mjs'], ADAPTER);
+      pnpm(['--config.verify-deps-before-run=false', 'build'], ADAPTER);
+    },
+  },
+  {
+    title: '投影并构建 runtime 与客户端产物',
+    run() {
+      run(process.execPath, ['scripts/link-dsh-deps.mjs'], ROOT);
+      pnpm(['--config.verify-deps-before-run=false', 'build'], ROOT);
+      pnpm(['--config.verify-deps-before-run=false', 'build:client'], ROOT);
+    },
+  },
+  {
+    title: '四项静态检查',
+    run() {
+      for (const script of STATIC_CHECKS) {
+        pnpm(['--config.verify-deps-before-run=false', script], ROOT);
+      }
+    },
+  },
+  {
+    title: '单元测试',
+    run() {
+      pnpm(['--config.verify-deps-before-run=false', 'test'], ROOT);
+    },
+  },
+  {
+    title: '官方 profile 真实安装验证',
+    run() {
+      run(process.execPath, ['scripts/verify-plugin-install.mjs'], ROOT);
+    },
+  },
+];
+
+for (const [index, step] of steps.entries()) {
+  console.log('');
+  console.log(`[${index + 1}/${steps.length}] ${step.title}`);
+  try {
+    step.run();
+  } catch (error) {
+    console.error('');
+    console.error(`升级验证失败：第 ${index + 1} 步「${step.title}」`);
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
 
-for (const step of plan(target, current)) console.log(`[${step.id}/5] ${step.title}`);
-if (!APPLY) {
-  console.log('只打印计划，未写文件；要执行请加 --apply。');
-  process.exit(0);
-}
-
-try {
-  console.log(`[2/5] 写入 ${join(ADAPTER, 'package.json')}`);
-  rewriteManifest(target);
-  console.log('[3/5] 登记表无需自动改写；若上游改名，手动更新 dsh-adapter/src/upstream.ts');
-  console.log('[4/5] 构建适配层');
-  pnpm(['build'], ADAPTER);
-  console.log('[5/5] 构建运行时并核对上游包名');
-  pnpm(['build'], ROOT);
-  pnpm(['check:upstream-names'], ROOT);
-} catch (error) {
-  console.log(`升级中断：${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-}
-
-console.log('升级完成。');
+console.log('');
+console.log('DSH 升级验证全部通过。');

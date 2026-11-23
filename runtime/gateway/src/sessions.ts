@@ -157,10 +157,15 @@ export function createClientSessionQuery(database: DatabaseSync, online: (device
     with summaries as materialized (
       select s.session_id, s.device_id, s.cwd, s.kind,
         coalesce(n.name, s.device_id) as device_name,
-        coalesce((select json_extract(e.payload, '$.data.title') from replica_events e
+        coalesce((select nullif(coalesce(
+            case when json_type(e.payload, '$.data.title') = 'text'
+              then json_extract(e.payload, '$.data.title') end,
+            case when json_type(e.payload, '$.title') = 'text'
+              then json_extract(e.payload, '$.title') end
+          ), '') from replica_events e
           where e.session_id = s.session_id and e.kind = 'session/title'
-            and json_type(e.payload, '$.data.title') = 'text'
-            and json_extract(e.payload, '$.data.title') <> ''
+            and ((json_type(e.payload, '$.data.title') = 'text' and json_extract(e.payload, '$.data.title') <> '')
+              or (json_type(e.payload, '$.title') = 'text' and json_extract(e.payload, '$.title') <> ''))
           order by e.seq desc limit 1), nullif(chatdsh_cwd_tail(s.cwd), ''), s.session_id) as title,
         coalesce((select max(e.time) from replica_events e where e.session_id = s.session_id), s.created_at) as updated_at
       from sessions s left join node_devices n on n.id = s.device_id

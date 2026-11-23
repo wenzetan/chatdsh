@@ -13,11 +13,11 @@ const RUNTIME_ROOT = resolve(import.meta.dirname, '..', '..');
 const WORKSPACE_ROOT = resolve(RUNTIME_ROOT, '..');
 const allocatedHomes = new Map();
 
-/** 仓库钉住的版本基线。 */
+/** 运行时要求与上游发布通道。 */
 export const BASELINE = Object.freeze({
   node: '>=22',
-  dsh: '>=0.2.1-rc.2 <0.3.0-0',
-  dshTui: '0.16.1',
+  dsh: 'next',
+  dshTui: 'latest',
 });
 
 /** DSH 安装根，默认取本机安装。 */
@@ -140,10 +140,11 @@ export function checkBaseline(versions) {
   const items = [];
   const nodeOk = semver.satisfies(versions.node.version.replace(/^v/, ''), BASELINE.node);
   items.push({ item: 'node', required: BASELINE.node, actual: versions.node.version, ok: nodeOk });
-  const dshOk = semver.satisfies(versions.dsh.version, BASELINE.dsh, { includePrerelease: true });
-  items.push({ item: 'dsh', required: BASELINE.dsh, actual: versions.dsh.version, ok: dshOk, note: '仓库钉住 0.2.1-rc.2，本机安装不在范围内时需要先按 compatibility 第三节升级' });
+  const dshOk = semver.valid(versions.dsh.version) !== null;
+  items.push({ item: 'dsh', required: BASELINE.dsh, actual: versions.dsh.version, ok: dshOk, note: '依赖跟随 next；实际组合是否可用由 check-composition 判定' });
   if (versions.dshTui.available === true) {
-    items.push({ item: 'dsh-tui', required: BASELINE.dshTui, actual: versions.dshTui.version, ok: versions.dshTui.version === BASELINE.dshTui });
+    const tuiOk = semver.valid(versions.dshTui.version) !== null;
+    items.push({ item: 'dsh-tui', required: BASELINE.dshTui, actual: versions.dshTui.version, ok: tuiOk, note: '依赖跟随 latest；内核覆盖关系由 dsh-tui 的已验证清单判定' });
   } else {
     items.push({ item: 'dsh-tui', required: BASELINE.dshTui, actual: '缺失', ok: false, note: versions.dshTui.reason });
   }
@@ -224,6 +225,19 @@ export function releaseIndependentHome(home) {
   if (existsSync(resolved)) throw new Error(`数据根没有删除干净：${resolved}`);
   allocatedHomes.delete(resolved);
   return { removed: resolved };
+}
+
+/**
+ * 把 `DSH_HOME` 指向测试数据根，返回恢复函数。
+ * @param {string} home - 本次执行分配的数据根。
+ */
+export function useHome(home) {
+  const previous = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  return () => {
+    if (previous === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = previous;
+  };
 }
 
 /** 用户数据根在本次运行期间保持不变的依据。 */

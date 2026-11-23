@@ -1,11 +1,11 @@
 packages:
   - packages/core/*
   - packages/host/*
-  - packages/tool/*
   - packages/client/*
   - packages/bundle/*
-  - packages/preset/*
   - gateway
-  - desktop
-  # 与 runtime 同级的桥接包：控制平面的 webhook 路由依赖它。
-  - ../forge-bridge
+allowBuilds:
+  esbuild: true
+overrides:
+  '@chatdsh/adapter': link:../dsh-adapter
+verifyDepsBeforeRun: false

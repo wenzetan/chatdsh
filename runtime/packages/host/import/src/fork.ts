@@ -11,7 +11,7 @@
  * @module @chatdsh/host-import/fork
  */
 
-import { buildSeed, type ReplicaRecord, type SessionSeedEvent } from './seed.ts';
+import { buildSeed, replicaDataOf, type ReplicaRecord, type SessionSeedEvent } from './seed.ts';
 
 /** 复制历史的方式。 */
 export const FORK_IMPORT_MODES = ['full-prefix', 'compressed'] as const;
@@ -136,16 +136,14 @@ const ATTACHMENT_MARKER = /\[附件 ([^\s\]]+)/g;
 
 /** 一条事件的数据字符数。 */
 function charCountOf(record: ReplicaRecord): number {
-  const payload = record.payload as { readonly data?: unknown } | null;
-  if (payload === null || payload === undefined) return 0;
-  const data = payload.data;
+  const data = replicaDataOf(record);
   if (data === undefined) return 0;
   return JSON.stringify(data).length;
 }
 
 /** 取一条事件里的工具调用标识。 */
 function callIdOf(record: ReplicaRecord): string | undefined {
-  const data = (record.payload as { readonly data?: unknown } | null)?.data;
+  const data = replicaDataOf(record);
   if (typeof data !== 'object' || data === null) return undefined;
   const callId = (data as { readonly callId?: unknown }).callId;
   return typeof callId === 'string' && callId !== '' ? callId : undefined;

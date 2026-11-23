@@ -1,20 +1,19 @@
 // 按设备分派的验收。
 //
 // 两台真实 dsh 运行时各自以节点令牌连上控制平面，控制平面按 `/d/<deviceId>/` 前缀把请求
-// 分派到对应设备；没有前缀的请求仍走配置的默认运行时（这里用一个会自报名字的替身服务，
-// 用来证明默认通道没有被设备路由取代）。设备不存在时不回退到默认运行时。
+// 分派到对应设备；没有前缀的请求不属于设备路由，返回 404，不回退到任何设备。
 //
 // 用法：node scripts/verify-routing.mjs [--port 3190]
-// 退出码 0 表示两台设备各自命中自己的运行时、未知设备不回退、默认通道保持现状。
+// 退出码 0 表示两台设备各自命中自己的运行时、未知设备不回退、Remote mux 隧道可用。
 
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
-import { mkdirSync, symlinkSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { tempHome } from './lib/cleanup.mjs';
 import { dshCommand } from './lib/dsh.mjs';
-import { findFreePort } from '../gateway/lib/runtime.js';
+import { installRuntimeProfile } from './lib/dsh-runtime.mjs';
+import { findFreePort } from './lib/ports.mjs';
+import { probeRemoteMux, upgradeStatus } from './lib/remote-mux.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const argv = process.argv.slice(2);
@@ -43,22 +42,6 @@ async function waitFor(fn, timeoutMs, intervalMs = 500) {
   return last ?? { ok: false, detail: '没有尝试' };
 }
 
-/** 起一个会自报名字的默认运行时替身。 */
-async function startDefaultRuntime() {
-  const server = createServer((request, response) => {
-    response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ runtime: 'default', path: request.url ?? '/' }));
-  });
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : 0;
-  return { server, url: `http://127.0.0.1:${port}` };
-}
-
-const defaultRuntime = await startDefaultRuntime();
 const home = tempHome('routing-home');
 const base = `http://127.0.0.1:${controlPort}`;
 
@@ -70,7 +53,6 @@ const gateway = spawn(process.execPath, [resolve(ROOT, 'gateway/lib/main.js')], 
     CHATDSH_GATEWAY_PORT: String(controlPort),
     CHATDSH_GATEWAY_DB: join(home, 'gateway.sqlite'),
     CHATDSH_PAIRING_CODE: pairingCode,
-    CHATDSH_RUNTIME_URL: defaultRuntime.url,
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -106,10 +88,8 @@ try {
 
   for (const [index, node] of nodes.entries()) {
     const runtimeHome = tempHome(`routing-${node.name}`);
-    mkdirSync(join(runtimeHome, 'profiles'), { recursive: true });
-    const link = join(runtimeHome, 'profiles', 'chatdsh-web');
-    if (!existsSync(link)) symlinkSync(join(ROOT, 'profiles', 'chatdsh-web'), link, 'dir');
-    const child = spawn(dshCommand(), ['--profile', 'chatdsh-web', '--port', String(index === 0 ? portA : portB), '--no-open'], {
+    installRuntimeProfile(runtimeHome);
+    const child = spawn(dshCommand(), ['--profile', 'web', '--port', String(index === 0 ? portA : portB), '--no-open'], {
       env: {
         ...process.env,
         DSH_HOME: runtimeHome,
@@ -161,10 +141,38 @@ try {
   check(unknown.status === 404 && unknownBody.error === 'device-not-found', '未知设备不回退到默认运行时', `${unknown.status} ${JSON.stringify(unknownBody)}`);
 
   const noPrefix = await fetch(`${base}/probe`);
-  const noPrefixBody = await noPrefix.json();
-  check(noPrefix.status === 200 && noPrefixBody.runtime === 'default', '没有 /d/ 前缀的请求仍走默认运行时', JSON.stringify(noPrefixBody));
+  check(noPrefix.status === 404, '没有 /d/ 前缀的请求不被转发到任何设备', `${noPrefix.status}`);
+
+  for (const node of nodes) {
+    const probe = await probeRemoteMux(base, node.deviceId);
+    const item = probe.frames.find((frame) => frame.type === 'item');
+    const value = item?.value;
+    const ok = probe.terminal.type === 'item'
+      && typeof value === 'object' && value !== null
+      && value.type === 'rows'
+      && Array.isArray(value.jobs);
+    check(ok, `${node.name} 的 Remote mux 双向收发`, JSON.stringify({ request: probe.request, frames: probe.frames }));
+  }
+
+  const pathRejected = await upgradeStatus(`${base}/d/${nodeA.deviceId}/other`);
+  check(
+    pathRejected.status === 403 && JSON.parse(pathRejected.body).error === 'path-invalid',
+    '非白名单 WebSocket 路径回 403',
+    `${pathRejected.status} ${pathRejected.body}`,
+  );
+
+  let tunnelClosed = false;
+  const tunnel = new WebSocket(`${base.replace(/^http/, 'ws')}/d/${nodeA.deviceId}/api/remote.mux`);
+  tunnel.addEventListener('close', () => { tunnelClosed = true; });
+  await new Promise((resolve, reject) => {
+    tunnel.addEventListener('open', resolve, { once: true });
+    tunnel.addEventListener('error', () => reject(new Error('设备 A 的隧道升级失败')), { once: true });
+  });
 
   runtimes[0].child.kill('SIGTERM');
+  const tunnelResult = await waitFor(() => ({ ok: tunnelClosed, detail: tunnelClosed ? '已关闭' : '仍打开' }), 10_000, 100);
+  check(tunnelResult.ok, '设备被终止后浏览器隧道关闭', tunnelResult.detail);
+
   const offline = await waitFor(async () => {
     const listed = await (await fetch(`${base}/chatdsh/gateway/devices`)).json();
     const record = listed.devices.find((device) => device.id === nodeA.deviceId);
@@ -174,6 +182,13 @@ try {
 
   const offlineHit = await fetch(`${base}/d/${nodeA.deviceId}/healthz`);
   check(offlineHit.status === 409, '设备离线时 /d/A/ 返回 409', `${offlineHit.status}`);
+
+  const offlineUpgrade = await upgradeStatus(`${base}/d/${nodeA.deviceId}/api/remote.mux`);
+  check(
+    offlineUpgrade.status === 409 && JSON.parse(offlineUpgrade.body).error === 'device-offline',
+    '设备离线时 WebSocket 升级返回 409',
+    `${offlineUpgrade.status} ${offlineUpgrade.body}`,
+  );
 
   const stillB = await fetch(`${base}/d/${nodeB.deviceId}/healthz`);
   check(stillB.status === 200, '设备 B 不受影响', `${stillB.status}`);
@@ -186,7 +201,6 @@ try {
 } finally {
   for (const state of runtimes) state.child.kill('SIGTERM');
   gateway.kill('SIGTERM');
-  defaultRuntime.server.close();
   await new Promise((settle) => setTimeout(settle, 800));
 }
 

@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createTelemetryClient } from '@chatdsh/core-diagnostics/client';
 import { defaultTelemetryConfig } from '@chatdsh/core-diagnostics/config';
-import { SqliteDatabase } from '../storage/sqlite.ts';
+import { SqliteDatabase } from './sqlite.ts';
 import { startReplicaServer } from './http.ts';
 import { ReplicaContinuityStore } from './store.ts';
 

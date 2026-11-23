@@ -1,6 +1,6 @@
 // 插件契约的静态检查。
 //
-// 架构文档要求自建插件包声明 `engines.dsh` 与 `dsh.client`，组合包声明 `dsh.bundle.patch`，
+// 架构文档要求客户端插件声明 `dsh.client`，组合包声明 `dsh.bundle.patch`，
 // profile 声明 `dsh.profile.bundles`。这些都能在清单层面核对；`dsh plugin add` 从登记处
 // 拉取那一半需要已发布的包，本机做不到。
 //
@@ -12,10 +12,11 @@ import { join, relative, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const failures = [];
-const counts = { plugin: 0, client: 0, bundle: 0, profile: 0, library: 0, tool: 0 };
+const counts = { plugin: 0, client: 0, bundle: 0, profile: 0, library: 0 };
 
 /** 找出所有包的目录。 */
 function packageDirs(dir) {
+  if (!existsSync(dir)) return [];
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -26,7 +27,8 @@ function packageDirs(dir) {
   return out;
 }
 
-const dirs = [...packageDirs(join(ROOT, 'packages')), ...packageDirs(join(ROOT, 'e2e', 'profiles')), ...packageDirs(join(ROOT, 'profiles'))];
+const dirs = [join(ROOT, 'packages'), join(ROOT, 'e2e', 'profiles'), join(ROOT, 'profiles')]
+  .flatMap((root) => packageDirs(root));
 
 for (const dir of dirs) {
   const manifestPath = join(dir, 'package.json');
@@ -54,6 +56,7 @@ for (const dir of dirs) {
     if (dsh.client.platform !== 'web') failures.push(`${where} 的 dsh.client 缺少 platform: web`);
     if (!Array.isArray(dsh.client.inject)) failures.push(`${where} 的 dsh.client 缺少 inject 数组`);
     if (manifest.exports?.['./client'] === undefined) failures.push(`${where} 声明了 dsh.client 但没有导出 ./client`);
+    if (!existsSync(join(dir, 'lib', 'client.js'))) failures.push(`${where} 声明了 dsh.client 但没有客户端产物 lib/client.js`);
   }
 
   // profile：bundles 必须是非空字符串数组。
@@ -64,57 +67,17 @@ for (const dir of dirs) {
     else if (bundles.some((name) => typeof name !== 'string')) failures.push(`${where} 的 bundles 里有非字符串项`);
   }
 
-  // 角色目录：packages/<角色>/<对象> 一律声明 engines.dsh，包名前缀必须与角色目录一致。
+  // 角色目录：包名前缀必须与角色目录一致。DSH 版本由发布标签与实际组合检查管理。
   const where_ = relative(ROOT, dir).split('\\').join('/');
   const roleMatch = where_.match(/^packages\/([a-z]+)\/([^/]+)$/);
   if (roleMatch !== null) {
     const [, role, objectName] = roleMatch;
-    if (manifest.engines?.dsh === undefined) failures.push(`${where} 缺少 engines.dsh`);
-    const expected = `@chatdsh/${role}-${objectName}`;
+    const expected = role === 'bundle' && objectName === 'chatdsh' ? '@chatdsh/bundle' : `@chatdsh/${role}-${objectName}`;
     if (manifest.name !== expected) failures.push(`${where} 的包名应为 ${expected}，实际 ${manifest.name}`);
     if (dsh.bundle === undefined && dsh.profile === undefined && dsh.client === undefined) counts.plugin += 1;
   } else if (dsh.bundle === undefined && dsh.profile === undefined && dsh.client === undefined) {
     counts.library += 1;
   }
-}
-
-// 工具包与预设挂载：packages/tool/<对象> 每个注册一个工具，预设挂载除浏览器外的六个。
-const toolNames = new Map();
-for (const dir of dirs) {
-  const name = relative(ROOT, dir).split('\\').join('/');
-  if (!name.startsWith('packages/tool/')) continue;
-  const entry = join(dir, 'src', 'index.ts');
-  if (!existsSync(entry)) continue;
-  const registered = [...readFileSync(entry, 'utf8').matchAll(/name: '([a-z_]+)'/g)]
-    .map((match) => match[1])
-    .filter((value) => !value.startsWith('chatdsh'));
-  const packageName = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).name;
-  if (registered.length !== 1) failures.push(`${packageName} 应当注册恰好一个工具，实际 ${registered.length} 个`);
-  toolNames.set(packageName, registered[0] ?? '');
-}
-counts.tool = toolNames.size;
-
-const presetFile = join(ROOT, 'packages/preset/chat/cordis.patch.yml');
-if (existsSync(presetFile)) {
-  const presetText = readFileSync(presetFile, 'utf8');
-  const mounted = [...new Set([...presetText.matchAll(/'(@chatdsh\/tool-[a-z]+)'/g)].map((match) => match[1]))];
-  console.log(`工具 ${toolNames.size} 个；预设挂载 ${mounted.length} 个：${mounted.map((value) => value.replace('@chatdsh/', '')).join('、')}`);
-  if (mounted.length === 0) failures.push('预设补丁层里没有解析出任何工具挂载，检查失配');
-  for (const packageName of mounted) {
-    if (!toolNames.has(packageName)) failures.push(`预设挂载了 ${packageName}，但没有对应的工具包`);
-  }
-
-  // 浏览器工具只挂在全量档：聊天档与工作档出现即失败，全量档缺少也算失配。
-  // 按补丁层切分：以 `- id: preset-` 开头的一段属于同一个 preset。
-  const blocks = presetText.split(/^\s*- id: preset-/m).slice(1);
-  for (const block of blocks) {
-    const id = block.match(/^([a-z0-9-]+)/)?.[1] ?? '';
-    const mentioned = block.includes('@chatdsh/tool-browser');
-    if (mentioned && id !== 'chatdsh-full') failures.push(`浏览器工具只能挂在全量档，${id} 档里出现了`);
-  }
-  const full = blocks.find((block) => block.startsWith('chatdsh-full'));
-  if (full === undefined) failures.push('补丁层里没有声明全量档');
-  else if (!full.includes('@chatdsh/tool-browser')) failures.push('全量档没有挂浏览器工具');
 }
 
 // 依赖声明：src 里 import 的框架包必须写进 peerDependencies 或 dependencies。
@@ -173,33 +136,35 @@ for (const dir of dirs) {
       }
     }
   };
-  scan(join(ROOT, 'packages'));
-  scan(join(ROOT, 'gateway'));
-  scan(join(ROOT, 'desktop'));
+  for (const root of ['packages', 'gateway', 'desktop']) {
+    const dir = join(ROOT, root);
+    if (existsSync(dir)) scan(dir);
+  }
   failures.push(...offenders);
 }
 
-// 组合包与 profile 的引用关系：bundles 里的本仓库组合包必须存在，且每个组合包都有人用。
-const bundleNames = new Set();
-const bundleUsers = new Map();
+// 组合包与客户端插件的引用关系：组合包声明的本仓库依赖必须存在，客户端插件必须随组合包发布。
+const packageNames = new Set();
+const bundleManifests = [];
+const clientNames = new Set();
 for (const dir of dirs) {
   const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+  packageNames.add(manifest.name);
+  if (manifest.dsh?.client !== undefined) clientNames.add(manifest.name);
   if (manifest.dsh?.bundle !== undefined) {
-    bundleNames.add(manifest.name);
-    bundleUsers.set(manifest.name, []);
+    bundleManifests.push(manifest);
   }
 }
-for (const dir of dirs) {
-  const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-  const profileName = manifest.dsh?.profile === undefined ? undefined : manifest.name;
-  for (const entry of manifest.dsh?.profile?.bundles ?? []) {
-    if (!entry.startsWith('@chatdsh/')) continue;
-    if (!bundleNames.has(entry)) failures.push(`${manifest.name} 的 bundles 里有 ${entry}，但本仓库没有这个组合包`);
-    else bundleUsers.get(entry).push(profileName ?? '');
+const bundled = new Set();
+for (const manifest of bundleManifests) {
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    if (!name.startsWith('@chatdsh/') || name === '@chatdsh/adapter') continue;
+    if (!packageNames.has(name)) failures.push(`${manifest.name} 依赖了 ${name}，但本仓库没有这个包`);
+    else bundled.add(name);
   }
 }
-for (const [name, users] of bundleUsers) {
-  if (users.length === 0) failures.push(`${name} 没有被任何 profile 引用`);
+for (const name of clientNames) {
+  if (!bundled.has(name)) failures.push(`${name} 没有被任何组合包依赖`);
 }
 
 console.log(`插件 ${counts.plugin} 个、客户端插件 ${counts.client} 个、组合包 ${counts.bundle} 个、profile ${counts.profile} 个、纯库 ${counts.library} 个`);

@@ -2,7 +2,7 @@
   "name": "@chatdsh/adapter",
   "version": "0.1.0",
   "type": "module",
-  "description": "DSH 内部 API 的唯一接触面：把上游的包名、事件名与 ctx 服务名收在一处",
+  "description": "DSH 内部 API 的唯一接触面：集中转出插件实际使用的顶层服务、会话事件与配置命名空间",
   "license": "MIT",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -27,32 +27,15 @@
     "src/**/*.ts"
   ],
   "sideEffects": false,
-  "engines": {
-    "dsh": "0.2.1-rc.2"
-  },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.5",
-    "@deepseek-ai/schemastery": "~3.18.5",
-    "@deepseek-ai/cordis-plugin-loader": "~1.0.6",
-    "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-agent-preset-registry": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-experimental-worktree": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-client-connection": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-otel": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-schedule": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-session-persistence": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-session-projection": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-settings": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-skill": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-subagent": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2"
+    "@deepseek-ai/cordis": ">=4.0.0",
+    "@deepseek-ai/cordis-plugin-loader": ">=1.1.0",
+    "@deepseek-ai/schemastery": ">=3.18.0",
+    "@deepseek-ai/dsh-client-connection": ">=0.2.0-0",
+    "@deepseek-ai/dsh-host-webserver": ">=0.2.0-0",
+    "@deepseek-ai/dsh-session": ">=0.2.0-0",
+    "@deepseek-ai/dsh-session-persistence": ">=0.2.0-0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.0-0"
   },
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
@@ -62,8 +45,5 @@
   },
   "devDependencies": {
     "typescript": "5.9.3"
-  },
-  "dependencies": {
-    "@chatdsh/core-contracts": "link:../runtime/packages/core/contracts"
   }
 }

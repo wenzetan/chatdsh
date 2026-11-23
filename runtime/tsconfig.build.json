@@ -8,223 +8,40 @@
       "path": "packages/core/contracts"
     },
     {
-      "path": "packages/core/ui-kit"
-    },
-    {
-      "path": "packages/core/backends"
-    },
-    {
       "path": "packages/core/remote-client"
     },
     {
       "path": "packages/core/diagnostics"
     },
     {
-      "path": "packages/client/approval"
-    },
-    {
-      "path": "packages/client/artifacts"
-    },
-    {
-      "path": "packages/client/account"
-    },
-    {
-      "path": "packages/client/connectors"
-    },
-    {
-      "path": "packages/client/memory"
-    },
-    {
-      "path": "packages/client/conversation"
-    },
-    {
-      "path": "packages/client/notifications"
-    },
-    {
-      "path": "packages/client/access"
-    },
-    {
-      "path": "packages/client/cli"
-    },
-    {
-      "path": "packages/client/data-management"
-    },
-    {
-      "path": "packages/client/exports"
-    },
-    {
       "path": "packages/client/pwa"
-    },
-    {
-      "path": "packages/client/desktop-control"
-    },
-    {
-      "path": "packages/client/multi-window"
-    },
-    {
-      "path": "packages/client/assistants"
-    },
-    {
-      "path": "packages/client/projects"
-    },
-    {
-      "path": "packages/client/share"
-    },
-    {
-      "path": "packages/client/shell"
-    },
-    {
-      "path": "packages/client/session-bridge"
     },
     {
       "path": "packages/client/telemetry"
     },
     {
-      "path": "packages/client/workspace-tools"
-    },
-    {
-      "path": "packages/client/theme"
-    },
-    {
-      "path": "desktop"
-    },
-    {
-      "path": "gateway"
-    },
-    {
-      "path": "packages/host/approval"
-    },
-    {
-      "path": "packages/host/artifacts"
-    },
-    {
-      "path": "packages/host/attachments"
-    },
-    {
-      "path": "packages/host/backup"
-    },
-    {
-      "path": "packages/host/assistants"
-    },
-    {
-      "path": "packages/host/memory"
-    },
-    {
-      "path": "packages/host/connectors"
-    },
-    {
-      "path": "packages/host/import"
-    },
-    {
-      "path": "packages/host/projects"
-    },
-    {
-      "path": "packages/host/push"
-    },
-    {
-      "path": "packages/host/device-link"
-    },
-    {
-      "path": "packages/host/settings-sync"
-    },
-    {
-      "path": "packages/host/settings-enhancements"
-    },
-    {
-      "path": "packages/host/schedule-ui"
+      "path": "packages/client/remote"
     },
     {
       "path": "packages/host/telemetry"
     },
     {
-      "path": "packages/host/voice"
+      "path": "packages/host/device-link"
     },
     {
-      "path": "packages/core/session-index"
+      "path": "packages/host/push"
     },
     {
-      "path": "packages/host/usage"
+      "path": "packages/host/import"
     },
     {
-      "path": "packages/preset/chat"
+      "path": "packages/host/settings-sync"
     },
     {
-      "path": "packages/tool/artifact"
+      "path": "packages/bundle/chatdsh"
     },
     {
-      "path": "packages/tool/browser"
-    },
-    {
-      "path": "packages/tool/connector"
-    },
-    {
-      "path": "packages/tool/image"
-    },
-    {
-      "path": "packages/tool/project"
-    },
-    {
-      "path": "packages/tool/research"
-    },
-    {
-      "path": "packages/tool/share"
-    },
-    {
-      "path": "packages/bundle/desktop"
-    },
-    {
-      "path": "packages/bundle/hosted"
-    },
-    {
-      "path": "packages/bundle/memory-hindsight"
-    },
-    {
-      "path": "packages/bundle/storage-jsonl"
-    },
-    {
-      "path": "packages/host/model-provider"
-    },
-    {
-      "path": "packages/host/llm-router"
-    },
-    {
-      "path": "packages/host/mcp-server"
-    },
-    {
-      "path": "packages/client/model-provider"
-    },
-    {
-      "path": "packages/host/context-insights"
-    },
-    {
-      "path": "packages/client/context-insights"
-    },
-    {
-      "path": "packages/host/skills"
-    },
-    {
-      "path": "packages/tool/skill-manage"
-    },
-    {
-      "path": "packages/client/skills"
-    },
-    {
-      "path": "packages/client/automation"
-    },
-    {
-      "path": "packages/host/chat-hermes"
-    },
-    {
-      "path": "packages/core/session-persistence-postgres"
-    },
-    {
-      "path": "packages/core/limits"
-    },
-    {
-      "path": "packages/core/deployment"
-    },
-    {
-      "path": "packages/bundle/storage-postgres"
+      "path": "gateway"
     }
   ]
 }

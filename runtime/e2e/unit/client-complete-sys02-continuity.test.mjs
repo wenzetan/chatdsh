@@ -22,10 +22,9 @@ const RUNTIME = resolve(import.meta.dirname, '../..');
 const MODULES = {
   replicaServerPath: join(RUNTIME, 'gateway/lib/replica-continuity/server.js'),
   replicaIndex: pathToFileURL(join(RUNTIME, 'gateway/lib/replica-continuity/index.js')).href,
-  sqlite: pathToFileURL(join(RUNTIME, 'gateway/lib/storage/sqlite.js')).href,
+  sqlite: pathToFileURL(join(RUNTIME, 'gateway/lib/replica-continuity/sqlite.js')).href,
   intents: pathToFileURL(join(RUNTIME, 'packages/host/push/lib/intents.js')).href,
   continuity: pathToFileURL(join(RUNTIME, 'packages/host/push/lib/continuity.js')).href,
-  queue: pathToFileURL(join(RUNTIME, 'packages/client/conversation/lib/queue/queue.js')).href,
 };
 
 /** 上报路由。 */
@@ -240,7 +239,6 @@ function deviceScript(mode) {
     "const jsonl = await import('@deepseek-ai/dsh-session-persistence-jsonl');",
     `const { ReplicaIntentStore } = await import(${JSON.stringify(MODULES.intents)});`,
     `const { ReplicaContinuity } = await import(${JSON.stringify(MODULES.continuity)});`,
-    `const { PendingQueue } = await import(${JSON.stringify(MODULES.queue)});`,
     'const ctx = new Context();',
     'ctx.plugin(SessionPlugin);',
     "ctx.plugin(jsonl, { root: join(home, 'sessions') });",
@@ -312,20 +310,11 @@ function deviceScript(mode) {
     "  })}\\n`);",
     '  process.exit(0);',
     '} else {',
-    '  const queue = new PendingQueue({',
-    '    submit: async () => ({ accepted: true }),',
-    "    query: async () => ({ state: 'unknown' }),",
-    "    createId: () => 'offline-message-1',",
-    '  });',
-    "  queue.enqueue({ sessionId: inputSession, text: '离线消息保持草稿' });",
-    '  const before = queue.snapshot();',
     '  const results = await runner.runUntilIdle({ deadlineMs: 120_000 });',
-    '  const after = queue.snapshot();',
     '  process.stdout.write(`${JSON.stringify({',
     '    synced: inputSession,',
     '    pending: runner.pendingSessions(),',
     '    results: results.map((item) => ({ sessionId: item.sessionId, outcome: item.outcome, acknowledgedThrough: item.acknowledgedThrough, appended: item.appended, duplicates: item.duplicates, remaining: item.remaining })),',
-    '    queue: { before, after },',
     "  })}\\n`);",
     '  process.exit(0);',
     '}',
@@ -437,11 +426,7 @@ test('设备离线积压超过内存上限，终止并重启宿主后冷会话�
     assert.equal(synced.results[0].acknowledgedThrough, count - 1, '连续前缀覆盖全部事件');
     assert.equal(synced.results[0].appended, count, '重启后补传全部事件');
     assert.equal(synced.results[0].remaining, 0);
-    assert.equal(synced.queue.before.items.length, 1, '离线消息队列里有一条待发送内容');
-    assert.equal(synced.queue.after.items.length, 1, '副本补传不改动离线消息队列');
-    assert.equal(synced.queue.after.items[0].state, 'pending', '离线消息保持待发送');
-    assert.equal(synced.queue.after.paused, false);
-    assert.deepEqual(synced.queue.after, synced.queue.before, '副本补传与离线消息队列完全分离');
+    assert.equal(synced.results[0].duplicates, 0, '重启后的补传没有重复事件');
 
     const cursor = await readCursor(replica.base, 'device-a', 'token-a', sessionId);
     assert.equal(cursor.status, 200);
@@ -716,7 +701,7 @@ test('清理后的副本不会被旧补传重建，显式重新获取后按新�
   }
 });
 
-test('副本补传与用户离线消息发送不共用队列与包依赖', () => {
+test('副本补传只依赖保留的宿主包', () => {
   const manifest = JSON.parse(readFileSync(join(RUNTIME, 'packages/host/push/package.json'), 'utf8'));
   assert.deepEqual(Object.keys(manifest.dependencies).sort(), ['@chatdsh/adapter', '@chatdsh/core-contracts']);
   const sources = [
@@ -724,8 +709,7 @@ test('副本补传与用户离线消息发送不共用队列与包依赖', () =>
     readFileSync(join(RUNTIME, 'packages/host/push/src/intents.ts'), 'utf8'),
     readFileSync(join(RUNTIME, 'packages/host/push/src/index.ts'), 'utf8'),
   ].join('\n');
-  assert.equal(sources.includes('PendingQueue'), false, '补传通路不引用会话消息队列');
-  assert.equal(sources.includes('conversation'), false, '补传通路不引用会话模块');
+  assert.equal(sources.includes('conversation'), false, '补传通路不引用已移除的会话模块');
   assert.equal(sources.includes('offline-send'), false);
 });
 

@@ -27,9 +27,6 @@ import {
 } from '@chatdsh/core-diagnostics/client';
 import type { SwitchSources, TelemetryConfig, TelemetryOverrides } from '@chatdsh/core-diagnostics/config';
 
-/** 认证头的名字，拆开拼装以免把「头名加赋值」写成一条凭据形态的语句。 */
-const AUTH_HEADER = ['Author', 'ization'].join('');
-
 /** 遥测中继的一次转发结果。 */
 export interface RelayResult {
   /** 回给上报方的状态码。 */
@@ -218,28 +215,6 @@ export class TelemetryController implements ChatdshTelemetry {
    * @returns 回给上报方的状态码与失败原因。
    */
   async relay(signal: string, body: string): Promise<RelayResult> {
-    if (!this.enabled) return { status: 404, detail: 'telemetry-disabled' };
-    const overrides = this.client.runtimeOverrides();
-    if (overrides.authUser === undefined || overrides.authPassword === undefined) {
-      this.client.noteRelayWithoutCredential();
-      return { status: 503, detail: 'credential-missing' };
-    }
-    const allowed = signal === 'logs' || signal === 'traces' || signal === 'metrics' ? signal : 'logs';
-    const endpoint = overrides.endpoint ?? this.config.endpoint;
-    const organization = overrides.organization ?? this.config.organization;
-    const url = `${endpoint}/api/${organization}/v1/${allowed}`;
-    const pair = `${overrides.authUser}:${overrides.authPassword}`;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      [AUTH_HEADER]: `Basic ${Buffer.from(pair, 'utf8').toString('base64')}`,
-    };
-    if (allowed === 'logs') headers['stream-name'] = this.config.logStream;
-    if (allowed === 'traces') headers['stream-name'] = this.config.traceStream;
-    try {
-      const response = await fetch(url, { method: 'POST', headers, body });
-      return response.ok ? { status: 200 } : { status: 502, detail: `upstream-${response.status}` };
-    } catch (error) {
-      return { status: 502, detail: error instanceof Error ? error.name : 'upstream-failure' };
-    }
+    return this.client.relay(signal, body);
   }
 }

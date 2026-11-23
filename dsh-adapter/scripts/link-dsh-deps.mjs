@@ -13,7 +13,7 @@
 // 用法：node scripts/link-dsh-deps.mjs [--check]
 //   --check 只报告将建立的链接，不写入。
 
-import { mkdir, readdir, readFile, readlink, realpath, rm, stat, symlink } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, symlink } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -122,6 +122,25 @@ if (!CHECK) await mkdir(DEPS, { recursive: true });
 
 const tally = { created: 0, kept: 0, replaced: 0 };
 const notable = [];
+const expectedLinks = new Set(entries.map(([, linkPath]) => linkPath));
+if (await exists(DEPS)) {
+  const walk = async (dir) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        if (expectedLinks.has(full)) continue;
+        const info = await lstat(full);
+        if (!info.isSymbolicLink()) throw new Error(`拒绝清理非符号链接：${full}`);
+        if (!CHECK) await rm(full);
+        tally.replaced += 1;
+        notable.push(`${entry.name} -> 移除失效投影`);
+      } else if (entry.isDirectory()) {
+        await walk(full);
+      }
+    }
+  };
+  await walk(DEPS);
+}
 for (const [name, linkPath, target] of entries.sort(([a], [b]) => a.localeCompare(b))) {
   const outcome = await link(linkPath, target);
   tally[outcome] += 1;
