@@ -18,7 +18,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { tempHome } from './lib/cleanup.mjs';
 import { dshCommand } from './lib/dsh.mjs';
-import { findFreePort } from '../gateway/lib/runtime.js';
+import { findFreePort } from './lib/ports.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const PAIRING_CODE = randomBytes(9).toString('base64url');
@@ -114,6 +114,7 @@ const gateway = startProcess(process.execPath, [join(ROOT, 'gateway', 'lib', 'ma
   cwd: ROOT,
   env: {
     ...process.env,
+    DSH_HOME: root,
     CHATDSH_TELEMETRY: 'off',
     CHATDSH_GATEWAY_HOST: '127.0.0.1',
     CHATDSH_GATEWAY_PORT: String(controlPort),

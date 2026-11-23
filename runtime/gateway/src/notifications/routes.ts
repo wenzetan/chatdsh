@@ -451,6 +451,22 @@ export async function handleNotificationRequest(
       return true;
     }
 
+    if (suffix === '/vapid') {
+      if (method !== 'GET') {
+        sendJson(response, 405, { error: 'method-not-allowed' });
+        return true;
+      }
+      const span = context.telemetry.startSpan?.('chatdsh.gateway.notification.subscription', {
+        action: 'vapid',
+        outcome: 'pending',
+      });
+      const keys = context.store.vapidKeys();
+      span?.setAttribute('outcome', 'ok');
+      span?.end();
+      sendJson(response, 200, { publicKey: keys.publicKey, subject: keys.subject });
+      return true;
+    }
+
     if (suffix === '/probe') {
       if (method !== 'POST') {
         sendJson(response, 405, { error: 'method-not-allowed' });

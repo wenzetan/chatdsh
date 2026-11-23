@@ -10,10 +10,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { CHATDSH_ERROR_CODES, type NotificationDeliveryResult, type NotificationProbe, type PushSubscriptionView } from '@chatdsh/core-contracts';
-import type { DeliveryResult, NotificationSink, PushHub } from '../push.ts';
+import type { DeliveryResult, NotificationSink, PushHub, PushMode } from '../push.ts';
 import { createNotificationDelivery, type DeliveryTelemetry, type NotificationDelivery } from './delivery.ts';
 import type { NotificationIntent } from './intents.ts';
 import {
+  DEFAULT_NOTIFICATION_SETTINGS,
   NotificationStore,
   type NotificationInput,
   type NotificationRow,
@@ -38,6 +39,8 @@ export interface NotificationHostOptions {
   readonly telemetry: DeliveryTelemetry;
   /** 推送服务保留时长，单位秒。 */
   readonly ttlSeconds?: number;
+  /** 默认投递方式；与中继的推送模式一致。 */
+  readonly deliveryMode?: PushMode;
   /** 单次推送的超时，单位毫秒。 */
   readonly timeoutMs?: number;
   /** 去重抑制窗口，单位毫秒。 */
@@ -100,7 +103,10 @@ export interface NotificationHost extends NotificationSink {
  * @returns 通知宿主。
  */
 export function createNotificationHost(options: NotificationHostOptions): NotificationHost {
-  const store = new NotificationStore(options.database);
+  const store = new NotificationStore(options.database, {
+    ...DEFAULT_NOTIFICATION_SETTINGS,
+    ...(options.deliveryMode === undefined ? {} : { deliveryMode: options.deliveryMode }),
+  });
   const now = options.now ?? (() => Date.now());
   const subscriptionTtlMs = options.subscriptionTtlMs ?? SUBSCRIPTION_TTL_MS;
   const delivery = createNotificationDelivery({

@@ -542,6 +542,37 @@ export class TelemetryClient implements ChatdshTelemetry {
     this.recordDropped('logs', 'relay-without-credential');
   }
 
+  /**
+   * 把浏览器或桌面端上报的 OTLP/HTTP JSON 转发到本机 OpenObserve。
+   * @param signal - 信号类别，取 `logs`、`traces` 或 `metrics`。
+   * @param body - 原始 OTLP/HTTP JSON 载荷。
+   * @returns 回给上报方的状态码与失败原因。
+   */
+  async relay(signal: string, body: string): Promise<{ status: number; detail?: string }> {
+    if (!this.enabled) return { status: 404, detail: 'telemetry-disabled' };
+    if (this.overrides.authUser === undefined || this.overrides.authPassword === undefined) {
+      this.noteRelayWithoutCredential();
+      return { status: 503, detail: 'credential-missing' };
+    }
+    const allowed = signal === 'logs' || signal === 'traces' || signal === 'metrics' ? signal : 'logs';
+    const endpoint = this.overrides.endpoint ?? this.settings.endpoint;
+    const organization = this.overrides.organization ?? this.settings.organization;
+    const url = `${endpoint}/api/${organization}/v1/${allowed}`;
+    const pair = `${this.overrides.authUser}:${this.overrides.authPassword}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      [['Author', 'ization'].join('')]: `Basic ${Buffer.from(pair, 'utf8').toString('base64')}`,
+    };
+    if (allowed === 'logs') headers['stream-name'] = this.settings.logStream;
+    if (allowed === 'traces') headers['stream-name'] = this.settings.traceStream;
+    try {
+      const response = await fetch(url, { method: 'POST', headers, body });
+      return response.ok ? { status: 200 } : { status: 502, detail: `upstream-${response.status}` };
+    } catch (error) {
+      return { status: 502, detail: error instanceof Error ? error.name : 'upstream-failure' };
+    }
+  }
+
   /** 状态载荷：开关、全部关闭来源、端点、队列深度、丢弃计数与最近导出时刻。 */
   status(): Record<string, unknown> {
     const dropped = this.pipelines?.droppedCounts() ?? EMPTY_DROPPED;

@@ -47,6 +47,7 @@ const server = createGatewayServer({
   push,
   telemetry,
   deviceLink,
+  telemetryRelay: (signal, body) => telemetry.relay(signal, body),
 });
 
 push.start();

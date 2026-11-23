@@ -65,6 +65,14 @@ import { createNotificationHost, type NotificationHost } from './notifications/i
 import { createDeviceHost, DeviceLifecycle, DeviceTransportRegistry, PairingService, type DeviceHost } from './devices/index.ts';
 import { ReplicaContinuityStore } from './replica-continuity/store.ts';
 import { SqliteDatabase } from './replica-continuity/sqlite.ts';
+import {
+  PWA_ICON_PREFIX,
+  PWA_MANIFEST_PATH,
+  PWA_OFFLINE_PATH,
+  PWA_SERVICE_WORKER_PATH,
+  renderPwaIndexHtml,
+} from './pwa-page.ts';
+import { BROWSER_TELEMETRY_PATH, handleBrowserTelemetryRequest } from './browser-telemetry.ts';
 
 /** 服务实例。 */
 export interface GatewayServer {
@@ -83,20 +91,17 @@ interface HandlerContext {
   readonly push: PushHub;
   readonly telemetry: ChatdshTelemetry;
   readonly deviceLink: DeviceLinkHub;
+  readonly telemetryRelay?: (signal: string, body: string) => Promise<{ status: number; detail?: string }>;
 }
 
 const DEVICE_PROBE_PATH = /^\/chatdsh\/gateway\/devices\/([^/]+)\/probe$/;
 const DEVICE_PREFIX_PATH = /^\/d\/([^/]+)(\/.*)?$/;
 const DEVICE_PLUGINS_PATH = /^\/chatdsh\/gateway\/devices\/([^/]+)\/plugins$/;
 const DEVICE_HOST_PREFIX = '/chatdsh/gateway/devices/';
+const MOBILE_PAIR_PATH = '/chatdsh/gateway/mobile/pair';
 const NOTIFICATION_PREFIX = '/chatdsh/gateway/notifications';
 const ACCESS_PREFIX = '/chatdsh/access';
 const REPLICA_RETENTION_PATH = '/chatdsh/gateway/replica/retention';
-const PWA_MANIFEST_PATH = '/manifest.webmanifest';
-const PWA_SERVICE_WORKER_PATH = '/sw.js';
-const PWA_OFFLINE_PATH = '/offline.html';
-const PWA_ICON_PREFIX = '/assets/icons/';
-
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'keep-alive',
@@ -127,7 +132,9 @@ type EntryHandler = (request: IncomingMessage, response: ServerResponse) => Prom
 function routeOf(_method: string, path: string): string {
   if (path === '/healthz') return 'healthz';
   if (path === '/' || path === '/index.html') return 'pwa-index';
+  if (path === BROWSER_TELEMETRY_PATH) return 'browser-telemetry';
   if (path === MOBILE_TELEMETRY_PATH) return 'mobile-telemetry';
+  if (path === MOBILE_PAIR_PATH) return 'mobile-pair';
   if (path === '/chatdsh/gateway/mobile/devices') return 'mobile-devices';
   if (path === '/chatdsh/gateway/ownership') return 'ownership';
   if (path === '/chatdsh/gateway/settings') return 'settings';
@@ -220,129 +227,6 @@ function platformOf(request: IncomingMessage): string {
 function sameSecret(provided: string, expected: string): boolean {
   if (provided.length !== expected.length) return false;
   return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
-}
-
-function renderPwaIndexHtml(version: string): string {
-  return `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0e0e10" />
-  <link rel="manifest" href="${PWA_MANIFEST_PATH}" />
-  <title>ChatDSH 中继入口</title>
-  <style>
-    :root { color-scheme: dark; --bg:#0e0e10; --panel:#17181c; --line:#24262c; --ink:#f3f5f9; --muted:#9aa1ad; --brand:#4d6bfe; --ok:#3fb37f; --warn:#e8b04b; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: system-ui, -apple-system, sans-serif; background:var(--bg); color:var(--ink); }
-    header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--panel); }
-    header h1 { margin:0; font-size:15px; font-weight:600; }
-    header span { font-size:12px; color:var(--muted); }
-    main { max-width:960px; margin:0 auto; padding:18px; display:grid; gap:16px; }
-    .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; }
-    .card h2 { margin:0 0 10px; font-size:13px; color:var(--muted); font-weight:600; }
-    .row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 8px; border-top:1px solid var(--line); }
-    .row:first-of-type { border-top:0; }
-    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:8px; }
-    .online { background:var(--ok); }
-    .offline { background:var(--warn); }
-    a.btn, button.btn { background:var(--brand); color:#fff; border:0; border-radius:6px; padding:6px 12px; font-size:12px; text-decoration:none; cursor:pointer; }
-    button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
-    pre { margin:10px 0 0; padding:12px; background:#121317; border:1px solid var(--line); border-radius:6px; overflow:auto; max-height:420px; font-size:12px; color:#c7ccd6; white-space:pre-wrap; }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>ChatDSH</h1>
-    <span>Relay v${version}</span>
-  </header>
-  <main>
-    <section class="card" id="devices-section">
-      <h2>已连接设备</h2>
-      <div id="devices-list">加载中…</div>
-    </section>
-    <section class="card" id="sessions-section">
-      <h2>会话与离线只读副本</h2>
-      <div id="sessions-list">加载中…</div>
-    </section>
-    <section class="card" id="replica-section" hidden>
-      <h2 id="replica-title">只读副本</h2>
-      <pre id="replica-body"></pre>
-    </section>
-  </main>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('${PWA_SERVICE_WORKER_PATH}').catch(() => undefined);
-    }
-    async function load() {
-      const [devRes, sesRes] = await Promise.all([
-        fetch('/chatdsh/gateway/devices'),
-        fetch('/chatdsh/gateway/sessions'),
-      ]);
-      const devData = await devRes.json();
-      const sesData = await sesRes.json();
-      const devEl = document.getElementById('devices-list');
-      devEl.innerHTML = '';
-      if (!devData.devices || devData.devices.length === 0) {
-        devEl.textContent = '暂无已配对设备';
-      } else {
-        for (const d of devData.devices) {
-          const row = document.createElement('div');
-          row.className = 'row';
-          const left = document.createElement('div');
-          const dot = document.createElement('span');
-          dot.className = 'dot ' + (d.online ? 'online' : 'offline');
-          left.append(dot, d.name + ' (' + d.platform + ')');
-          row.append(left);
-          if (d.online) {
-            const link = document.createElement('a');
-            link.className = 'btn';
-            link.href = '/d/' + encodeURIComponent(d.id) + '/';
-            link.textContent = '打开设备 DSH';
-            row.append(link);
-          } else {
-            const tag = document.createElement('span');
-            tag.style.color = '#9aa1ad';
-            tag.style.fontSize = '12px';
-            tag.textContent = '离线';
-            row.append(tag);
-          }
-          devEl.append(row);
-        }
-      }
-      const sesEl = document.getElementById('sessions-list');
-      sesEl.innerHTML = '';
-      const rows = [];
-      for (const group of (sesData.devices || [])) {
-        for (const s of (group.sessions || [])) rows.push({ group, s });
-      }
-      if (rows.length === 0) {
-        sesEl.textContent = '暂无同步会话';
-      } else {
-        for (const { group, s } of rows) {
-          const row = document.createElement('div');
-          row.className = 'row';
-          const left = document.createElement('div');
-          left.textContent = s.title + ' · ' + group.name + (group.online ? '' : '（离线副本）');
-          const btn = document.createElement('button');
-          btn.className = 'btn ghost';
-          btn.textContent = '查看副本';
-          btn.onclick = async () => {
-            const r = await fetch('/chatdsh/gateway/replica?sessionId=' + encodeURIComponent(s.sessionId));
-            const data = await r.json();
-            document.getElementById('replica-section').hidden = false;
-            document.getElementById('replica-title').textContent = s.title + '（只读副本，共 ' + (data.events || []).length + ' 条事件）';
-            document.getElementById('replica-body').textContent = JSON.stringify(data.events || [], null, 2);
-          };
-          row.append(left, btn);
-          sesEl.append(row);
-        }
-      }
-    }
-    void load();
-  </script>
-</body>
-</html>`;
 }
 
 const ACCESS_STATUS_PATH = `${ACCESS_PREFIX}/status`;
@@ -863,7 +747,12 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
   const accessCsrfKey = deriveAccessKey(accessMasterKey, 'csrf');
   const cursorKey = createHmac('sha256', accessMasterKey).update('chatdsh/gateway/cursor/v1', 'utf8').digest();
   const continuityStore = new ReplicaContinuityStore(new SqliteDatabase(store.handle()));
-  const notifications: NotificationHost = createNotificationHost({ database: store.handle(), push, telemetry });
+  const notifications: NotificationHost = createNotificationHost({
+    database: store.handle(),
+    push,
+    telemetry,
+    deliveryMode: config.pushMode,
+  });
   const pwaModule = loadWorkspaceModule('../../packages/client/pwa/lib/index.js');
   const pwaIconRoot = new URL('../../packages/client/pwa/assets/icons/', import.meta.url);
   let pwaContent: PwaContent | undefined;
@@ -1149,13 +1038,26 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
       }
 
       if (route === 'pwa-index') {
-        const html = renderPwaIndexHtml(config.version);
+        const html = renderPwaIndexHtml({ version: config.version, deviceId: device.id });
         response.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Content-Length': Buffer.byteLength(html),
           'Cache-Control': 'no-store',
         });
         response.end(html);
+        return;
+      }
+
+      if (route === 'browser-telemetry') {
+        await handleBrowserTelemetryRequest({
+          telemetry,
+          origin: publicOrigin(),
+          ...(context.telemetryRelay === undefined ? {} : { relay: {
+            enabled: telemetry.enabled,
+            reason: telemetry.reason,
+            relay: context.telemetryRelay,
+          } }),
+        }, request, response);
         return;
       }
 
@@ -1295,6 +1197,70 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
 
       if (route === 'mobile-telemetry') {
         await handleMobileTelemetryRequest({ request, response, store, telemetry, relay: mobileRelay });
+        return;
+      }
+
+      if (route === 'mobile-pair') {
+        await telemetry.runSpan('chatdsh.gateway.mobile.pairing', {}, async (span) => {
+          const reject = (status: number, errorType: string, errorCode: string): void => {
+            span.setAttribute('outcome', 'rejected');
+            span.setAttribute('error.type', errorType);
+            span.setAttribute('error.code', errorCode);
+            telemetry.event('chatdsh.gateway.mobile.rejected', {
+              action: 'pair',
+              outcome: 'rejected',
+              'error.type': errorType,
+              'error.code': errorCode,
+            });
+            telemetry.counter('chatdsh_mobile_devices_total', { description: '手机设备管理操作' })
+              .add(1, { action: 'pair', outcome: 'rejected' });
+            sendJson(response, status, { error: errorCode });
+          };
+          if (request.method !== 'POST') {
+            reject(405, 'request', 'method-not-allowed');
+            return;
+          }
+          const expected = config.pairingCode;
+          if (expected === undefined) {
+            reject(404, 'config', 'pairing-disabled');
+            return;
+          }
+          const body = await readLimitedBody(request, 64 * 1024);
+          if (body === undefined) {
+            reject(413, 'request', 'payload-too-large');
+            return;
+          }
+          let payload: { code?: unknown; deviceName?: unknown; name?: unknown; platform?: unknown };
+          try {
+            payload = JSON.parse(body) as typeof payload;
+          } catch {
+            reject(400, 'payload', 'invalid-json');
+            return;
+          }
+          if (typeof payload.code !== 'string' || !sameSecret(payload.code, expected)) {
+            reject(401, 'auth', 'pairing-code-invalid');
+            return;
+          }
+          const platform = typeof payload.platform === 'string' && payload.platform.trim() !== ''
+            ? payload.platform.trim().slice(0, 32)
+            : 'mobile';
+          const nameValue = typeof payload.deviceName === 'string'
+            ? payload.deviceName
+            : (typeof payload.name === 'string' ? payload.name : '');
+          const deviceName = nameValue.trim() === '' ? platform : nameValue.trim().slice(0, 80);
+          const token = randomBytes(32).toString('base64url');
+          const record = store.registerMobileDevice({
+            id: randomUUID(),
+            name: deviceName,
+            platform,
+            tokenHash: deviceTokenHash(token),
+          });
+          span.setAttribute('outcome', 'paired');
+          telemetry.counter('chatdsh_mobile_devices_total', { description: '手机设备管理操作' })
+            .add(1, { action: 'pair', outcome: 'ok' });
+          response.setHeader('Cache-Control', 'no-store');
+          sendJson(response, 200, { deviceId: record.id, token });
+        });
         return;
       }
 
@@ -1559,6 +1525,15 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
             watermark: result.watermark,
             appended: events.length,
           }));
+          const approvalCallIdOf = (requestId: string): string => {
+            if (requestId === '') return '';
+            for (const stored of replica.read(sessionId)) {
+              if (stored.kind !== 'approval/asked') continue;
+              if (approvalIdOf(stored.payload) !== requestId) continue;
+              return approvalInfoOf(stored.payload).callId;
+            }
+            return '';
+          };
           for (const event of events) {
             if (event.kind === 'approval/asked') {
               const asked = approvalInfoOf(event.payload);
@@ -1566,7 +1541,8 @@ export function createGatewayServer(context: HandlerContext): GatewayServer {
             }
             if (event.kind === 'approval/decided') {
               const decided = approvalInfoOf(event.payload);
-              push.withdraw(sessionId, decided.callId);
+              const callId = decided.callId === '' ? approvalCallIdOf(approvalIdOf(event.payload)) : decided.callId;
+              push.withdraw(sessionId, callId);
             }
           }
           sendJson(response, 200, result);
@@ -1831,6 +1807,13 @@ function approvalInfoOf(payload: unknown): { toolName: string; callId: string } 
   const toolName = typeof record.toolName === 'string' ? record.toolName : (typeof record.request?.toolName === 'string' ? record.request.toolName : '');
   const callId = typeof record.callId === 'string' ? record.callId : (typeof record.request?.callId === 'string' ? record.request.callId : '');
   return { toolName, callId };
+}
+
+function approvalIdOf(payload: unknown): string {
+  if (typeof payload !== 'object' || payload === null) return '';
+  const record = payload as { id?: unknown; request?: { id?: unknown } };
+  if (typeof record.id === 'string') return record.id;
+  return typeof record.request?.id === 'string' ? record.request.id : '';
 }
 
 function normalizeEvents(value: unknown): { seq: number; kind: string; time: number; bytes: number; payload?: unknown }[] | undefined {

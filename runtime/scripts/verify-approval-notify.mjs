@@ -14,7 +14,7 @@ import { get } from 'node:http';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { tempHome } from './lib/cleanup.mjs';
-import { findFreePort } from '../gateway/lib/runtime.js';
+import { findFreePort } from './lib/ports.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const failures = [];
@@ -70,6 +70,14 @@ function openConnection(port, deviceId) {
   });
 }
 
+/** 从一条 SSE 数据里取出审批项；兼容原始审批事件与通知批次。 */
+function approvalItemsOf(raw) {
+  const event = JSON.parse(raw);
+  if (event.kind === 'approval') return [event];
+  if (event.kind !== 'notification' || !Array.isArray(event.items)) return [];
+  return event.items.filter((item) => item.kind === 'approval');
+}
+
 /** 向副本上报端点推一批事件。 */
 async function reportEvents(base, deviceId, sessionId, events) {
   const response = await fetch(`${base}/chatdsh/gateway/replica`, {
@@ -89,6 +97,7 @@ const gateway = startProcess(process.execPath, [join(ROOT, 'gateway', 'lib', 'ma
   cwd: ROOT,
   env: {
     ...process.env,
+    DSH_HOME: home,
     CHATDSH_TELEMETRY: 'off',
     CHATDSH_GATEWAY_HOST: '127.0.0.1',
     CHATDSH_GATEWAY_PORT: String(port),
@@ -126,8 +135,10 @@ try {
     { seq: 1, kind: 'approval/asked', time: Date.now(), bytes: 1, payload: { toolName: 'bash', callId, reason: '需要执行命令' } },
   ]);
   const noticed = await waitFor(async () => {
-    const hit = online.received.map((raw) => JSON.parse(raw)).find((item) => item.kind === 'approval');
-    return hit === undefined ? { ok: false, detail: `收到 ${online.received.length} 条` } : { ok: true, detail: hit };
+    const hit = online.received.flatMap(approvalItemsOf)[0];
+    return hit === undefined
+      ? { ok: false, detail: `收到 ${online.received.length} 条：${JSON.stringify(online.received.map((raw) => JSON.parse(raw).kind))}` }
+      : { ok: true, detail: hit };
   }, 10_000);
   check(noticed.ok, '断言一：approval/asked 进副本后在线设备收到审批提醒', JSON.stringify(noticed.detail));
 
@@ -146,8 +157,8 @@ try {
   connections.push(back);
   await new Promise((settle) => setTimeout(settle, 500));
   const withdrew = await waitFor(async () => {
-    const approval = back.received.map((raw) => JSON.parse(raw)).filter((item) => item.kind === 'approval');
-    const stillThere = approval.some((item) => item.callId === pendingCallId);
+    const approval = back.received.flatMap(approvalItemsOf);
+    const stillThere = approval.some((item) => (item.callId ?? item.objectId) === pendingCallId);
     return stillThere ? { ok: false, detail: `撤回的提醒仍被补发：${JSON.stringify(approval)}` } : { ok: true, detail: `重连后收到 ${approval.length} 条审批提醒，撤回的那条没有补发` };
   }, 5_000);
   check(withdrew.ok, '断言二：approval/decided 撤回尚未投递的提醒，重连后不再补发', withdrew.detail);
