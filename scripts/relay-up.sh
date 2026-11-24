@@ -501,6 +501,22 @@ validate_bind_host() {
   printf '%s' "$host"
 }
 
+remove_conflicting_container() {
+  local container_name="$1"
+  local target_project="$2"
+  local existing_line
+  existing_line="$(docker ps -a --filter "name=^/${container_name}$" --format '{{.ID}}	{{.Label "com.docker.compose.project"}}	{{.Label "com.docker.compose.service"}}' | head -n 1 || true)"
+  [ -n "$existing_line" ] || return 0
+  local existing_id="${existing_line%%$'\t'*}"
+  local rest="${existing_line#*$'\t'}"
+  local existing_project="${rest%%$'\t'*}"
+  local existing_service="${rest#*$'\t'}"
+  if [ -n "$existing_id" ] && { [ "$existing_project" != "$target_project" ] || [ "$existing_service" != "relay" ]; }; then
+    printf '检测到已存在的同名容器 %s（原项目：%s），正在移除以便重建...\n' "$container_name" "${existing_project:-独立容器}"
+    docker rm -f "$existing_id" >/dev/null
+  fi
+}
+
 main() {
   local work_dir="$DEFAULT_WORK_DIR"
   local has_dir_arg=0
@@ -662,8 +678,20 @@ main() {
   local compose_build_file="${work_dir}/docker-compose.build.yml"
 
   if [ "$STANDALONE_MODE" -eq 1 ]; then
+    if [ -z "$SCRIPT_SOURCE" ] || [ "$SCRIPT_SOURCE" = "/dev/stdin" ] || [ ! -f "$SCRIPT_SOURCE" ]; then
+      update_scripts=1
+    fi
     ensure_standalone_files "$work_dir" "$update_scripts"
   fi
+
+  local compose_project="${COMPOSE_PROJECT_NAME:-${CHATDSH_COMPOSE_PROJECT:-chatdsh}}"
+  local existing_container_name=""
+  if [ -f "$env_file" ]; then
+    existing_container_name="$(read_env_value "$env_file" CHATDSH_RELAY_CONTAINER_NAME)"
+  fi
+  local container_name
+  container_name="$(trim "${CHATDSH_RELAY_CONTAINER_NAME:-${existing_container_name:-chatdsh-relay}}")"
+  [ -n "$container_name" ] || container_name="chatdsh-relay"
 
   if [ "$disable_pairing" -eq 1 ] && [ "$rotate_pairing_code" -eq 1 ]; then
     printf '%s\n' '--disable-pairing 与 --rotate-pairing-code 不能同时使用' >&2
@@ -678,7 +706,8 @@ main() {
     upsert_env_file "$env_file" "CHATDSH_PAIRING_CODE="
     printf '已清空 %s 中的 CHATDSH_PAIRING_CODE，新设备配对入口已关闭。\n' "$env_file"
     if [ "$prepare_only" -eq 0 ]; then
-      (cd "$work_dir" && docker compose --env-file "$env_file" -f "$compose_file" up -d --no-build)
+      remove_conflicting_container "$container_name" "$compose_project"
+      (cd "$work_dir" && docker compose -p "$compose_project" --env-file "$env_file" -f "$compose_file" up -d --no-build --force-recreate)
       printf '%s\n' '已更新中继容器，/chatdsh/gateway/devices/pair 现返回 404 pairing-disabled。'
     fi
     return 0
@@ -821,12 +850,15 @@ main() {
       printf '当前目录 %s 缺少 Dockerfile 或 docker-compose.build.yml，无法执行 --build\n' "$work_dir" >&2
       return 1
     fi
-    (cd "$work_dir" && docker compose --env-file "$env_file" -f "$compose_file" -f "$compose_build_file" up -d --build)
+    (cd "$work_dir" && docker compose -p "$compose_project" --env-file "$env_file" -f "$compose_file" -f "$compose_build_file" build)
+    remove_conflicting_container "$container_name" "$compose_project"
+    (cd "$work_dir" && docker compose -p "$compose_project" --env-file "$env_file" -f "$compose_file" -f "$compose_build_file" up -d --no-build --force-recreate)
   else
     if [ "$no_pull" -eq 0 ]; then
-      (cd "$work_dir" && docker compose --env-file "$env_file" -f "$compose_file" pull)
+      (cd "$work_dir" && docker compose -p "$compose_project" --env-file "$env_file" -f "$compose_file" pull)
     fi
-    (cd "$work_dir" && docker compose --env-file "$env_file" -f "$compose_file" up -d)
+    remove_conflicting_container "$container_name" "$compose_project"
+    (cd "$work_dir" && docker compose -p "$compose_project" --env-file "$env_file" -f "$compose_file" up -d --force-recreate)
   fi
 
   local health_url="http://${bind_host}:${bind_port}/healthz"

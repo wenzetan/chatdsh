@@ -94,9 +94,10 @@ main() {
     env_file="${work_dir}/.env"
   fi
 
-  local compose_args=(compose -f "$compose_file")
+  local compose_project="${COMPOSE_PROJECT_NAME:-${CHATDSH_COMPOSE_PROJECT:-chatdsh}}"
+  local compose_args=(compose -p "$compose_project" -f "$compose_file")
   if [ -f "$env_file" ]; then
-    compose_args=(compose --env-file "$env_file" -f "$compose_file")
+    compose_args=(compose -p "$compose_project" --env-file "$env_file" -f "$compose_file")
   fi
 
   (cd "$work_dir" && docker "${compose_args[@]}" exec -T relay node gateway/lib/pairing-admin.js "${args[@]}")
