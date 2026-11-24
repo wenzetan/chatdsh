@@ -27,6 +27,7 @@ export interface PairPayload {
 /** 本机身份响应。 */
 export interface IdentityPayload {
   readonly deviceId: string;
+  readonly controlUrl?: string;
 }
 
 /** 遥测状态响应里本插件读取的字段。 */

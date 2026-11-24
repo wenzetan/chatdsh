@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { test } from 'node:test';
 import { relayMode } from '../../packages/client/remote/lib/client/control-url.js';
 import { RemoteGateway, relayRequestOf } from '../../packages/client/remote/lib/client/api.js';
+import { RemoteController } from '../../packages/client/remote/lib/client/controller.js';
 import { createRemoteTelemetry } from '../../packages/client/remote/lib/client/telemetry.js';
 
 const TRACE = '00-11111111111111111111111111111111-2222222222222222-01';
@@ -131,6 +132,88 @@ test('identity 与遥测状态始终走宿主同源端点', async () => {
     assert.ok(requests.some((entry) => entry.url === '/chatdsh/telemetry/status'));
     assert.equal(requests.some((entry) => entry.url === '/chatdsh/gateway/devices'), false);
   } finally {
+    server.closeAllConnections();
+    await new Promise((done) => server.close(done));
+  }
+});
+
+test('本机 DSH Web 首次打开未手动填写中继地址时自动从宿主 identity 发现中继并经本机代理连通', async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push({ url: request.url ?? '', headers: request.headers });
+    if (request.url === '/chatdsh/telemetry/browser') {
+      request.resume();
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    if (request.url === '/chatdsh/device/identity') {
+      const body = JSON.stringify({ deviceId: 'device-node-a', controlUrl: 'https://relay.example' });
+      response.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+      response.end(body);
+      return;
+    }
+    if (request.url === '/chatdsh/device/relay/devices') {
+      const body = JSON.stringify({
+        devices: [{ id: 'device-node-a', name: 'node-a', platform: 'linux', online: true, lastSeenAt: 1000 }],
+      });
+      response.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+      response.end(body);
+      return;
+    }
+    if (request.url === '/chatdsh/device/relay/sessions') {
+      const body = JSON.stringify({
+        devices: [{
+          deviceId: 'device-node-a',
+          name: 'node-a',
+          platform: 'linux',
+          online: true,
+          lastSeenAt: 1000,
+          sessions: [{ sessionId: 's-1', title: '远程会话', updatedAt: 1000, cwd: '', workspaceName: 's-1', kind: 'work' }],
+        }],
+      });
+      response.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) });
+      response.end(body);
+      return;
+    }
+    response.writeHead(404);
+    response.end();
+  });
+  await new Promise((done, fail) => {
+    server.once('error', fail);
+    server.listen(0, '127.0.0.1', done);
+  });
+  const address = server.address();
+  const port = typeof address === 'object' && address !== null ? address.port : 0;
+  const origin = `http://127.0.0.1:${port}`;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    const target = typeof input === 'string' && input.startsWith('/') ? `${origin}${input}` : input;
+    return originalFetch(target, init);
+  };
+  const telemetry = createRemoteTelemetry({
+    relayPath: () => `${origin}/chatdsh/telemetry/browser`,
+  });
+  const controller = new RemoteController(
+    { remote: { $host: {} } },
+    telemetry,
+    { pathname: () => '/', origin: () => origin },
+  );
+  try {
+    await controller.refresh();
+    const snap = controller.getSnapshot();
+    assert.equal(snap.relay.state, 'connected');
+    assert.equal(snap.devices.length, 1);
+    assert.equal(snap.devices[0].id, 'device-node-a');
+    assert.equal(snap.sessions.length, 1);
+    assert.equal(snap.settings.controlUrl, 'https://relay.example');
+    assert.equal(snap.settings.identity, 'device-node-a');
+    assert.equal(requests.some((entry) => entry.url === '/chatdsh/gateway/devices'), false);
+    const relayed = requests.find((entry) => entry.url === '/chatdsh/device/relay/devices');
+    assert.equal(relayed?.headers['x-chatdsh-control-url'], 'https://relay.example');
+  } finally {
+    controller.dispose();
+    globalThis.fetch = originalFetch;
     server.closeAllConnections();
     await new Promise((done) => server.close(done));
   }

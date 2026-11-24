@@ -63,6 +63,7 @@ export class RemoteController {
   private replicaEvents: readonly ReplicaEvent[] = [];
   private overviewStarted = false;
   private settingsStarted = false;
+  private hostControlUrlProbed = false;
   private refreshGeneration = 0;
   private settingsGeneration = 0;
   private replicaGeneration = 0;
@@ -143,6 +144,8 @@ export class RemoteController {
     this.overviewStarted = true;
     this.patch({ loadingOverview: true, overviewError: null, relay: { state: 'checking' } });
     try {
+      await this.resolveHostControlUrl();
+      if (generation !== this.refreshGeneration) return;
       const [devices, sessions] = await Promise.all([this.gateway.devices(), this.gateway.sessions()]);
       if (generation !== this.refreshGeneration) return;
       const overview = buildOverview(devices.devices, sessions.devices);
@@ -298,6 +301,7 @@ export class RemoteController {
       this.telemetry.failure('controlUrl.save', error);
       return;
     }
+    this.hostControlUrlProbed = true;
     this.controlUrlValue = normalized;
     writeControlUrl(normalized);
     this.patch({
@@ -357,9 +361,43 @@ export class RemoteController {
     for (const listener of this.listeners) listener();
   }
 
+  private async resolveHostControlUrl(): Promise<void> {
+    if (this.hostControlUrlProbed || this.controlUrlValue !== '' || this.hostBase() !== '') return;
+    this.hostControlUrlProbed = true;
+    try {
+      const payload = await this.gateway.identity();
+      const rawControlUrl = typeof payload.controlUrl === 'string' ? payload.controlUrl.trim() : '';
+      if (rawControlUrl === '') return;
+      const normalized = normalizeControlUrl(rawControlUrl);
+      if (normalized === '' || this.controlUrlValue !== '') return;
+      this.controlUrlValue = normalized;
+      this.patch({
+        settings: {
+          ...this.snapshotValue.settings,
+          controlUrl: normalized,
+          identity: payload.deviceId,
+          identityError: null,
+        },
+      });
+    } catch {
+      // 未配对宿主返回 404 等失败时保持空地址，由后续中继读取统一报告未连接原因。
+    }
+  }
+
   private async readIdentity(): Promise<SettingRead<string>> {
     try {
       const payload = await this.gateway.identity();
+      if (this.controlUrlValue === '' && typeof payload.controlUrl === 'string' && payload.controlUrl.trim() !== '') {
+        try {
+          const normalized = normalizeControlUrl(payload.controlUrl);
+          if (normalized !== '') {
+            this.controlUrlValue = normalized;
+            this.patch({ settings: { ...this.snapshotValue.settings, controlUrl: normalized } });
+          }
+        } catch {
+          // 宿主返回的中继地址不合法时忽略，保留当前界面配置。
+        }
+      }
       return { value: payload.deviceId, error: null };
     } catch (error) {
       if (this.statusOf(error) === 404) return { value: null, error: 'not-found' };

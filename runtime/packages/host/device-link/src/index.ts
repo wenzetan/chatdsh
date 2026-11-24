@@ -119,7 +119,12 @@ export class ChatdshDeviceLinkService extends Service {
         kind: 'exact',
         path: IDENTITY_PATH,
         handler: (_request, response) => {
-          const body = JSON.stringify({ deviceId: this.config.deviceId });
+          const controlUrl = this.config.controlUrl.trim();
+          const body = JSON.stringify(
+            controlUrl === ''
+              ? { deviceId: this.config.deviceId }
+              : { deviceId: this.config.deviceId, controlUrl },
+          );
           response.writeHead(200, {
             'Content-Type': 'application/json; charset=utf-8',
             'Content-Length': Buffer.byteLength(body),

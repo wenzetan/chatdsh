@@ -141,6 +141,7 @@ runtime/e2e/unit/device-link-v2.test.mjs:chatdsh-provider-credential:243
 #     该行随上下文插入而下移，历史提交里在 240 行，当前文件里在 247 行，两处都登记。
 runtime/packages/client/remote/src/client/controller.ts:chatdsh-private-hostname:240
 runtime/packages/client/remote/src/client/controller.ts:chatdsh-private-hostname:247
+runtime/packages/client/remote/src/client/controller.ts:chatdsh-private-hostname:250
 # 报告迁移到 runtime/docs/reports/ 后的同一行指纹。
 runtime/docs/reports/P03-REPORT.md:chatdsh-private-hostname:96
 # 历史提交中该报告尚未迁移目录时的同一行指纹（宿主主目录字段说明，不含网络位置）。

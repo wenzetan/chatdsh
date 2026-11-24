@@ -376,12 +376,15 @@ test('没有节点令牌时设备链路服务仍然注册代理端点', { timeou
         return { ok: false, detail: '服务尚未监听' };
       }
     }, 10_000, '设备运行时服务');
-    ctx.plugin(ChatdshDeviceLinkService, { controlUrl: gateway.url, deviceId: '', reconnectMaxMs: 1000 });
+    ctx.plugin(ChatdshDeviceLinkService, { controlUrl: gateway.url, deviceId: 'dev-identity-check', reconnectMaxMs: 1000 });
     const response = await waitFor(async () => {
       const reply = await fetch(`${origin}${RELAY_DEVICES_PATH}`).catch(() => undefined);
       return { ok: reply?.status === 200, value: reply, detail: reply?.status ?? '不可达' };
     }, 30_000, '无令牌时的代理端点');
     assert.deepEqual(await response.json(), await jsonOf(`${gateway.url}/chatdsh/gateway/devices`));
+    const identityRes = await fetch(`${origin}/chatdsh/device/identity`);
+    assert.equal(identityRes.status, 200);
+    assert.deepEqual(await identityRes.json(), { deviceId: 'dev-identity-check', controlUrl: gateway.url });
   } finally {
     await ctx.fiber.dispose();
     if (previousToken === undefined) delete process.env.CHATDSH_NODE_TOKEN;
