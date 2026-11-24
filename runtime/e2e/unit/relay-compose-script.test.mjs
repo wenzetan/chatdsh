@@ -122,7 +122,10 @@ test('relay-up.sh 支持自动生成口令、二次复用、脱敏输出、轮�
     assert.equal(parsed1.get('CHATDSH_PAIRING_APPROVAL'), 'required');
     assert.equal(parsed1.get('CHATDSH_RELAY_IMAGE'), 'ghcr.io/wenzetan/chatdsh-relay:latest');
     assert.match(code, /^[A-Za-z0-9_-]{32}$/);
+    assert.ok(first.stdout.includes('Linux / macOS（Shell）'));
     assert.ok(first.stdout.includes('curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay https://relay.example.com'));
+    assert.ok(first.stdout.includes('Windows（PowerShell，供 Windows 客户端使用）'));
+    assert.ok(first.stdout.includes('& ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.ps1))) -Relay https://relay.example.com'));
     assert.ok(first.stdout.includes(code));
     assert.ok(first.stdout.includes('bash scripts/relay-approve.sh'));
     assert.ok(first.stdout.includes('--print-join-command'));
@@ -466,6 +469,7 @@ test('远程免克隆模式：relay-up.sh 自动拉取 compose 与脚本，pack-
     assert.equal(existsSync(join(relayDir, '.env')), true);
     assert.equal(statSync(join(relayDir, '.env')).mode & 0o777, 0o600);
     assert.ok(relayRes.stdout.includes(`curl -fsSL ${rawBase}/scripts/device-join.sh | bash -s -- --relay https://relay.example.com`), relayRes.stdout);
+    assert.ok(relayRes.stdout.includes(`& ([scriptblock]::Create((irm ${rawBase}/scripts/device-join.ps1))) -Relay https://relay.example.com`), relayRes.stdout);
     assert.ok(relayRes.stdout.includes(join(relayDir, 'relay-approve.sh')), relayRes.stdout);
 
     // 4. 通过 POSIX sh 执行 `curl -fsSL ... | bash -s -- --install-only` 下载归档、校验 SHA-256 并真实装入 DSH web profile

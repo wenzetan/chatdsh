@@ -118,7 +118,7 @@ for (const pkg of manifest.packages) {
   if (!fs.existsSync(tarballPath)) {
     throw new Error('缺少插件包产物：' + tarballPath);
   }
-  doc.setIn(['overrides', pkg.name], 'file:' + tarballPath);
+  doc.setIn(['overrides', pkg.name], 'file:' + tarballPath.split(path.sep).join('/'));
 }
 fs.writeFileSync(workspaceFile, String(doc), 'utf8');
 `;

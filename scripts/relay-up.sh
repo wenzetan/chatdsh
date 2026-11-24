@@ -45,6 +45,7 @@ print_help() {
   --domain <域名或 origin>  指定对外访问域名（未指定且 .env 未保存时会通过命令行询问，必填）
   --reconfigure             重新询问并更新对外域名（已保存的配对口令保持复用）
   --print-join-command      打印设备一行接入命令（读取已保存的 .env，不重启容器）
+  --check-update            只读检查本机中继容器镜像与远端预构建镜像是否有版本更新（不修改配置、不重启容器）
   --redact-secrets          脱敏输出模式：不向标准输出打印配对口令与真实域名（供 AI Agent 调用）
   --disable-pairing         清空 .env 中的配对口令并重启容器，关闭新设备配对入口（返回 404）
   --rotate-pairing-code     重新生成随机配对口令并重启容器，旧口令立即失效
@@ -453,7 +454,10 @@ print_join_instructions() {
   approve_cmd="$(relay_script_invocation "$work_dir" relay-approve.sh)"
   printf '\n'
   printf '%s\n' '在需要接入的设备上执行以下一行命令（免克隆仓库，自动从 GitHub Releases 下载插件归档并校验 SHA-256、交互静默输入口令、等待审批并启动 DSH）：'
-  printf '  curl -fsSL %s/scripts/device-join.sh | bash -s -- --relay %s\n' "$RAW_BASE" "$(shell_quote "$public_url")"
+  printf '%s\n' '  Linux / macOS（Shell）：'
+  printf '    curl -fsSL %s/scripts/device-join.sh | bash -s -- --relay %s\n' "$RAW_BASE" "$(shell_quote "$public_url")"
+  printf '%s\n' '  Windows（PowerShell，供 Windows 客户端使用）：'
+  printf '    & ([scriptblock]::Create((irm %s/scripts/device-join.ps1))) -Relay %s\n' "$RAW_BASE" "$(shell_quote "$public_url")"
   printf '%s\n' '按提示输入下方配对口令（仅用于提交配对申请，仍需中继管理员审批才会放行）：'
   printf '  %s\n' "$pairing_code"
   printf '\n'
@@ -517,6 +521,102 @@ remove_conflicting_container() {
   fi
 }
 
+compute_sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 -r | awk '{print $1}'
+  else
+    return 1
+  fi
+}
+
+check_relay_update() {
+  local container_name="$1"
+  local target_image="$2"
+  local ps_line
+  ps_line="$(docker ps -a --filter "name=^/${container_name}$" --format '{{.ID}}	{{.Image}}	{{.Status}}' | head -n 1 || true)"
+  if [ -z "$ps_line" ]; then
+    printf 'STATUS=not-installed\n'
+    printf 'CONTAINER=%s\n' "$container_name"
+    printf 'TARGET_IMAGE=%s\n' "$target_image"
+    return 0
+  fi
+
+  local running_img_id
+  running_img_id="$(docker container inspect --format '{{.Image}}' "$container_name" 2>/dev/null || true)"
+  local running_status="${ps_line##*$'\t'}"
+  local local_meta=""
+  local local_id=""
+  local local_digests=""
+  local local_created=""
+  if [ -n "$running_img_id" ]; then
+    local_meta="$(docker image inspect --format '{{.Id}}	{{join .RepoDigests ","}}	{{.Created}}' "$running_img_id" 2>/dev/null || true)"
+    local_id="${local_meta%%$'\t'*}"
+    local rest_meta="${local_meta#*$'\t'}"
+    local_digests="${rest_meta%%$'\t'*}"
+    local_created="${rest_meta#*$'\t'}"
+  fi
+
+  local raw_manifest=""
+  if docker buildx version >/dev/null 2>&1; then
+    raw_manifest="$(docker buildx imagetools inspect --raw "$target_image" 2>/dev/null || true)"
+  fi
+  if [ -z "$raw_manifest" ]; then
+    raw_manifest="$(docker manifest inspect "$target_image" 2>/dev/null || true)"
+  fi
+
+  if [ -z "$raw_manifest" ]; then
+    printf 'STATUS=unknown\n'
+    printf 'REASON=remote-manifest-unavailable\n'
+    printf 'CONTAINER=%s\n' "$container_name"
+    printf 'CONTAINER_STATUS=%s\n' "$running_status"
+    printf 'TARGET_IMAGE=%s\n' "$target_image"
+    printf 'LOCAL_IMAGE_ID=%s\n' "$local_id"
+    printf 'LOCAL_CREATED=%s\n' "$local_created"
+    return 0
+  fi
+
+  local remote_index_hash=""
+  remote_index_hash="$(printf '%s' "$raw_manifest" | compute_sha256_stdin || true)"
+  local remote_index_digest=""
+  if [ -n "$remote_index_hash" ]; then
+    remote_index_digest="sha256:${remote_index_hash}"
+  fi
+
+  local arch_name
+  case "$(uname -m)" in
+    x86_64|amd64) arch_name="amd64" ;;
+    aarch64|arm64) arch_name="arm64" ;;
+    *) arch_name="$(uname -m)" ;;
+  esac
+
+  local remote_arch_digest=""
+  remote_arch_digest="$(printf '%s' "$raw_manifest" | tr -d '\r\n' | grep -oE "\"digest\"[[:space:]]*:[[:space:]]*\"sha256:[0-9a-f]+\"[^}]*\"architecture\"[[:space:]]*:[[:space:]]*\"${arch_name}\"" | head -n 1 | grep -oE 'sha256:[0-9a-f]+' | head -n 1 || true)"
+
+  local matched=0
+  if [ -n "$remote_index_digest" ] && { [[ "$local_digests" == *"$remote_index_digest"* ]] || [ "$local_id" = "$remote_index_digest" ]; }; then
+    matched=1
+  elif [ -n "$remote_arch_digest" ] && { [[ "$local_digests" == *"$remote_arch_digest"* ]] || [ "$local_id" = "$remote_arch_digest" ]; }; then
+    matched=1
+  fi
+
+  if [ "$matched" -eq 1 ]; then
+    printf 'STATUS=up-to-date\n'
+  else
+    printf 'STATUS=update-available\n'
+  fi
+  printf 'CONTAINER=%s\n' "$container_name"
+  printf 'CONTAINER_STATUS=%s\n' "$running_status"
+  printf 'TARGET_IMAGE=%s\n' "$target_image"
+  printf 'LOCAL_IMAGE_ID=%s\n' "$local_id"
+  printf 'LOCAL_DIGESTS=%s\n' "$local_digests"
+  printf 'LOCAL_CREATED=%s\n' "$local_created"
+  printf 'REMOTE_DIGEST=%s\n' "${remote_index_digest:-$remote_arch_digest}"
+}
+
 main() {
   local work_dir="$DEFAULT_WORK_DIR"
   local has_dir_arg=0
@@ -530,6 +630,7 @@ main() {
   local reconfigure=0
   local prepare_only=0
   local print_join_only=0
+  local check_update_only=0
   local build_local=0
   local no_pull=0
   local update_scripts=0
@@ -573,6 +674,10 @@ main() {
         ;;
       --print-join-command|--join-command)
         print_join_only=1
+        shift
+        ;;
+      --check-update)
+        check_update_only=1
         shift
         ;;
       --redact-secrets)
@@ -676,6 +781,29 @@ main() {
   fi
   local compose_file="${work_dir}/docker-compose.yml"
   local compose_build_file="${work_dir}/docker-compose.build.yml"
+
+  if [ "$check_update_only" -eq 1 ]; then
+    local target_check_image="$DEFAULT_RELAY_IMAGE"
+    if [ "$has_image_arg" -eq 1 ]; then
+      target_check_image="$(trim "$image_arg")"
+    elif [ -f "$env_file" ]; then
+      local saved_check_image
+      saved_check_image="$(read_env_value "$env_file" CHATDSH_RELAY_IMAGE)"
+      if [ -n "$saved_check_image" ]; then
+        target_check_image="$saved_check_image"
+      fi
+    fi
+    local check_container_name="${CHATDSH_RELAY_CONTAINER_NAME:-chatdsh-relay}"
+    if [ -f "$env_file" ]; then
+      local saved_container_name
+      saved_container_name="$(read_env_value "$env_file" CHATDSH_RELAY_CONTAINER_NAME)"
+      if [ -n "$saved_container_name" ]; then
+        check_container_name="$saved_container_name"
+      fi
+    fi
+    check_relay_update "$check_container_name" "$target_check_image"
+    return 0
+  fi
 
   if [ "$STANDALONE_MODE" -eq 1 ]; then
     if [ -z "$SCRIPT_SOURCE" ] || [ "$SCRIPT_SOURCE" = "/dev/stdin" ] || [ ! -f "$SCRIPT_SOURCE" ]; then

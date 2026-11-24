@@ -20,7 +20,10 @@
    - 全部目标设备配对完成后，提醒用户执行 `bash scripts/relay-up.sh --disable-pairing` 清空静态配对口令以关闭配对入口（后续新增设备时再执行 `--rotate-pairing-code`）。
 4. **修改外部配置与持久服务前必须征得同意**：
    - 修改反向代理配置、Tailscale Serve/Funnel 规则，或修改 `systemd`、`launchd`、`pm2`、`supervisord` 等持久服务文件并重启服务之前，必须向用户展示具体文件路径、拟修改内容与重启影响，取得明确同意后再执行。
-5. **以真实探测结果验收**：通过本机 `http://<绑定地址>:<端口>/healthz` 与返回状态码核对结果，禁止跳过检查或假定连通。
+5. **已有服务必须检查版本更新并询问用户（禁止默认跳过）**：
+   - 探测到本机已运行 `chatdsh-relay` 容器或已安装 `@chatdsh/bundle` 插件时，**禁止默认不做任何动作直接跳过**。
+   - 必须分别执行只读版本检查命令对比本机运行版本与远端 GHCR 预构建镜像 / GitHub Releases 插件归档；一旦检测到存在新版本（`STATUS=update-available`）或使用旧本地构建镜像，必须向用户汇报版本差异，**明确询问用户是否拉取最新预构建镜像/插件并重建重启对应服务**，取得同意后再执行升级。
+6. **以真实探测结果验收**：通过本机 `http://<绑定地址>:<端口>/healthz` 与返回状态码核对结果，禁止跳过检查或假定连通。
 
 ## 第一阶段：探测宿主机网络与穿透环境
 
@@ -68,15 +71,25 @@ docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true
 
 ## 第三阶段：部署中继容器并完成网络指引
 
-### 3.1 以脱敏模式拉取预构建镜像并启动 Docker Compose 中继容器
+### 3.1 检查已有中继镜像版本，再以脱敏模式拉取预构建镜像并启动/更新容器
 
-确认 `~/.chatdsh/relay/.env` 中 `CHATDSH_PUBLIC_URL` 已就绪后执行：
+若第一阶段探测到本机已存在 `chatdsh-relay` 容器，先执行只读版本检查（仅比对镜像摘要，绝不读取容器环境变量）：
 
 ```sh
-bash ~/.chatdsh/relay/relay-up.sh --redact-secrets
+curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --check-update
 ```
 
-脚本直接读取 `.env` 中的配置（默认 `CHATDSH_PAIRING_APPROVAL=required`，默认镜像 `ghcr.io/wenzetan/chatdsh-relay:latest`），校验 `CHATDSH_GATEWAY_BIND_HOST` 非通配地址，缺失 `CHATDSH_PAIRING_CODE` 时自动生成 24 字节随机口令并保存为 `0600` 权限，拉取预构建多架构镜像并启动 `relay` 容器探活，全程无需克隆源码，且不向标准输出打印密钥与真实域名。
+- **`STATUS=update-available`**（或容器仍在使用旧本地构建镜像）：向用户汇报当前容器运行镜像的创建时间、本地摘要与远端 GHCR 预构建镜像最新摘要，**明确询问用户是否拉取最新预构建镜像并重建重启中继容器**（说明重建期间设备隧道会短暂重连，已保存的 `.env`、数据卷与已配对设备均保留）。用户确认后执行下方的脱敏启动命令完成更新。
+- **`STATUS=up-to-date`**：向用户说明中继容器已是最新预构建镜像，并询问是否仍需强制重建或直接进入下一阶段。
+- **`STATUS=not-installed`**：确认 `~/.chatdsh/relay/.env` 中 `CHATDSH_PUBLIC_URL` 已就绪后直接执行启动。
+
+执行启动或更新（脱敏模式）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets
+```
+
+脚本自动同步最新 `docker-compose.yml` 与管理脚本到 `~/.chatdsh/relay`，直接读取 `.env` 中的配置（默认 `CHATDSH_PAIRING_APPROVAL=required`，默认镜像 `ghcr.io/wenzetan/chatdsh-relay:latest`），校验 `CHATDSH_GATEWAY_BIND_HOST` 非通配地址，缺失 `CHATDSH_PAIRING_CODE` 时自动生成 24 字节随机口令并保存为 `0600` 权限，拉取预构建多架构镜像并自动重建启动 `relay` 容器探活，全程无需克隆源码，且不向标准输出打印密钥与真实域名。
 
 ### 3.2 按联网方式协助完成网络接入（引用变量，不展开明文）
 
@@ -88,10 +101,10 @@ bash ~/.chatdsh/relay/relay-up.sh --redact-secrets
 
 中继就绪后，向用户询问：**是否需要由 Agent 代劳在当前设备上安装 `@chatdsh/bundle` 插件并完成中继配对接入？**
 
-- **用户选择自行操作**：提示用户在宿主机终端手动运行 `bash ~/.chatdsh/relay/relay-up.sh --print-join-command` 获取接入步骤（跨机设备直接执行远程脚本 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay <对外域名>` 后通过隐藏输入粘贴口令，免克隆仓库且不留 Shell 历史），提交申请后在宿主机运行 `bash ~/.chatdsh/relay/relay-approve.sh list` 与 `bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>` 审批放行。
+- **用户选择自行操作**：提示用户在宿主机终端手动运行 `bash ~/.chatdsh/relay/relay-up.sh --print-join-command` 获取接入步骤（跨机设备同时提供 Linux / macOS 的 Shell 命令 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay <对外域名>` 与 Windows 专用的 PowerShell 命令 `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.ps1))) -Relay <对外域名>`，均免克隆仓库且隐藏输入配对口令不留历史），提交申请后在宿主机运行 `bash ~/.chatdsh/relay/relay-approve.sh list` 与 `bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>` 审批放行。
 - **用户确认由 Agent 代劳**：严格按以下步骤执行。
 
-### 4.1 探测本机 DSH 与持久化服务
+### 4.1 探测本机 DSH、已安装插件版本与持久化服务
 
 ```sh
 command -v dsh && dsh --version
@@ -102,7 +115,12 @@ grep -rl 'dsh' /etc/systemd/system "${HOME}/.config/systemd/user" 2>/dev/null ||
 launchctl list 2>/dev/null | grep -i dsh || true
 pm2 list 2>/dev/null || true
 supervisorctl status 2>/dev/null | grep -i dsh || true
+# 只读检查已安装插件与 GitHub Releases 最新预构建插件归档是否存在更新
+curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | \
+  DSH_HOME='<目标 DSH_HOME>' bash -s -- --profile '<目标 profile>' --check-update
 ```
+
+若返回 `STATUS=update-available`（说明远端 GitHub Releases 已发布新版插件归档），**禁止默认跳过**：必须向用户汇报本地与远端的插件版本/提交哈希差异，并明确询问是否升级插件（升级使用 `--remote --install-only`，保留原有 `<DSH_HOME>/chatdsh-device.env` 配对凭据，无需重新配对审批）及重启对应的 DSH 持久服务；取得同意后再执行升级与重启。
 
 ### 4.2 存在持久化服务时的确认与变更流程
 
@@ -135,9 +153,37 @@ supervisorctl status 2>/dev/null | grep -i dsh || true
 3. 由用户在中继宿主机执行 `bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>` 放行配对。
 4. 核对 `dsh --profile web --dump-config >/dev/null` 退出码为 0。
 
+### 4.4 已知异常排查
+
+- **`ERR_PNPM_UNEXPECTED_STORE`**：目标 profile 的 `node_modules` 曾由其他 `pnpm` store 路径初始化。最新版 `scripts/device-join.sh`、`scripts/device-join.ps1`、`scripts/uninstall.sh` 与 `scripts/uninstall.ps1` 已自动解析 `<DSH_HOME>/profiles/<profile>/node_modules/.modules.yaml` 中的 `storeDir`（去掉末尾 `v<主版本>` 后缀）并沿用原 store；若在旧版脚本或自定义 store 环境下仍命中该错误，可显式指定 `CHATDSH_PNPM_STORE=<原 store 根目录>` 重试。
+
 ## 第五阶段：配对完成后的收尾加固
 
 全部目标设备完成配对后，向用户提示以下收尾操作：
 
 1. **关闭静态配对口令**：在宿主机执行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing`，使配对端点返回 `404 pairing-disabled`；后续需要新增设备时执行 `bash ~/.chatdsh/relay/relay-up.sh --rotate-pairing-code` 重新启用。
 2. **数据卷与凭据备份**：妥善加密备份容器数据卷 `chatdsh-relay-data`（包含 `gateway.sqlite` 与 `access/master.key`）及设备端 `$DSH_HOME/chatdsh-device.env`；设备丢失或怀疑凭据泄露时立即吊销设备并轮换配对口令。
+
+## 第六阶段：完全卸载与彻底移除本项目影响
+
+当用户要求彻底卸载 ChatDSH 并清除全部影响时，同样遵守零泄露红线与持久服务确认门禁：
+
+1. **探测并确认卸载范围**：向用户确认需要卸载的范围（仅设备插件、仅中继服务或两者全部）、是否永久删除中继数据卷 `chatdsh-relay-data`（含只读副本、配对记录与 VAPID 密钥，不可恢复），以及是否探测到引用了 `chatdsh-device.env` 的持久服务（如 `/etc/systemd/system/dsh.service.d/chatdsh-device.conf`）。
+2. **征得明确同意后执行持久服务清理**：修改或删除持久服务 drop-in / `EnvironmentFile=` 行并重启服务前，必须列出文件路径与拟移除内容并获得用户明确同意。
+3. **执行完全卸载脚本**：
+   Linux / macOS（Shell）：
+   ```sh
+   # 设备端 + 中继端完全移除（含删除中继数据卷与本地镜像）
+   curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | \
+     DSH_HOME='<目标 DSH_HOME>' bash -s -- --all --purge-relay-data --profile '<目标 profile>'
+   ```
+   （若仅移除设备插件，将 `--all --purge-relay-data` 改为 `--device`；若仅移除中继且保留数据卷，改为 `--relay`。）
+
+   Windows（PowerShell，专供 Windows 客户端移除设备端插件与凭据）：
+   ```powershell
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.ps1))) -Device -Profile '<目标 profile>'
+   ```
+4. **收尾与验证**：
+   - 若本机存在 `systemd` 托管的 DSH 服务且已征得同意，移除 `chatdsh-device.env` 引用后执行 `systemctl daemon-reload && systemctl restart dsh.service`；
+   - 验证 `dsh --profile <目标 profile> --dump-config >/dev/null` 退出码为 `0` 且输出不再包含 `chatdsh`，验证 `docker ps -a --filter name=chatdsh-relay` 为空，确认官方 DSH 本体与历史会话日志完好；
+   - 提醒用户按需清理之前在 Nginx / Caddy / Tailscale Serve / 内网穿透中为中继添加的转发规则。

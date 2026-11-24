@@ -42,7 +42,7 @@ GitHub Actions 在每次主干更新与版本发布时自动构建并发布两�
 #### 1. 环境要求
 
 - 中继宿主机：Docker 与 Docker Compose、Bash 与 `curl`（无需克隆源码，无需安装 Node.js）
-- 接入设备：Node.js 22 及以上、官方 DSH（`@deepseek-ai/dsh`，当前验证基线 `0.2.2-rc.5`）、Bash 与 `curl`（无需克隆源码，无需本地编译）
+- 接入设备：Node.js 22 及以上、官方 DSH（`@deepseek-ai/dsh`，当前验证基线 `0.2.2-rc.5`），Linux / macOS 使用 Bash 与 `curl`，Windows 使用 PowerShell 5.1 / 7+（无需克隆源码，无需本地编译）
 
 #### 2. 一行远程命令启动中继服务端（Docker Compose + GHCR 镜像）
 
@@ -63,10 +63,18 @@ bash ~/.chatdsh/relay/relay-up.sh --print-join-command
 
 #### 3. 一行远程命令在设备安装插件、审批配对并启动 DSH
 
-在任意安装了官方 DSH 的设备上执行（免克隆仓库，自动从 GitHub Releases 下载预构建插件归档并校验 SHA-256，在交互提示中静默输入配对口令不留 Shell 历史）：
+在任意安装了官方 DSH 的设备上执行（免克隆仓库，自动从 GitHub Releases 下载预构建插件归档并校验 SHA-256，在交互提示中静默输入配对口令不留历史）：
+
+**Linux / macOS（Shell）：**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay https://relay.example.com
+```
+
+**Windows（PowerShell，专供 Windows 客户端使用）：**
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.ps1))) -Relay https://relay.example.com
 ```
 
 客户端提交配对申请后会打印 `requestId` 并等待放行，在中继宿主机审批通过：
@@ -76,7 +84,11 @@ bash ~/.chatdsh/relay/relay-approve.sh list
 bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>
 ```
 
-审批通过后，设备脚本自动领取一次性凭据保存到 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）并启动官方 DSH；脚本同时保存在 `~/.dsh/chatdsh-device-join.sh`，后续在同一设备重启只需执行 `bash ~/.dsh/chatdsh-device-join.sh`。全部设备接入完成后，可在中继宿主机执行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` 关闭配对入口。
+审批通过后，设备脚本自动领取一次性凭据保存到 `$DSH_HOME/chatdsh-device.env`（Linux / macOS 权限 `0600`，Windows 限制仅当前用户访问）并启动官方 DSH；同时在 `~/.dsh/` 保存可复用启动脚本，后续在同一设备重启只需执行：
+- Linux / macOS：`bash ~/.dsh/chatdsh-device-join.sh`
+- Windows（PowerShell）：`powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.dsh\chatdsh-device-join.ps1"`
+
+全部设备接入完成后，可在中继宿主机执行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` 关闭配对入口。
 
 连接成功后，可通过中继地址 `/` 使用手机端 PWA，通过 `/d/<deviceId>/` 直接进入对应在线设备的官方 DSH 界面，或在本地官方客户端侧栏打开「远程设备」面板。
 
@@ -94,14 +106,65 @@ bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>
 若确认接受上述风险，可将以下指令发送给具备终端执行能力的 AI Agent（如官方 DSH、Claude Code、Codex 等），按 [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md) 逐步完成免克隆远程部署：
 
 ```text
-请先阅读 https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md（或本地 runtime/docs/agent-deploy-guide.md），严格遵守其中的零泄露红线，通过远程脚本与 GitHub 预构建镜像/插件帮我部署 ChatDSH 中继服务端并接入本机 DSH。严禁将任何密钥、令牌、配对口令、.env 内容或真实域名输出到上下文中（也不要执行 docker compose config / docker inspect / systemctl show / ps eww / curl -v）；宿主机监听禁止放行 0.0.0.0；其他服务使用密钥或域名时直接引用环境变量文件，需要查看口令或审批配对时提示我自己操作。
+请先阅读 https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md（或本地 runtime/docs/agent-deploy-guide.md），严格遵守其中的零泄露红线，通过远程脚本与 GitHub 预构建镜像/插件帮我部署 ChatDSH 中继服务端并接入本机 DSH。若本机已存在中继容器或已安装插件，必须先用 --check-update 检查预构建镜像与插件归档是否存在更新并明确询问我是否更新重启，禁止直接跳过。严禁将任何密钥、令牌、配对口令、.env 内容或真实域名输出到上下文中（也不要执行 docker compose config / docker inspect / systemctl show / ps eww / curl -v）；宿主机监听禁止放行 0.0.0.0；其他服务使用密钥或域名时直接引用环境变量文件，需要查看口令或审批配对时提示我自己操作。
 ```
 
 AI Agent 会严格按以下流程协作执行：
 
 1. **零泄露约束与网络探测**：不读取或打印 `.env`、凭据文件与真实域名；先只读检查宿主机网卡类型、Tailscale / Cloudflare Tunnel / FRP / WireGuard 等内网穿透工具及现有反向代理端口，再引导你在自己的终端写入对外域名与具体监听地址（严禁 `0.0.0.0`，仅限 `127.0.0.1` 或对应内网穿透网卡 IP）并确认联网方式。
-2. **中继容器部署与配对审批**：调用远程脚本 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets` 以脱敏模式拉取 GHCR 预构建镜像并启动 Docker Compose 中继容器（默认 `CHATDSH_PAIRING_APPROVAL=required`，客户端申请配对后需管理员审批放行；首次自动生成随机配对口令并按 `0600` 权限持久化复用）；反向代理或穿透配置通过环境变量引用，不展开明文，且修改前征得你的同意。查看完整接入命令时由你本人在宿主机终端手动执行 `bash ~/.chatdsh/relay/relay-up.sh --print-join-command`。
-3. **代劳安装 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机通过远程脚本下载 GitHub Releases 预构建插件归档安装 `@chatdsh/bundle` 并完成配对接入（同机通过 `--from-relay-env ~/.chatdsh/relay/.env --redact-secrets` 直接引用配置，跨机通过交互隐藏输入口令不留 Shell 历史）；确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、运行用户、拟添加的 `EnvironmentFile` 引用变更及重启影响，取得你的明确同意后再修改服务文件与重启；全部设备接入完成后可运行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` 关闭配对入口。
+2. **中继容器部署、版本更新检查与配对审批**：若宿主机已存在 `chatdsh-relay` 容器，先执行 `relay-up.sh --check-update` 对比本地运行镜像与 GHCR 远端最新预构建镜像摘要；存在更新时必须主动询问你是否拉取最新镜像并重建重启容器（保留 `.env` 与数据卷）。启动或更新均调用 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets` 以脱敏模式执行（默认 `CHATDSH_PAIRING_APPROVAL=required`，客户端申请配对后需管理员审批放行；首次自动生成随机配对口令并按 `0600` 权限持久化复用）；反向代理或穿透配置通过环境变量引用，不展开明文，且修改前征得你的同意。查看完整接入命令时由你本人在宿主机终端手动执行 `bash ~/.chatdsh/relay/relay-up.sh --print-join-command`。
+3. **代劳安装/升级 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机通过远程脚本下载 GitHub Releases 预构建插件归档安装 `@chatdsh/bundle` 并完成配对接入；若本机已安装插件，先执行 `device-join.sh --check-update` 检查远端最新归档，有新版本时询问你是否执行原地升级（`--remote --install-only`，保留原有配对凭据无需重新配对）。确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、运行用户、拟变更内容（添加 `EnvironmentFile` 引用或重启加载新版插件）及重启影响，取得你的明确同意后再修改服务文件与重启；全部设备接入完成后可运行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` 关闭配对入口。
+
+</details>
+
+<details>
+<summary><strong>完全卸载与彻底移除本项目影响（手动命令行 / AI Agent 协助）</strong>（点击展开）</summary>
+
+完全卸载仅移除 ChatDSH 的中继容器、镜像、部署文件、设备端 `@chatdsh/bundle` 插件、工作区 `overrides` 与配对凭据，保留官方 DSH 运行时本体与你的全部本地历史会话日志不受影响。
+
+#### 方式一：手动命令行完全卸载（首选）
+
+1. **在接入设备上移除插件与凭据**：
+
+   Linux / macOS（Shell）：
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | bash -s -- --device
+   # 如安装了多个 profile（例如 web 与 desktop）：
+   # curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | bash -s -- --device --profile web --profile desktop
+   ```
+
+   Windows（PowerShell，专供 Windows 客户端使用）：
+   ```powershell
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.ps1))) -Device
+   # 如安装了多个 profile（例如 web 与 desktop）：
+   # & ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.ps1))) -Device -Profile web,desktop
+   ```
+   若本机通过 `systemd` 托管了官方 DSH，同时移除为 ChatDSH 添加的环境变量文件引用（例如 `/etc/systemd/system/dsh.service.d/chatdsh-device.conf`）并重启服务：
+   ```sh
+   sudo rm -f /etc/systemd/system/dsh.service.d/chatdsh-device.conf
+   sudo systemctl daemon-reload && sudo systemctl restart dsh.service
+   ```
+
+2. **在中继宿主机移除容器、镜像、数据卷与部署目录**：
+   ```sh
+   # 彻底删除中继容器、本地镜像、~/.chatdsh/relay 及持久化数据卷（含只读副本、配对记录与 VAPID 密钥，不可恢复）
+   curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | bash -s -- --relay --purge-relay-data
+   # 如需同时保留中继数据卷以便日后恢复，去掉 --purge-relay-data 即可
+   ```
+   （若中继与设备在同一台机器上，可直接执行 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | bash -s -- --all --purge-relay-data` 一步清理。）
+
+3. **清理外部网络规则**：如之前手动配置过 Nginx / Caddy / Tailscale Serve / Cloudflare Tunnel / FRP 指向中继端口，对应删除该转发规则即可。
+
+#### 方式二：由 AI Agent 协助完全卸载（次选）
+
+> [!WARNING]
+> 与部署阶段相同，向 AI Agent 授予宿主机终端权限仍存在敏感信息泄露或误操作风险；仅在你明确了解并可接受上述风险时使用。
+
+可将以下指令发送给具备终端执行能力的 AI Agent，按 [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md) 第六阶段执行完全卸载：
+
+```text
+请阅读 https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md 第六阶段，严格遵守零泄露红线（禁止输出任何密钥、.env 内容或真实域名），帮我完全卸载 ChatDSH 并彻底移除本项目对本机与官方 DSH 的影响。先向我确认卸载范围（设备插件 / 中继服务 / 是否删除中继数据卷），检查是否存在引用 chatdsh-device.env 的 systemd 等持久服务文件，展示具体路径与拟移除内容并征得我同意后再修改和重启服务，最后验证官方 DSH 配置正常且无 chatdsh 残留。
+```
 
 </details>
 
@@ -179,4 +242,3 @@ node runtime/scripts/clone-refer-repos.mjs --list        # 查看清单
 | `dsh-Go` | [ccch1mneyyy/dsh-Go](https://github.com/ccch1mneyyy/dsh-Go) | 远程连接协议与插件界面边界核对 |
 | `ds-harness-remote` | [liguobao/ds-harness-remote](https://github.com/liguobao/ds-harness-remote) | 主机常驻远程隧道、多路复用流与端到端加密对照 |
 | `ZCode` | [zai-org/ZCode](https://github.com/zai-org/ZCode) | 多包仓库组织方式 |
-| `rea_workbuddy` | 无远端 | 协议与认证对照材料，本地快照 |

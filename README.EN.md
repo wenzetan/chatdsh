@@ -42,7 +42,7 @@ GitHub Actions automatically builds and publishes two artifacts on every `main` 
 #### 1. Prerequisites
 
 - Relay host: Docker & Docker Compose, Bash, and `curl` (no git clone, no host Node.js required)
-- Client devices: Node.js 22+, Official DSH (`@deepseek-ai/dsh`, verified baseline `0.2.2-rc.5`), Bash, and `curl` (no git clone, no local build required)
+- Client devices: Node.js 22+, Official DSH (`@deepseek-ai/dsh`, verified baseline `0.2.2-rc.5`), Bash & `curl` on Linux/macOS or PowerShell 5.1 / 7+ on Windows (no git clone, no local build required)
 
 #### 2. Start the Relay via One Remote Command (Docker Compose + GHCR Image)
 
@@ -65,8 +65,16 @@ Terminate TLS in front of `127.0.0.1:3170` with a reverse proxy such as Nginx, C
 
 On any device with official DSH installed, run (no git clone required; downloads the prebuilt plugin archive from GitHub Releases, verifies SHA-256, and prompts silently for the pairing secret so it never enters shell history):
 
+**Linux / macOS (Shell):**
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay https://relay.example.com
+```
+
+**Windows (PowerShell — for Windows clients):**
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.ps1))) -Relay https://relay.example.com
 ```
 
 The client submits a pending request and waits for approval. On the relay host, inspect and approve it:
@@ -76,7 +84,11 @@ bash ~/.chatdsh/relay/relay-approve.sh list
 bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>
 ```
 
-Once approved, `device-join.sh` claims the one-time device token, saves credentials to `$DSH_HOME/chatdsh-device.env` (`0600`), saves a reusable launcher to `~/.dsh/chatdsh-device-join.sh`, and starts official DSH. Subsequent starts on the same device only require `bash ~/.dsh/chatdsh-device-join.sh`. After all devices are onboarded, run `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` on the relay host to close the pairing endpoint.
+Once approved, the script claims the one-time device token, saves credentials to `$DSH_HOME/chatdsh-device.env` (`0600` on Linux/macOS, current-user ACL on Windows), saves a reusable launcher under `~/.dsh/`, and starts official DSH. Subsequent starts on the same device only require:
+- Linux / macOS: `bash ~/.dsh/chatdsh-device-join.sh`
+- Windows (PowerShell): `powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.dsh\chatdsh-device-join.ps1"`
+
+After all devices are onboarded, run `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` on the relay host to close the pairing endpoint.
 
 Once connected, open `/` on the relay for the mobile PWA, open `/d/<deviceId>/` to interact with a live online device through the official DSH interface, or use the Remote panel in your local official DSH sidebar.
 
@@ -94,14 +106,65 @@ Once connected, open `/` on the relay for the mobile PWA, open `/d/<deviceId>/` 
 If you accept the risk above, you can send the following prompt to an AI Agent with terminal access (such as official DSH, Claude Code, or Codex) to follow [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md):
 
 ```text
-Please read https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md (or local runtime/docs/agent-deploy-guide.md) and follow its zero-leakage rules to deploy the ChatDSH relay server using the remote scripts and prebuilt GitHub image/plugin bundle, then connect my local DSH instance. Never print any secrets, tokens, pairing codes, .env contents, or real domains into the conversation context (avoid docker compose config / docker inspect / systemctl show / ps eww / curl -v); never bind the host port to 0.0.0.0; reference environment files/variables directly in services, and prompt me to print secrets or approve pairing requests manually.
+Please read https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md (or local runtime/docs/agent-deploy-guide.md) and follow its zero-leakage rules to deploy the ChatDSH relay server using the remote scripts and prebuilt GitHub image/plugin bundle, then connect my local DSH instance. If an existing relay container or installed plugin is already present, always check for newer prebuilt image and plugin archive versions with --check-update and explicitly ask whether I want to update and restart; never skip silently. Never print any secrets, tokens, pairing codes, .env contents, or real domains into the conversation context (avoid docker compose config / docker inspect / systemctl show / ps eww / curl -v); never bind the host port to 0.0.0.0; reference environment files/variables directly in services, and prompt me to print secrets or approve pairing requests manually.
 ```
 
 The Agent follows a redacted, approval-gated workflow:
 
 1. **Zero-Leakage Boundary & Network Inspection**: Never prints `.env`, device credential files, pairing secrets, or real domains into context; probes host network interface types, tunneling tools (Tailscale, Cloudflare Tunnel, FRP, WireGuard, ZeroTier), and active reverse proxies, then guides you to record your domain and bind address (never `0.0.0.0`; only `127.0.0.1` or a specific tunnel interface IP) locally and choose the connectivity mode.
-2. **Redacted Relay Deployment & Pairing Approval**: Runs `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets` to pull the prebuilt GHCR image and start the Docker Compose relay (`CHATDSH_PAIRING_APPROVAL=required` by default, so pairing requests stay pending until explicitly approved on the relay host; auto-generating and persisting a random pairing secret with `0600` permissions without echoing secrets or domains), references environment files in reverse proxy/tunnel configs with your approval, and instructs you to run `bash ~/.chatdsh/relay/relay-up.sh --print-join-command` manually when needed.
-3. **Optional DSH Plugin Installation with Persistent-Service Gate**: Asks whether you want the Agent to download the prebuilt plugin bundle from GitHub Releases, install `@chatdsh/bundle`, and pair your local DSH (using `--from-relay-env ~/.chatdsh/relay/.env --redact-secrets` on the same host, or silent interactive code input across machines so secrets stay out of shell history). If you confirm, it first checks for persistent DSH services (`systemd` / `systemctl`, `launchd`, `pm2`, `supervisorctl`). Whenever a persistent service is found, the Agent must show the service file path, run user, proposed `EnvironmentFile` reference update, and restart impact, and obtain your explicit approval before editing or restarting the service. Once all devices are paired, run `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` to close the pairing endpoint.
+2. **Redacted Relay Deployment, Image Update Check & Pairing Approval**: When an existing `chatdsh-relay` container is detected, runs `relay-up.sh --check-update` first to compare the running image digest against the latest GHCR prebuilt image; whenever a newer image is available, asks whether you want to pull the update and recreate/restart the container (preserving `.env` and persistent volume). Starts or updates with `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets` (`CHATDSH_PAIRING_APPROVAL=required` by default, auto-generating and persisting a random pairing secret with `0600` permissions without echoing secrets or domains), references environment files in reverse proxy/tunnel configs with your approval, and instructs you to run `bash ~/.chatdsh/relay/relay-up.sh --print-join-command` manually when needed.
+3. **Optional DSH Plugin Installation/Upgrade with Persistent-Service Gate**: Asks whether you want the Agent to download the prebuilt plugin bundle from GitHub Releases, install `@chatdsh/bundle`, and pair your local DSH; if the plugin is already installed, runs `device-join.sh --check-update` first and asks whether to upgrade in place (`--remote --install-only`, preserving existing device credentials without re-pairing). If you confirm, it first checks for persistent DSH services (`systemd` / `systemctl`, `launchd`, `pm2`, `supervisorctl`). Whenever a persistent service is found, the Agent must show the service file path, run user, proposed changes, and restart impact, and obtain your explicit approval before editing or restarting the service. Once all devices are paired, run `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` to close the pairing endpoint.
+
+</details>
+
+<details>
+<summary><strong>Complete Uninstallation (Manual CLI / AI Agent Guided)</strong> (Click to expand)</summary>
+
+Complete uninstallation removes all ChatDSH relay containers, images, deployment files, device-side `@chatdsh/bundle` packages, workspace `overrides`, and pairing credentials while keeping the official DSH runtime and all local session logs intact.
+
+#### Option 1: Manual CLI Uninstallation (Preferred)
+
+1. **Remove the plugin and credentials on each device**:
+
+   Linux / macOS (Shell):
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | bash -s -- --device
+   # For multiple profiles (e.g. web and desktop):
+   # curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | bash -s -- --device --profile web --profile desktop
+   ```
+
+   Windows (PowerShell — for Windows clients):
+   ```powershell
+   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.ps1))) -Device
+   # For multiple profiles (e.g. web and desktop):
+   # & ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.ps1))) -Device -Profile web,desktop
+   ```
+   If official DSH runs under `systemd`, also remove any `chatdsh-device.env` drop-in (such as `/etc/systemd/system/dsh.service.d/chatdsh-device.conf`) and reload/restart the service:
+   ```sh
+   sudo rm -f /etc/systemd/system/dsh.service.d/chatdsh-device.conf
+   sudo systemctl daemon-reload && sudo systemctl restart dsh.service
+   ```
+
+2. **Remove the relay container, images, volume, and deployment directory on the relay host**:
+   ```sh
+   # Remove relay container, local images, ~/.chatdsh/relay, and the persistent data volume (irreversible)
+   curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | bash -s -- --relay --purge-relay-data
+   # Omit --purge-relay-data to keep the SQLite/VAPID data volume
+   ```
+   (If the relay and device share one host, run `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/uninstall.sh | bash -s -- --all --purge-relay-data` to clean both.)
+
+3. **Remove external network rules**: Delete any Nginx, Caddy, Tailscale Serve, Cloudflare Tunnel, or FRP rules previously added for the relay port.
+
+#### Option 2: AI Agent Guided Uninstallation (Alternative)
+
+> [!WARNING]
+> As with deployment, granting an AI Agent terminal access carries secret-leakage and unintended-modification risks; use this option only if you accept that risk.
+
+Send the following prompt to an AI Agent with terminal access to follow Phase 6 of [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md):
+
+```text
+Please read Phase 6 of https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md, follow its zero-leakage rules (never print secrets, .env contents, or real domains), and completely uninstall ChatDSH and remove all of its changes from this host and official DSH. First confirm the uninstall scope with me (device plugin / relay server / whether to purge the relay volume), inspect any persistent services referencing chatdsh-device.env, show exact file paths and proposed removals for my approval before modifying or restarting services, and verify official DSH loads cleanly with no ChatDSH leftovers.
+```
 
 </details>
 
@@ -175,4 +238,3 @@ Special thanks to the following DSH community and open-source projects whose des
 | `dsh-Go` | [ccch1mneyyy/dsh-Go](https://github.com/ccch1mneyyy/dsh-Go) | Remote connection protocol and plugin UI boundary reference |
 | `ds-harness-remote` | [liguobao/ds-harness-remote](https://github.com/liguobao/ds-harness-remote) | Resident host remote tunnel, multiplexed streams, and E2E encryption comparison |
 | `ZCode` | [zai-org/ZCode](https://github.com/zai-org/ZCode) | Multi-package repository structure |
-| `rea_workbuddy` | Local snapshot (no remote) | Protocol and authentication reference material |

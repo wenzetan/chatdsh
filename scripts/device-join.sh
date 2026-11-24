@@ -49,6 +49,7 @@ print_help() {
   --from-local                强制从当前源码仓库打包安装（需位于已构建的源码仓库内）
   --skip-checksum             跳过插件归档 SHA-256 校验（仅调试使用）
   --install-only              仅完成插件安装后退出（不配对、不启动 dsh）
+  --check-update              只读检查本机已安装插件归档与远端 GitHub Releases 是否有版本更新
   --pair-url <origin>         配对请求使用的直连地址（默认与 --relay 相同）
   --skip-install              跳过插件安装步骤
   --re-pair                   忽略已保存凭据并重新配对
@@ -177,15 +178,71 @@ resolve_dsh_bin() {
   command -v dsh
 }
 
+read_profile_store_dir() {
+  local profile_dir="$1"
+  local dsh_bin="$2"
+  local modules_yaml="${profile_dir}/node_modules/.modules.yaml"
+  [ -f "$modules_yaml" ] || return 0
+  command -v node >/dev/null 2>&1 || return 0
+
+  node -e '
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const { createRequire } = require("node:module");
+    const modulesYaml = process.argv[1];
+    const dshBin = process.argv[2];
+    const runtimeRoot = process.argv[3];
+
+    const candidates = [];
+    if (dshBin) {
+      try {
+        const realBin = fs.realpathSync(dshBin);
+        candidates.push(path.resolve(path.dirname(realBin), "..", "package.json"));
+      } catch {}
+    }
+    if (runtimeRoot) {
+      candidates.push(path.join(runtimeRoot, "package.json"));
+    }
+
+    for (const anchor of candidates) {
+      if (!fs.existsSync(anchor)) continue;
+      try {
+        const YAML = createRequire(anchor)("yaml");
+        const parsed = YAML.parse(fs.readFileSync(modulesYaml, "utf8"));
+        if (parsed && typeof parsed.storeDir === "string" && parsed.storeDir.trim() !== "") {
+          const raw = parsed.storeDir.trim();
+          const base = path.basename(raw);
+          console.log(/^v\d+$/.test(base) ? path.dirname(raw) : raw);
+          process.exit(0);
+        }
+      } catch {}
+    }
+  ' "$modules_yaml" "$dsh_bin" "${RUNTIME_ROOT:-}" 2>/dev/null || true
+}
+
 resolve_store_dir() {
   local dsh_home="$1"
+  local profile="${2:-web}"
+  local dsh_bin="${3:-}"
   if [ -n "${pnpm_config_store_dir:-}" ]; then
     printf '%s' "$pnpm_config_store_dir"
-  elif [ -n "${npm_config_store_dir:-}" ]; then
+    return 0
+  fi
+  if [ -n "${npm_config_store_dir:-}" ]; then
     printf '%s' "$npm_config_store_dir"
-  elif [ -n "${CHATDSH_PNPM_STORE:-}" ]; then
+    return 0
+  fi
+  if [ -n "${CHATDSH_PNPM_STORE:-}" ]; then
     printf '%s' "$CHATDSH_PNPM_STORE"
-  elif [ -n "$RUNTIME_ROOT" ] && [ -d "${RUNTIME_ROOT}/.run/pnpm-store" ]; then
+    return 0
+  fi
+  local existing_store=""
+  existing_store="$(read_profile_store_dir "${dsh_home}/profiles/${profile}" "$dsh_bin")"
+  if [ -n "$existing_store" ]; then
+    printf '%s' "$existing_store"
+    return 0
+  fi
+  if [ -n "$RUNTIME_ROOT" ] && [ -d "${RUNTIME_ROOT}/.run/pnpm-store" ]; then
     printf '%s' "${RUNTIME_ROOT}/.run/pnpm-store"
   else
     printf '%s' "${dsh_home}/chatdsh-pnpm-store"
@@ -267,6 +324,88 @@ verify_archive_sha256() {
   ' "$archive_file" "$checksum_file" "$expected_name"
 }
 
+sha256_of_file() {
+  node -e '
+    const crypto = require("node:crypto");
+    const fs = require("node:fs");
+    console.log(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex").toLowerCase());
+  ' "$1"
+}
+
+check_plugin_update() {
+  local dsh_home="$1"
+  local profile="$2"
+  local release_tag="$3"
+  local profile_dir="${dsh_home}/profiles/${profile}"
+  local tarballs_dir="${dsh_home}/chatdsh-tarballs"
+  local installed=0
+  if [ -d "${profile_dir}/node_modules/@chatdsh/bundle" ]; then
+    installed=1
+  fi
+
+  local local_sha=""
+  if [ -f "${tarballs_dir}/.archive.sha256" ]; then
+    local_sha="$(trim "$(cat "${tarballs_dir}/.archive.sha256")")"
+  fi
+  local local_commit=""
+  local local_built_at=""
+  if [ -f "${tarballs_dir}/manifest.json" ]; then
+    local meta
+    meta="$(node -e '
+      const fs = require("node:fs");
+      const m = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      console.log((m.commit || "") + "\t" + (m.builtAt || ""));
+    ' "${tarballs_dir}/manifest.json" 2>/dev/null || true)"
+    local_commit="${meta%%$'\t'*}"
+    local_built_at="${meta#*$'\t'}"
+  fi
+
+  local release_base
+  release_base="$(resolve_release_base "$release_tag")"
+  local remote_sums=""
+  remote_sums="$(curl -fsSL --retry 2 --max-time 30 "${release_base}/SHA256SUMS.txt" 2>/dev/null || true)"
+  local remote_sha=""
+  if [ -n "$remote_sums" ]; then
+    remote_sha="$(node -e '
+      const lines = process.argv[1].split(/\r?\n/).filter(Boolean);
+      const target = process.argv[2];
+      for (const line of lines) {
+        const m = line.match(/^([0-9a-fA-F]{64})\s+\*?(.+)$/);
+        if (m && (m[2].trim() === target || m[2].trim().endsWith("/" + target))) {
+          console.log(m[1].toLowerCase());
+          break;
+        }
+      }
+    ' "$remote_sums" "$BUNDLE_ARCHIVE_NAME" 2>/dev/null || true)"
+  fi
+
+  if [ "$installed" -eq 0 ]; then
+    printf 'STATUS=not-installed\n'
+  elif [ -z "$remote_sha" ]; then
+    printf 'STATUS=unknown\n'
+    printf 'REASON=remote-checksum-unavailable\n'
+  elif [ -n "$local_sha" ] && [ "$local_sha" = "$remote_sha" ]; then
+    printf 'STATUS=up-to-date\n'
+  else
+    printf 'STATUS=update-available\n'
+  fi
+  printf 'PROFILE=%s\n' "$profile"
+  printf 'RELEASE_TAG=%s\n' "$release_tag"
+  printf 'LOCAL_ARCHIVE_SHA256=%s\n' "$local_sha"
+  printf 'LOCAL_COMMIT=%s\n' "$local_commit"
+  printf 'LOCAL_BUILT_AT=%s\n' "$local_built_at"
+  printf 'REMOTE_ARCHIVE_SHA256=%s\n' "$remote_sha"
+}
+
+clear_cached_chatdsh_packages() {
+  local profile_dir="$1"
+  rm -rf "${profile_dir}/node_modules/@chatdsh"
+  rm -f "${profile_dir}/pnpm-lock.yaml"
+  if [ -d "${profile_dir}/node_modules/.pnpm" ]; then
+    find "${profile_dir}/node_modules/.pnpm" -maxdepth 1 -name '@chatdsh+*' -exec rm -rf {} + 2>/dev/null || true
+  fi
+}
+
 resolve_release_base() {
   local release_tag="$1"
   if [ -n "${CHATDSH_RELEASE_BASE:-}" ]; then
@@ -289,7 +428,7 @@ install_bundle_from_archive() {
   local dsh_bin
   dsh_bin="$(resolve_dsh_bin)"
   local store
-  store="$(resolve_store_dir "$dsh_home")"
+  store="$(resolve_store_dir "$dsh_home" "$profile" "$dsh_bin")"
   mkdir -p "$store"
 
   local profile_dir="${dsh_home}/profiles/${profile}"
@@ -360,6 +499,7 @@ install_bundle_from_archive() {
   rm -rf "$tarballs_dir"
   mkdir -p "$tarballs_dir"
   tar -xzf "$archive_file" -C "$tarballs_dir"
+  sha256_of_file "$archive_file" > "${tarballs_dir}/.archive.sha256"
 
   if [ ! -f "${tarballs_dir}/manifest.json" ] || [ ! -f "${tarballs_dir}/apply-overrides.cjs" ]; then
     printf '插件归档结构不完整（缺少 manifest.json 或 apply-overrides.cjs）：%s\n' "$archive_file" >&2
@@ -379,6 +519,8 @@ install_bundle_from_archive() {
     console.log(path.join(path.dirname(path.resolve(process.argv[1])), manifest.bundle.tarball));
   ' "${tarballs_dir}/manifest.json")"
 
+  clear_cached_chatdsh_packages "$profile_dir"
+
   DSH_HOME="$dsh_home" npm_config_store_dir="$store" pnpm_config_store_dir="$store" \
     "$dsh_bin" plugin --profile "$profile" add "$bundle_tarball"
 }
@@ -389,7 +531,7 @@ install_bundle_from_local_repo() {
   local dsh_bin
   dsh_bin="$(resolve_dsh_bin)"
   local store
-  store="$(resolve_store_dir "$dsh_home")"
+  store="$(resolve_store_dir "$dsh_home" "$profile" "$dsh_bin")"
   mkdir -p "$store"
 
   if ! has_local_artifacts_ready; then
@@ -461,6 +603,8 @@ install_bundle_from_local_repo() {
     fs.writeFileSync(target, String(doc), "utf8");
   ' "${RUNTIME_ROOT}/node_modules/yaml/dist/index.js" "${profile_dir}/pnpm-workspace.yaml" "${overrides_pairs[@]}"
 
+  clear_cached_chatdsh_packages "$profile_dir"
+
   DSH_HOME="$dsh_home" npm_config_store_dir="$store" pnpm_config_store_dir="$store" \
     "$dsh_bin" plugin --profile "$profile" add "$bundle_tarball"
 }
@@ -477,7 +621,7 @@ install_bundle_into_profile() {
   local dsh_bin
   dsh_bin="$(resolve_dsh_bin)"
   local store
-  store="$(resolve_store_dir "$dsh_home")"
+  store="$(resolve_store_dir "$dsh_home" "$profile" "$dsh_bin")"
   mkdir -p "$store"
 
   if [ -n "$bundle_spec" ]; then
@@ -650,6 +794,7 @@ main() {
   local force_local=0
   local skip_checksum=0
   local install_only=0
+  local check_update_only=0
   local port_arg=""
   local skip_install=0
   local re_pair=0
@@ -681,6 +826,10 @@ main() {
         ;;
       --install-only)
         install_only=1
+        shift
+        ;;
+      --check-update)
+        check_update_only=1
         shift
         ;;
       --remote)
@@ -806,6 +955,10 @@ main() {
   DSH_HOME_RESOLVED="$(trim "${DSH_HOME:-}")"
   if [ -z "$DSH_HOME_RESOLVED" ]; then
     DSH_HOME_RESOLVED="${HOME}/.dsh"
+  fi
+  if [ "$check_update_only" -eq 1 ]; then
+    check_plugin_update "$DSH_HOME_RESOLVED" "$profile" "$release_tag"
+    return 0
   fi
   mkdir -p "$DSH_HOME_RESOLVED"
   persist_standalone_script "$DSH_HOME_RESOLVED"

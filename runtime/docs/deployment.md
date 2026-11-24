@@ -90,17 +90,25 @@ node gateway/lib/main.js
 
 ## 四、设备一行远程安装插件、审批放行与配对启动
 
-在设备端直接执行远程脚本（无需克隆仓库、无需本地编译，自动从 GitHub Releases 下载预构建归档 `chatdsh-plugin-bundle.tar.gz` 并核对 `SHA256SUMS.txt`；交互终端静默提示输入配对口令避免留存 Shell 历史；同机部署可使用 `--from-relay-env ~/.chatdsh/relay/.env --redact-secrets`）：
+在设备端直接执行远程脚本（无需克隆仓库、无需本地编译，自动从 GitHub Releases 下载预构建归档 `chatdsh-plugin-bundle.tar.gz` 并核对 `SHA256SUMS.txt`；交互终端静默提示输入配对口令避免留存历史；Linux / macOS 同机部署可使用 `--from-relay-env ~/.chatdsh/relay/.env --redact-secrets`）：
+
+**Linux / macOS（Shell）：**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay https://relay.example.com
 ```
 
+**Windows（PowerShell，专供 Windows 客户端使用）：**
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.ps1))) -Relay https://relay.example.com
+```
+
 该命令自动依次完成：
 
-1. 下载并校验 GitHub Releases 发布的 `chatdsh-plugin-bundle.tar.gz`（可用 `--release-tag <标签>` 锁定版本，或 `--bundle-archive <本地路径>` 离线安装，源码仓库内可用 `--from-local` 打包本地产物），应用 `pnpm-workspace.yaml` 覆盖表后经官方 `dsh plugin --profile web add` 安装到官方 `web` profile（可通过 `--profile desktop` 指定桌面端）。
-2. 调用 `POST <中继地址>/chatdsh/gateway/devices/pair` 提交配对申请，返回 `202 pending` 后打印 `requestId` 并等待中继宿主机审批；审批放行后自动经 `POST /chatdsh/gateway/devices/pair/claim` 一次性领取凭据，并将 `CHATDSH_CONTROL_URL`、`CHATDSH_DEVICE_ID` 与 `CHATDSH_NODE_TOKEN` 写入 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）。节点令牌只通过运行环境变量注入，不进入配置树，也不出现在 `dsh --dump-config` 输出里。
-3. 将可复用的启动脚本保存到 `~/.dsh/chatdsh-device-join.sh`，并注入配对凭据启动官方 DSH 运行时。
+1. 下载并校验 GitHub Releases 发布的 `chatdsh-plugin-bundle.tar.gz`（可用 `--release-tag <标签>` / `-ReleaseTag <标签>` 锁定版本，或 `--bundle-archive <本地路径>` / `-BundleArchive <本地路径>` 离线安装，源码仓库内可用 `--from-local` / `-FromLocal` 打包本地产物），应用 `pnpm-workspace.yaml` 覆盖表后经官方 `dsh plugin --profile web add` 安装到官方 `web` profile（可通过 `--profile desktop` / `-Profile desktop` 指定桌面端）。
+2. 调用 `POST <中继地址>/chatdsh/gateway/devices/pair` 提交配对申请，返回 `202 pending` 后打印 `requestId` 并等待中继宿主机审批；审批放行后自动经 `POST /chatdsh/gateway/devices/pair/claim` 一次性领取凭据，并将 `CHATDSH_CONTROL_URL`、`CHATDSH_DEVICE_ID` 与 `CHATDSH_NODE_TOKEN` 写入 `$DSH_HOME/chatdsh-device.env`（Linux / macOS 权限 `0600`，Windows 限制仅当前用户访问）。节点令牌只通过运行环境变量注入，不进入配置树，也不出现在 `dsh --dump-config` 输出里。
+3. 将可复用的启动脚本保存到 `~/.dsh/chatdsh-device-join.sh`（Windows 保存到 `%USERPROFILE%\.dsh\chatdsh-device-join.ps1`），并注入配对凭据启动官方 DSH 运行时。
 
 在中继宿主机审批配对请求：
 
@@ -120,7 +128,13 @@ bash ~/.chatdsh/relay/relay-up.sh --disable-pairing
 后续在同一台设备上重启 DSH 时无需再次传入配对口令，直接执行：
 
 ```sh
+# Linux / macOS（Shell）
 bash ~/.dsh/chatdsh-device-join.sh
+```
+
+```powershell
+# Windows（PowerShell，专供 Windows 客户端使用）
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.dsh\chatdsh-device-join.ps1"
 ```
 
 如需接入新设备，在中继宿主机重新打印配对接入命令即可：
