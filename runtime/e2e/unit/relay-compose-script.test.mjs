@@ -6,7 +6,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -19,6 +20,7 @@ const execFileAsync = promisify(execFile);
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
 const RELAY_UP = join(REPO_ROOT, 'scripts/relay-up.sh');
 const DEVICE_JOIN = join(REPO_ROOT, 'scripts/device-join.sh');
+const PACK_BUNDLE = join(REPO_ROOT, 'scripts/pack-plugin-bundle.mjs');
 
 function parseSimpleEnv(text) {
   const map = new Map();
@@ -118,8 +120,9 @@ test('relay-up.sh 支持自动生成口令、二次复用、脱敏输出、轮�
     const code = parsed1.get('CHATDSH_PAIRING_CODE');
     assert.equal(parsed1.get('CHATDSH_PUBLIC_URL'), 'https://relay.example.com');
     assert.equal(parsed1.get('CHATDSH_PAIRING_APPROVAL'), 'required');
+    assert.equal(parsed1.get('CHATDSH_RELAY_IMAGE'), 'ghcr.io/wenzetan/chatdsh-relay:latest');
     assert.match(code, /^[A-Za-z0-9_-]{32}$/);
-    assert.ok(first.stdout.includes('bash scripts/device-join.sh --relay https://relay.example.com'));
+    assert.ok(first.stdout.includes('curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay https://relay.example.com'));
     assert.ok(first.stdout.includes(code));
     assert.ok(first.stdout.includes('bash scripts/relay-approve.sh'));
     assert.ok(first.stdout.includes('--print-join-command'));
@@ -367,6 +370,149 @@ test('配对审批模式：客户端 202 等待审批，拒绝转发头冒充，
     await server.stop();
     await telemetry.shutdown();
     store.close();
+    releaseIndependentHome(home);
+  }
+});
+
+test('远程免克隆模式：relay-up.sh 自动拉取 compose 与脚本，pack-plugin-bundle + device-join.sh 支持校验与安装', async () => {
+  const home = allocateIndependentHome('remote-github-flow');
+  const distDir = join(home, 'dist');
+  const relayDir = join(home, 'relay-deploy');
+  const standaloneRelayScript = join(home, 'downloaded-relay-up.sh');
+  const standaloneDeviceScript = join(home, 'downloaded-device-join.sh');
+  const deviceHome = join(home, 'dsh-home');
+  const tamperedHome = join(home, 'dsh-home-tampered');
+
+  // 1. 生成真实的自包含插件发布归档与 SHA256SUMS.txt
+  const packRes = await execFileAsync('node', [PACK_BUNDLE, '--out-dir', distDir], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  });
+  const archiveFile = join(distDir, 'chatdsh-plugin-bundle.tar.gz');
+  const checksumFile = join(distDir, 'SHA256SUMS.txt');
+  assert.equal(existsSync(archiveFile), true, packRes.stdout);
+  assert.equal(existsSync(checksumFile), true);
+
+  copyFileSync(RELAY_UP, standaloneRelayScript);
+  copyFileSync(DEVICE_JOIN, standaloneDeviceScript);
+
+  // 2. 启动本地 HTTP 服务模拟 raw.githubusercontent.com 与 GitHub Releases
+  let serveBadChecksum = false;
+  const httpServer = createServer((req, res) => {
+    const reqPath = (req.url ?? '/').split('?')[0];
+    if (reqPath === '/raw/docker-compose.yml') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(readFileSync(join(REPO_ROOT, 'docker-compose.yml')));
+      return;
+    }
+    if (reqPath === '/raw/scripts/relay-up.sh') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(readFileSync(RELAY_UP));
+      return;
+    }
+    if (reqPath === '/raw/scripts/relay-approve.sh') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(readFileSync(join(REPO_ROOT, 'scripts/relay-approve.sh')));
+      return;
+    }
+    if (reqPath === '/raw/scripts/device-join.sh') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(readFileSync(DEVICE_JOIN));
+      return;
+    }
+    if (reqPath === '/releases/chatdsh-plugin-bundle.tar.gz') {
+      res.writeHead(200, { 'content-type': 'application/gzip' });
+      res.end(readFileSync(archiveFile));
+      return;
+    }
+    if (reqPath === '/releases/SHA256SUMS.txt') {
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      if (serveBadChecksum) {
+        res.end('0000000000000000000000000000000000000000000000000000000000000000  chatdsh-plugin-bundle.tar.gz\n');
+      } else {
+        res.end(readFileSync(checksumFile));
+      }
+      return;
+    }
+    res.writeHead(404);
+    res.end('not found');
+  });
+
+  await new Promise((resolveListen) => httpServer.listen(0, '127.0.0.1', resolveListen));
+  const { port } = httpServer.address();
+  const rawBase = `http://127.0.0.1:${port}/raw`;
+  const releaseBase = `http://127.0.0.1:${port}/releases`;
+
+  try {
+    // 3. 通过 POSIX sh 执行 `curl -fsSL ... | bash -s -- ...`（验证 zsh / bash / fish / sh 通用的管道调用）
+    const relayRes = await execFileAsync(
+      'sh',
+      ['-c', `curl -fsSL "${rawBase}/scripts/relay-up.sh" | bash -s -- --prepare-only --dir "${relayDir}" --domain relay.example.com`],
+      {
+        cwd: home,
+        env: {
+          ...process.env,
+          CHATDSH_RAW_BASE: rawBase,
+          CHATDSH_PAIRING_CODE: '',
+          CHATDSH_PUBLIC_URL: '',
+          CHATDSH_GATEWAY_BIND_HOST: '',
+        },
+        encoding: 'utf8',
+      },
+    );
+    assert.equal(existsSync(join(relayDir, 'docker-compose.yml')), true);
+    assert.equal(existsSync(join(relayDir, 'relay-up.sh')), true);
+    assert.equal(existsSync(join(relayDir, 'relay-approve.sh')), true);
+    assert.equal(existsSync(join(relayDir, '.env')), true);
+    assert.equal(statSync(join(relayDir, '.env')).mode & 0o777, 0o600);
+    assert.ok(relayRes.stdout.includes(`curl -fsSL ${rawBase}/scripts/device-join.sh | bash -s -- --relay https://relay.example.com`), relayRes.stdout);
+    assert.ok(relayRes.stdout.includes(join(relayDir, 'relay-approve.sh')), relayRes.stdout);
+
+    // 4. 通过 POSIX sh 执行 `curl -fsSL ... | bash -s -- --install-only` 下载归档、校验 SHA-256 并真实装入 DSH web profile
+    const installRes = await execFileAsync(
+      'sh',
+      ['-c', `curl -fsSL "${rawBase}/scripts/device-join.sh" | bash -s -- --install-only`],
+      {
+        cwd: home,
+        env: {
+          ...process.env,
+          DSH_HOME: deviceHome,
+          CHATDSH_RAW_BASE: rawBase,
+          CHATDSH_RELEASE_BASE: releaseBase,
+          CHATDSH_PNPM_STORE: join(REPO_ROOT, 'runtime/.run/pnpm-store'),
+        },
+        encoding: 'utf8',
+      },
+    );
+    assert.ok(installRes.stdout.includes('SHA-256 校验通过'), installRes.stdout);
+    assert.equal(existsSync(join(deviceHome, 'chatdsh-device-join.sh')), true);
+    assert.equal(existsSync(join(deviceHome, 'profiles/web/pnpm-workspace.yaml')), true);
+
+    const dumpRes = await execFileAsync('dsh', ['--profile', 'web', '--dump-config'], {
+      cwd: home,
+      env: { ...process.env, DSH_HOME: deviceHome },
+      encoding: 'utf8',
+    });
+    assert.ok(dumpRes.stdout.includes('chatdsh'), '安装后 --dump-config 应包含 ChatDSH 插件配置');
+
+    // 5. 篡改 SHA256SUMS.txt 时 device-join.sh 必须拒绝安装并快速失败
+    serveBadChecksum = true;
+    await assert.rejects(
+      execFileAsync('bash', [standaloneDeviceScript, '--install-only'], {
+        cwd: home,
+        env: {
+          ...process.env,
+          DSH_HOME: tamperedHome,
+          CHATDSH_RAW_BASE: rawBase,
+          CHATDSH_RELEASE_BASE: releaseBase,
+          CHATDSH_PNPM_STORE: join(REPO_ROOT, 'runtime/.run/pnpm-store'),
+        },
+        encoding: 'utf8',
+      }),
+      /SHA-256 校验失败/,
+    );
+  } finally {
+    await new Promise((resolveClose) => httpServer.close(resolveClose));
     releaseIndependentHome(home);
   }
 });

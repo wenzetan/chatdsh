@@ -12,6 +12,7 @@
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -85,11 +86,23 @@ def collect_identities():
     return unique
 
 
+def mask_public_repo_urls(text, username):
+    """仅对本仓库公开 GitHub 资源前缀做精确脱敏，其余任意位置的用户名仍照常拦截。"""
+    escaped = re.escape(username)
+    pattern = re.compile(
+        rf"(?:https://(?:raw\.githubusercontent|github)\.com/{escaped}/chatdsh\b"
+        rf"|ghcr\.io/{escaped}/chatdsh-relay\b"
+        rf"|CHATDSH_GITHUB_REPO:-{escaped}/chatdsh\b)"
+    )
+    return pattern.sub(lambda m: " " * len(m.group(0)), text)
+
+
 def scan_text(path, text, identities, hits):
     for value, label in identities:
-        if value not in text:
+        haystack = mask_public_repo_urls(text, value) if label == "git 用户名" else text
+        if value not in haystack:
             continue
-        line = text[: text.index(value)].count("\n") + 1
+        line = haystack[: haystack.index(value)].count("\n") + 1
         hits.append((path, line, label))
 
 

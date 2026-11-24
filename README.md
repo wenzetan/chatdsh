@@ -32,70 +32,72 @@ ChatDSH 是面向官方 DSH（DeepSeek Harness）的跨设备互联插件集与�
 
 ## 快速开始
 
-### 首选方式：手动命令行部署
+### 首选方式：手动命令行部署（免克隆仓库，直接复用 GitHub 预构建镜像与插件）
+
+GitHub Actions 在每次主干更新与版本发布时自动构建并发布两项产物：
+- **多架构中继镜像**：`ghcr.io/wenzetan/chatdsh-relay:latest`（支持 `linux/amd64` 与 `linux/arm64`）
+- **预构建插件归档**：GitHub Releases 中的 `chatdsh-plugin-bundle.tar.gz` 与 `SHA256SUMS.txt`（包含 `@chatdsh/bundle` 与全部 12 个依赖包）
 
 #### 1. 环境要求
 
-- 中继宿主机：Docker 与 Docker Compose、Bash 与 `curl`（无需在宿主机安装 Node.js）
-- 接入设备：Node.js 22 及以上、pnpm 11.21.0、官方 DSH（`@deepseek-ai/dsh`，当前验证基线 `0.2.2-rc.3`）
+- 中继宿主机：Docker 与 Docker Compose、Bash 与 `curl`（无需克隆源码，无需安装 Node.js）
+- 接入设备：Node.js 22 及以上、官方 DSH（`@deepseek-ai/dsh`，当前验证基线 `0.2.2-rc.5`）、Bash 与 `curl`（无需克隆源码，无需本地编译）
 
-#### 2. 一行命令启动中继服务端（Docker Compose）
+#### 2. 一行远程命令启动中继服务端（Docker Compose + GHCR 镜像）
 
 ```sh
-bash scripts/relay-up.sh
+curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash
 ```
 
-首次运行时脚本会通过命令行询问中继对外域名（必填，例如 `relay.example.com` 或 `https://relay.example.com`），检查 `.env` 是否已配置配对口令，未配置时自动生成高熵随机口令并保存（文件权限 `0600`，下次运行自动复用），随后通过 [`docker-compose.yml`](docker-compose.yml) 构建并拉起中继容器。宿主机监听地址默认为 `127.0.0.1`（如需绑定特定内网穿透网卡 IP 可通过 `--bind-host <具体网卡 IP>` 指定，脚本强制禁止绑定 `0.0.0.0` 或 `::`），并默认开启配对审批（`CHATDSH_PAIRING_APPROVAL=required`）。
+脚本自动在 `~/.chatdsh/relay`（可通过 `--dir` 自定义）拉取 [`docker-compose.yml`](docker-compose.yml) 与管理脚本，首次运行时询问中继对外域名（必填，例如 `relay.example.com` 或 `https://relay.example.com`），自动生成高熵随机配对口令并保存为 `0600` 权限，随后直接拉取 `ghcr.io/wenzetan/chatdsh-relay:latest` 启动中继容器。宿主机监听地址默认为 `127.0.0.1`（如需绑定特定内网穿透网卡 IP 可通过 `--bind-host <具体网卡 IP>` 指定，脚本强制禁止绑定 `0.0.0.0` 或 `::`），并默认开启配对审批（`CHATDSH_PAIRING_APPROVAL=required`）。
 
-容器就绪后，脚本会自动探测公网域名连通性（尚未配置域名解析或反向代理时输出明确的 DNS 与反向代理指向 `http://127.0.0.1:3170` 指引），并打印一条可在任意设备上复制执行的一行接入命令。后续如需再次查看该命令，在中继宿主机执行：
+容器就绪后，脚本会自动探测公网域名连通性（尚未配置域名解析或反向代理时输出明确的 DNS 与反向代理指向 `http://127.0.0.1:3170` 指引），并打印设备接入命令。后续如需再次查看接入命令或更新镜像，在中继宿主机执行：
 
 ```sh
-bash scripts/relay-up.sh --print-join-command
+bash ~/.chatdsh/relay/relay-up.sh --print-join-command
+# 拉取最新镜像并重启：bash ~/.chatdsh/relay/relay-up.sh
 ```
 
 生产环境建议在宿主机通过 Nginx、Caddy 或 Tailscale Serve 等前置网关向 `127.0.0.1:3170` 转发流量并终止 TLS（公网暴露建议开启 `CHATDSH_ACCESS_MODE=required` 或反向代理身份认证，配置示例见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md)）。
 
-#### 3. 一行命令在设备安装插件、配对并启动 DSH
+#### 3. 一行远程命令在设备安装插件、审批配对并启动 DSH
 
-如果是首次从本仓库源码安装，先完成一次本地构建：
-
-```sh
-cd dsh-adapter && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && cd ../runtime && pnpm install && node scripts/link-dsh-deps.mjs && pnpm build && pnpm build:client && cd ..
-```
-
-随后执行中继启动后提示的一行接入命令（在交互提示中静默输入配对口令，不留 Shell 历史）：
+在任意安装了官方 DSH 的设备上执行（免克隆仓库，自动从 GitHub Releases 下载预构建插件归档并校验 SHA-256，在交互提示中静默输入配对口令不留 Shell 历史）：
 
 ```sh
-bash scripts/device-join.sh --relay https://relay.example.com
+curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay https://relay.example.com
 ```
 
 客户端提交配对申请后会打印 `requestId` 并等待放行，在中继宿主机审批通过：
 
 ```sh
-bash scripts/relay-approve.sh list
-bash scripts/relay-approve.sh approve <requestId>
+bash ~/.chatdsh/relay/relay-approve.sh list
+bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>
 ```
 
-审批通过后，设备脚本自动领取一次性凭据保存到 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）并启动官方 DSH；后续在同一设备重启只需执行 `bash scripts/device-join.sh`。全部设备接入完成后，可在中继宿主机执行 `bash scripts/relay-up.sh --disable-pairing` 关闭配对入口。
+审批通过后，设备脚本自动领取一次性凭据保存到 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）并启动官方 DSH；脚本同时保存在 `~/.dsh/chatdsh-device-join.sh`，后续在同一设备重启只需执行 `bash ~/.dsh/chatdsh-device-join.sh`。全部设备接入完成后，可在中继宿主机执行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` 关闭配对入口。
 
 连接成功后，可通过中继地址 `/` 使用手机端 PWA，通过 `/d/<deviceId>/` 直接进入对应在线设备的官方 DSH 界面，或在本地官方客户端侧栏打开「远程设备」面板。
+
+> [!TIP]
+> 开发者如需在本地克隆的源码仓库内自构建镜像与插件，请先在 `dsh-adapter/` 与 `runtime/` 完成构建，再分别运行 `bash scripts/relay-up.sh --build` 与 `bash scripts/device-join.sh --from-local --relay <中继地址>`，详细步骤见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md)。
 
 ### 次选方式：由 AI Agent 协助完成部署与接入
 
 > [!WARNING]
 > 尽管提示词与操作指南已加入零泄露约束与命令限制，将宿主机终端权限交给 AI Agent 仍存在模型未完全遵守约束、命令异常输出带出敏感内容或上下文留存凭据的泄露风险。日常部署请优先使用上方的**手动命令行部署**；仅在你明确了解并可接受上述风险时，再尝试 AI Agent 辅助部署。
 
-若确认接受上述风险，可将本项目交给具备终端执行能力的 AI Agent（如官方 DSH、Claude Code、Codex 等），发送以下指令按 [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md) 逐步完成部署：
+若确认接受上述风险，可将以下指令发送给具备终端执行能力的 AI Agent（如官方 DSH、Claude Code、Codex 等），按 [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md) 逐步完成免克隆远程部署：
 
 ```text
-请先阅读 runtime/docs/agent-deploy-guide.md，严格遵守其中的零泄露红线，帮我部署 ChatDSH 中继服务端并接入本机 DSH。严禁将任何密钥、令牌、配对口令、.env 内容或真实域名输出到上下文中（也不要执行 docker compose config / docker inspect / systemctl show / ps eww / curl -v）；宿主机监听禁止放行 0.0.0.0；其他服务使用密钥或域名时直接引用环境变量文件，需要查看口令或审批配对时提示我自己操作。
+请先阅读 https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md（或本地 runtime/docs/agent-deploy-guide.md），严格遵守其中的零泄露红线，通过远程脚本与 GitHub 预构建镜像/插件帮我部署 ChatDSH 中继服务端并接入本机 DSH。严禁将任何密钥、令牌、配对口令、.env 内容或真实域名输出到上下文中（也不要执行 docker compose config / docker inspect / systemctl show / ps eww / curl -v）；宿主机监听禁止放行 0.0.0.0；其他服务使用密钥或域名时直接引用环境变量文件，需要查看口令或审批配对时提示我自己操作。
 ```
 
 AI Agent 会严格按以下流程协作执行：
 
 1. **零泄露约束与网络探测**：不读取或打印 `.env`、凭据文件与真实域名；先只读检查宿主机网卡类型、Tailscale / Cloudflare Tunnel / FRP / WireGuard 等内网穿透工具及现有反向代理端口，再引导你在自己的终端写入对外域名与具体监听地址（严禁 `0.0.0.0`，仅限 `127.0.0.1` 或对应内网穿透网卡 IP）并确认联网方式。
-2. **中继容器部署与配对审批**：调用 `bash scripts/relay-up.sh --redact-secrets` 以脱敏模式拉起 Docker Compose 中继容器（默认 `CHATDSH_PAIRING_APPROVAL=required`，客户端申请配对后需管理员审批放行；首次自动生成随机配对口令并按 `0600` 权限持久化复用）；反向代理或穿透配置通过环境变量引用，不展开明文，且修改前征得你的同意。查看完整接入命令时由你本人在宿主机终端手动执行 `bash scripts/relay-up.sh --print-join-command`。
-3. **代劳安装 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机安装 `@chatdsh/bundle` 并完成配对接入（同机通过 `--from-relay-env .env --redact-secrets` 直接引用配置，跨机通过交互隐藏输入口令不留 Shell 历史）；确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、运行用户、拟添加的 `EnvironmentFile` 引用变更及重启影响，取得你的明确同意后再修改服务文件与重启；全部设备接入完成后可运行 `bash scripts/relay-up.sh --disable-pairing` 关闭配对入口。
+2. **中继容器部署与配对审批**：调用远程脚本 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets` 以脱敏模式拉取 GHCR 预构建镜像并启动 Docker Compose 中继容器（默认 `CHATDSH_PAIRING_APPROVAL=required`，客户端申请配对后需管理员审批放行；首次自动生成随机配对口令并按 `0600` 权限持久化复用）；反向代理或穿透配置通过环境变量引用，不展开明文，且修改前征得你的同意。查看完整接入命令时由你本人在宿主机终端手动执行 `bash ~/.chatdsh/relay/relay-up.sh --print-join-command`。
+3. **代劳安装 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机通过远程脚本下载 GitHub Releases 预构建插件归档安装 `@chatdsh/bundle` 并完成配对接入（同机通过 `--from-relay-env ~/.chatdsh/relay/.env --redact-secrets` 直接引用配置，跨机通过交互隐藏输入口令不留 Shell 历史）；确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、运行用户、拟添加的 `EnvironmentFile` 引用变更及重启影响，取得你的明确同意后再修改服务文件与重启；全部设备接入完成后可运行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` 关闭配对入口。
 
 ## 文档导航
 

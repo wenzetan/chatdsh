@@ -1,9 +1,6 @@
 services:
   relay:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: chatdsh-relay:local
+    image: ${CHATDSH_RELAY_IMAGE:-ghcr.io/wenzetan/chatdsh-relay:latest}
     container_name: ${CHATDSH_RELAY_CONTAINER_NAME:-chatdsh-relay}
     restart: unless-stopped
     ports:
@@ -12,7 +9,7 @@ services:
       DSH_HOME: /data
       CHATDSH_GATEWAY_HOST: "0.0.0.0"
       CHATDSH_GATEWAY_PORT: "3170"
-      CHATDSH_PUBLIC_URL: ${CHATDSH_PUBLIC_URL:?CHATDSH_PUBLIC_URL 必填，请先运行 bash scripts/relay-up.sh}
+      CHATDSH_PUBLIC_URL: ${CHATDSH_PUBLIC_URL:?CHATDSH_PUBLIC_URL 必填，请先运行 relay-up.sh 初始化}
       CHATDSH_PAIRING_CODE: ${CHATDSH_PAIRING_CODE:-}
       CHATDSH_PAIRING_APPROVAL: ${CHATDSH_PAIRING_APPROVAL:-required}
       CHATDSH_ACCESS_MODE: ${CHATDSH_ACCESS_MODE:-disabled}

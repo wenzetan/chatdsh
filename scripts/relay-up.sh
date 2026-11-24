@@ -1,22 +1,47 @@
 #!/usr/bin/env bash
 # 中继服务端 Docker Compose 引导与启动脚本。
 #
-# 首次运行时通过命令行询问对外域名（必填）并规范化为精确 origin 写入 `.env`；
-# 检查是否已设置 `CHATDSH_PAIRING_CODE`，缺失时自动生成随机口令并持久化保存，
-# 后续再次运行直接复用已保存的口令与配置，然后通过 Docker Compose 启动中继容器。
+# 支持两种运行方式：
+#   1. 远程免克隆部署（首选，直接复用 GitHub 仓库脚本与 GHCR 预构建多架构镜像，兼容 zsh / bash / fish / sh）：
+#      curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash
+#   2. 本地仓库内运行（开发者源码构建可附加 --build）：
+#      bash scripts/relay-up.sh [--build]
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEFAULT_ENV_FILE="${REPO_ROOT}/.env"
-COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
+GITHUB_REPO="${CHATDSH_GITHUB_REPO:-wenzetan/chatdsh}"
+GITHUB_REF="${CHATDSH_GITHUB_REF:-main}"
+RAW_BASE="${CHATDSH_RAW_BASE:-https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_REF}}"
+DEFAULT_RELAY_IMAGE="${CHATDSH_RELAY_IMAGE:-ghcr.io/${GITHUB_REPO%%/*}/chatdsh-relay:latest}"
+
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+STANDALONE_MODE=1
+REPO_ROOT=""
+if [ -n "$SCRIPT_SOURCE" ] && [ -f "$SCRIPT_SOURCE" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+  if [ -f "${SCRIPT_DIR}/../docker-compose.yml" ] && [ -f "${SCRIPT_DIR}/../Dockerfile" ]; then
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    STANDALONE_MODE=0
+  elif [ -f "${SCRIPT_DIR}/docker-compose.yml" ]; then
+    REPO_ROOT="$SCRIPT_DIR"
+    STANDALONE_MODE=1
+  fi
+fi
+
+DEFAULT_WORK_DIR="${CHATDSH_RELAY_DIR:-${HOME}/.chatdsh/relay}"
+if [ -n "$REPO_ROOT" ]; then
+  DEFAULT_WORK_DIR="$REPO_ROOT"
+fi
 
 print_help() {
   cat <<'EOF'
-用法：bash scripts/relay-up.sh [选项]
+用法：
+  远程一键部署：curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash
+  远程带参执行：curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- [选项]
+  本地脚本执行：bash relay-up.sh [选项]
 
 选项：
+  --dir <目录>              指定中继部署目录（独立部署默认 ~/.chatdsh/relay，源码仓库默认仓库根）
   --domain <域名或 origin>  指定对外访问域名（未指定且 .env 未保存时会通过命令行询问，必填）
   --reconfigure             重新询问并更新对外域名（已保存的配对口令保持复用）
   --print-join-command      打印设备一行接入命令（读取已保存的 .env，不重启容器）
@@ -24,9 +49,13 @@ print_help() {
   --disable-pairing         清空 .env 中的配对口令并重启容器，关闭新设备配对入口（返回 404）
   --rotate-pairing-code     重新生成随机配对口令并重启容器，旧口令立即失效
   --bind-host <IP>          指定宿主机监听 IP（默认 127.0.0.1；严禁 0.0.0.0 或 ::，仅限回环或具体内网穿透网卡 IP）
-  --config <路径>           指定环境变量文件路径（默认仓库根目录 .env）
-  --no-build                跳过镜像重新构建，直接启动容器
-  --prepare-only            仅检查/生成并保存 .env，不启动 Docker Compose
+  --image <镜像名>          指定中继容器镜像（默认 ghcr.io/wenzetan/chatdsh-relay:latest）
+  --build                   使用本地源码与 docker-compose.build.yml 重新构建镜像（需位于源码仓库内）
+  --no-pull                 启动前不执行 docker compose pull（直接使用本地已有镜像）
+  --no-build                兼容参数：不从源码构建，直接使用预构建镜像
+  --update-scripts          重新从 GitHub 拉取最新的 docker-compose.yml 与管理脚本到部署目录
+  --config <路径>           指定环境变量文件路径（默认 <部署目录>/.env）
+  --prepare-only            仅检查/生成并保存 .env（独立模式同时拉取部署文件），不启动 Docker Compose
   -h, --help                显示帮助信息
 EOF
 }
@@ -63,6 +92,37 @@ format_env_value() {
   printf '"%s"' "$escaped"
 }
 
+download_file() {
+  local url="$1"
+  local dest="$2"
+  local mode="${3:-644}"
+  mkdir -p "$(dirname "$dest")"
+  local tmp="${dest}.tmp.$$"
+  if ! curl -fsSL --retry 2 --max-time 30 "$url" -o "$tmp"; then
+    rm -f "$tmp"
+    printf '下载远端文件失败：%s\n' "$url" >&2
+    return 1
+  fi
+  chmod "$mode" "$tmp"
+  mv -f "$tmp" "$dest"
+}
+
+ensure_standalone_files() {
+  local work_dir="$1"
+  local force_update="${2:-0}"
+  mkdir -p "$work_dir"
+
+  if [ "$force_update" -eq 1 ] || [ ! -f "${work_dir}/docker-compose.yml" ]; then
+    download_file "${RAW_BASE}/docker-compose.yml" "${work_dir}/docker-compose.yml" 644
+  fi
+  if [ "$force_update" -eq 1 ] || [ ! -f "${work_dir}/relay-up.sh" ]; then
+    download_file "${RAW_BASE}/scripts/relay-up.sh" "${work_dir}/relay-up.sh" 755
+  fi
+  if [ "$force_update" -eq 1 ] || [ ! -f "${work_dir}/relay-approve.sh" ]; then
+    download_file "${RAW_BASE}/scripts/relay-approve.sh" "${work_dir}/relay-approve.sh" 755
+  fi
+}
+
 # 将域名或完整来源规范化为精确 HTTP/HTTPS origin。
 normalize_public_url() {
   local raw
@@ -90,7 +150,6 @@ normalize_public_url() {
     candidate="https://${raw}"
   fi
 
-  # 去掉末尾连续斜杠后再校验是否存在路径、查询参数、片段或凭据
   local stripped="$candidate"
   while [[ "$stripped" == */ ]]; do
     stripped="${stripped%/}"
@@ -144,7 +203,6 @@ normalize_public_url() {
     fi
   fi
 
-  # 默认端口按浏览器 URL.origin 规则省略
   if { [ "$scheme" = "https" ] && [ "$port" = "443" ]; } || { [ "$scheme" = "http" ] && [ "$port" = "80" ]; }; then
     port=""
   fi
@@ -247,7 +305,7 @@ upsert_env_file() {
       fi
     done < "$file"
   else
-    printf '%s\n' '# ChatDSH 中继服务端运行配置（由 scripts/relay-up.sh 维护，请勿提交到版本库）' >> "$tmp"
+    printf '%s\n' '# ChatDSH 中继服务端运行配置（由 relay-up.sh 维护，请勿提交到版本库）' >> "$tmp"
   fi
 
   local idx
@@ -264,14 +322,28 @@ upsert_env_file() {
 }
 
 prompt_required_domain() {
+  local use_tty=0
   local interactive=0
-  [ -t 0 ] && interactive=1
+  if [ -t 0 ]; then
+    interactive=1
+  elif { [ -z "$SCRIPT_SOURCE" ] || [ "$SCRIPT_SOURCE" = "/dev/stdin" ]; } && [ -r /dev/tty ]; then
+    use_tty=1
+    interactive=1
+  fi
+
   while true; do
     printf '%s' '请输入中继服务端对外域名（必填，例如 relay.example.com 或 https://relay.example.com）: ' >&2
     local answer=""
-    if ! IFS= read -r answer; then
-      printf '\n%s\n' '未收到中继域名输入，域名为必填项' >&2
-      return 1
+    if [ "$use_tty" -eq 1 ]; then
+      if ! IFS= read -r answer </dev/tty; then
+        printf '\n%s\n' '未收到中继域名输入，域名为必填项' >&2
+        return 1
+      fi
+    else
+      if ! IFS= read -r answer; then
+        printf '\n%s\n' '未收到中继域名输入，域名为必填项' >&2
+        return 1
+      fi
     fi
     local normalized=""
     if normalized="$(normalize_public_url "$answer")"; then
@@ -282,14 +354,6 @@ prompt_required_domain() {
       return 1
     fi
   done
-}
-
-build_device_join_command() {
-  local public_url="$1"
-  local pairing_code="$2"
-  printf 'bash scripts/device-join.sh --relay %s --code %s' \
-    "$(shell_quote "$public_url")" \
-    "$(shell_quote "$pairing_code")"
 }
 
 extract_host_from_origin() {
@@ -311,6 +375,16 @@ check_public_health() {
     fi
   fi
   return 1
+}
+
+relay_script_invocation() {
+  local work_dir="$1"
+  local script_name="$2"
+  if [ "$STANDALONE_MODE" -eq 0 ] && [ "$work_dir" = "$REPO_ROOT" ]; then
+    printf 'bash scripts/%s' "$script_name"
+  else
+    printf 'bash %s' "$(shell_quote "${work_dir}/${script_name}")"
+  fi
 }
 
 print_network_checklist() {
@@ -339,47 +413,59 @@ print_network_checklist() {
 }
 
 print_redacted_join_hint() {
-  local env_file="$1"
+  local work_dir="$1"
+  local env_file="$2"
+  local default_env="${work_dir}/.env"
   local config_arg=""
-  if [ "$env_file" != "$DEFAULT_ENV_FILE" ]; then
+  if [ "$env_file" != "$default_env" ]; then
     config_arg=" --config $(shell_quote "$env_file")"
   fi
+  local up_cmd
+  local approve_cmd
+  up_cmd="$(relay_script_invocation "$work_dir" relay-up.sh)"
+  approve_cmd="$(relay_script_invocation "$work_dir" relay-approve.sh)"
   printf '\n'
   printf '%s\n' '已启用脱敏输出模式，配对口令与域名未打印到终端输出。'
   printf '%s\n' '如需查看完整设备接入命令，请在自己的本地终端手动执行：'
-  printf '  bash scripts/relay-up.sh --print-join-command%s\n' "$config_arg"
-  printf '%s\n' '同机设备接入可直接引用 .env 变量文件（不传递明文口令）：'
-  printf '  bash scripts/device-join.sh --from-relay-env %s --redact-secrets\n' "$(shell_quote "$env_file")"
+  printf '  %s --print-join-command%s\n' "$up_cmd" "$config_arg"
+  printf '%s\n' '同机设备接入可直接引用 .env 变量文件（免克隆仓库、不传递明文口令）：'
+  printf '  curl -fsSL %s/scripts/device-join.sh | bash -s -- --from-relay-env %s --redact-secrets\n' "$RAW_BASE" "$(shell_quote "$env_file")"
   printf '%s\n' '客户端发起配对申请后，在中继宿主机审批放行：'
-  printf '  bash scripts/relay-approve.sh%s list\n' "$config_arg"
-  printf '  bash scripts/relay-approve.sh%s approve <requestId>\n' "$config_arg"
+  printf '  %s%s list\n' "$approve_cmd" "$config_arg"
+  printf '  %s%s approve <requestId>\n' "$approve_cmd" "$config_arg"
   printf '%s\n' '全部设备配对完成后可关闭配对入口：'
-  printf '  bash scripts/relay-up.sh%s --disable-pairing\n' "$config_arg"
+  printf '  %s%s --disable-pairing\n' "$up_cmd" "$config_arg"
 }
 
 print_join_instructions() {
-  local env_file="$1"
-  local public_url="$2"
-  local pairing_code="$3"
+  local work_dir="$1"
+  local env_file="$2"
+  local public_url="$3"
+  local pairing_code="$4"
+  local default_env="${work_dir}/.env"
   local config_arg=""
-  if [ "$env_file" != "$DEFAULT_ENV_FILE" ]; then
+  if [ "$env_file" != "$default_env" ]; then
     config_arg=" --config $(shell_quote "$env_file")"
   fi
+  local up_cmd
+  local approve_cmd
+  up_cmd="$(relay_script_invocation "$work_dir" relay-up.sh)"
+  approve_cmd="$(relay_script_invocation "$work_dir" relay-approve.sh)"
   printf '\n'
-  printf '%s\n' '在需要接入的设备上执行以下一行命令（交互静默输入口令，不留 Shell 历史，自动安装插件、等待审批并启动 DSH）：'
-  printf '  bash scripts/device-join.sh --relay %s\n' "$(shell_quote "$public_url")"
+  printf '%s\n' '在需要接入的设备上执行以下一行命令（免克隆仓库，自动从 GitHub Releases 下载插件归档并校验 SHA-256、交互静默输入口令、等待审批并启动 DSH）：'
+  printf '  curl -fsSL %s/scripts/device-join.sh | bash -s -- --relay %s\n' "$RAW_BASE" "$(shell_quote "$public_url")"
   printf '%s\n' '按提示输入下方配对口令（仅用于提交配对申请，仍需中继管理员审批才会放行）：'
   printf '  %s\n' "$pairing_code"
   printf '\n'
   printf '%s\n' '客户端提交配对申请后，在中继宿主机审批放行：'
-  printf '  bash scripts/relay-approve.sh%s list\n' "$config_arg"
-  printf '  bash scripts/relay-approve.sh%s approve <requestId>\n' "$config_arg"
+  printf '  %s%s list\n' "$approve_cmd" "$config_arg"
+  printf '  %s%s approve <requestId>\n' "$approve_cmd" "$config_arg"
   printf '\n'
   printf '%s\n' '全部设备配对完成后建议关闭配对入口（需要接入新设备时再执行 --rotate-pairing-code 重新启用）：'
-  printf '  bash scripts/relay-up.sh%s --disable-pairing\n' "$config_arg"
+  printf '  %s%s --disable-pairing\n' "$up_cmd" "$config_arg"
   printf '\n'
   printf '%s\n' '后续如需再次打印该命令，在中继宿主机执行：'
-  printf '  bash scripts/relay-up.sh --print-join-command%s\n' "$config_arg"
+  printf '  %s --print-join-command%s\n' "$up_cmd" "$config_arg"
 }
 
 wait_for_health() {
@@ -416,20 +502,29 @@ validate_bind_host() {
 }
 
 main() {
-  local env_file="$DEFAULT_ENV_FILE"
+  local work_dir="$DEFAULT_WORK_DIR"
+  local has_dir_arg=0
+  local env_file=""
   local domain_arg=""
   local has_domain_arg=0
   local bind_host_arg=""
   local has_bind_host_arg=0
+  local image_arg=""
+  local has_image_arg=0
   local reconfigure=0
   local prepare_only=0
   local print_join_only=0
-  local no_build=0
+  local build_local=0
+  local no_pull=0
+  local update_scripts=0
   local disable_pairing=0
   local rotate_pairing_code=0
   local redact_secrets=0
   if [ "${CHATDSH_REDACT_SECRETS:-0}" = "1" ]; then
     redact_secrets=1
+  fi
+  if [ "${CHATDSH_RELAY_BUILD:-0}" = "1" ]; then
+    build_local=1
   fi
 
   while [ "$#" -gt 0 ]; do
@@ -437,6 +532,20 @@ main() {
       -h|--help)
         print_help
         return 0
+        ;;
+      --dir)
+        if [ "$#" -lt 2 ]; then
+          printf '%s\n' '--dir 缺少参数' >&2
+          return 1
+        fi
+        work_dir="$2"
+        has_dir_arg=1
+        shift 2
+        ;;
+      --dir=*)
+        work_dir="${1#--dir=}"
+        has_dir_arg=1
+        shift
         ;;
       --reconfigure)
         reconfigure=1
@@ -462,8 +571,35 @@ main() {
         rotate_pairing_code=1
         shift
         ;;
+      --build)
+        build_local=1
+        shift
+        ;;
       --no-build)
-        no_build=1
+        build_local=0
+        no_pull=1
+        shift
+        ;;
+      --no-pull)
+        no_pull=1
+        shift
+        ;;
+      --update-scripts)
+        update_scripts=1
+        shift
+        ;;
+      --image)
+        if [ "$#" -lt 2 ]; then
+          printf '%s\n' '--image 缺少参数' >&2
+          return 1
+        fi
+        image_arg="$2"
+        has_image_arg=1
+        shift 2
+        ;;
+      --image=*)
+        image_arg="${1#--image=}"
+        has_image_arg=1
         shift
         ;;
       --domain)
@@ -513,6 +649,22 @@ main() {
     esac
   done
 
+  if [ "$has_dir_arg" -eq 1 ]; then
+    if [ ! -f "${work_dir}/Dockerfile" ] || [ ! -f "${work_dir}/docker-compose.build.yml" ]; then
+      STANDALONE_MODE=1
+    fi
+  fi
+
+  if [ -z "$env_file" ]; then
+    env_file="${work_dir}/.env"
+  fi
+  local compose_file="${work_dir}/docker-compose.yml"
+  local compose_build_file="${work_dir}/docker-compose.build.yml"
+
+  if [ "$STANDALONE_MODE" -eq 1 ]; then
+    ensure_standalone_files "$work_dir" "$update_scripts"
+  fi
+
   if [ "$disable_pairing" -eq 1 ] && [ "$rotate_pairing_code" -eq 1 ]; then
     printf '%s\n' '--disable-pairing 与 --rotate-pairing-code 不能同时使用' >&2
     return 1
@@ -526,7 +678,7 @@ main() {
     upsert_env_file "$env_file" "CHATDSH_PAIRING_CODE="
     printf '已清空 %s 中的 CHATDSH_PAIRING_CODE，新设备配对入口已关闭。\n' "$env_file"
     if [ "$prepare_only" -eq 0 ]; then
-      (cd "$REPO_ROOT" && docker compose --env-file "$env_file" -f "$COMPOSE_FILE" up -d --no-build)
+      (cd "$work_dir" && docker compose --env-file "$env_file" -f "$compose_file" up -d --no-build)
       printf '%s\n' '已更新中继容器，/chatdsh/gateway/devices/pair 现返回 404 pairing-disabled。'
     fi
     return 0
@@ -534,7 +686,7 @@ main() {
 
   if [ "$print_join_only" -eq 1 ]; then
     if [ ! -f "$env_file" ]; then
-      printf '未找到配置文件 %s，请先执行 bash scripts/relay-up.sh 初始化并启动中继服务端\n' "$env_file" >&2
+      printf '未找到配置文件 %s，请先执行 relay-up.sh 初始化并启动中继服务端\n' "$env_file" >&2
       return 1
     fi
     local saved_url
@@ -542,16 +694,16 @@ main() {
     saved_url="$(read_env_value "$env_file" CHATDSH_PUBLIC_URL)"
     saved_code="$(read_env_value "$env_file" CHATDSH_PAIRING_CODE)"
     if [ -z "$saved_url" ]; then
-      printf '%s 缺少 CHATDSH_PUBLIC_URL，请先执行 bash scripts/relay-up.sh\n' "$env_file" >&2
+      printf '%s 缺少 CHATDSH_PUBLIC_URL，请先执行 relay-up.sh\n' "$env_file" >&2
       return 1
     fi
     if [ -z "$saved_code" ]; then
-      printf '%s 中的配对口令已关闭；如需接入新设备，请先执行 bash scripts/relay-up.sh --rotate-pairing-code\n' "$env_file" >&2
+      printf '%s 中的配对口令已关闭；如需接入新设备，请先执行 %s --rotate-pairing-code\n' "$env_file" "$(relay_script_invocation "$work_dir" relay-up.sh)" >&2
       return 1
     fi
     local normalized_saved_url
     normalized_saved_url="$(normalize_public_url "$saved_url")"
-    print_join_instructions "$env_file" "$normalized_saved_url" "$saved_code"
+    print_join_instructions "$work_dir" "$env_file" "$normalized_saved_url" "$saved_code"
     return 0
   fi
 
@@ -560,12 +712,14 @@ main() {
   local existing_bind_host=""
   local existing_bind_port=""
   local existing_approval=""
+  local existing_image=""
   if [ -f "$env_file" ]; then
     existing_url="$(read_env_value "$env_file" CHATDSH_PUBLIC_URL)"
     existing_code="$(read_env_value "$env_file" CHATDSH_PAIRING_CODE)"
     existing_bind_host="$(read_env_value "$env_file" CHATDSH_GATEWAY_BIND_HOST)"
     existing_bind_port="$(read_env_value "$env_file" CHATDSH_GATEWAY_BIND_PORT)"
     existing_approval="$(read_env_value "$env_file" CHATDSH_PAIRING_APPROVAL)"
+    existing_image="$(read_env_value "$env_file" CHATDSH_RELAY_IMAGE)"
   fi
 
   local public_url=""
@@ -608,6 +762,15 @@ main() {
   pairing_approval="$(trim "${CHATDSH_PAIRING_APPROVAL:-${existing_approval:-required}}")"
   [ -n "$pairing_approval" ] || pairing_approval="required"
 
+  local relay_image
+  if [ "$has_image_arg" -eq 1 ]; then
+    relay_image="$(trim "$image_arg")"
+  elif [ "$build_local" -eq 1 ]; then
+    relay_image="${existing_image:-chatdsh-relay:local}"
+  else
+    relay_image="$(trim "${existing_image:-$DEFAULT_RELAY_IMAGE}")"
+  fi
+
   local updates=()
   if [ ! -f "$env_file" ] || [ "$existing_url" != "$public_url" ]; then
     updates+=("CHATDSH_PUBLIC_URL=${public_url}")
@@ -623,6 +786,9 @@ main() {
   fi
   if ! has_env_key "$env_file" CHATDSH_GATEWAY_BIND_PORT; then
     updates+=("CHATDSH_GATEWAY_BIND_PORT=${bind_port}")
+  fi
+  if [ "$has_image_arg" -eq 1 ] || ! has_env_key "$env_file" CHATDSH_RELAY_IMAGE; then
+    updates+=("CHATDSH_RELAY_IMAGE=${relay_image}")
   fi
 
   if [ "${#updates[@]}" -gt 0 ]; then
@@ -641,50 +807,49 @@ main() {
   fi
 
   if [ "$prepare_only" -eq 1 ]; then
-    local probe_host_prep="$bind_host"
-    if [ "$probe_host_prep" = "0.0.0.0" ] || [ "$probe_host_prep" = "::" ]; then
-      probe_host_prep="127.0.0.1"
-    fi
-    print_network_checklist "$public_url" "$probe_host_prep" "$bind_port" "$redact_secrets"
+    print_network_checklist "$public_url" "$bind_host" "$bind_port" "$redact_secrets"
     if [ "$redact_secrets" -eq 1 ]; then
-      print_redacted_join_hint "$env_file"
+      print_redacted_join_hint "$work_dir" "$env_file"
     else
-      print_join_instructions "$env_file" "$public_url" "$pairing_code"
+      print_join_instructions "$work_dir" "$env_file" "$public_url" "$pairing_code"
     fi
     return 0
   fi
 
-  local compose_args=(compose --env-file "$env_file" -f "$COMPOSE_FILE" up -d)
-  if [ "$no_build" -eq 0 ]; then
-    compose_args+=(--build)
+  if [ "$build_local" -eq 1 ]; then
+    if [ ! -f "$compose_build_file" ] || [ ! -f "${work_dir}/Dockerfile" ]; then
+      printf '当前目录 %s 缺少 Dockerfile 或 docker-compose.build.yml，无法执行 --build\n' "$work_dir" >&2
+      return 1
+    fi
+    (cd "$work_dir" && docker compose --env-file "$env_file" -f "$compose_file" -f "$compose_build_file" up -d --build)
+  else
+    if [ "$no_pull" -eq 0 ]; then
+      (cd "$work_dir" && docker compose --env-file "$env_file" -f "$compose_file" pull)
+    fi
+    (cd "$work_dir" && docker compose --env-file "$env_file" -f "$compose_file" up -d)
   fi
-  (cd "$REPO_ROOT" && docker "${compose_args[@]}")
 
-  local probe_host="$bind_host"
-  if [ "$probe_host" = "0.0.0.0" ] || [ "$probe_host" = "::" ]; then
-    probe_host="127.0.0.1"
-  fi
-  local health_url="http://${probe_host}:${bind_port}/healthz"
+  local health_url="http://${bind_host}:${bind_port}/healthz"
   wait_for_health "$health_url" >/dev/null
   if [ "$redact_secrets" -eq 1 ]; then
-    printf '中继容器已就绪（本机回环入口：http://%s:%s，对外来源已由 %s 注入）\n' "$probe_host" "$bind_port" "$env_file"
+    printf '中继容器已就绪（本机绑定入口：http://%s:%s，对外来源已由 %s 注入）\n' "$bind_host" "$bind_port" "$env_file"
     if check_public_health "${public_url}/healthz"; then
       printf '%s\n' '公网域名检查通过（<CHATDSH_PUBLIC_URL>/healthz 返回 ok:true）'
     else
       printf '%s\n' '提示：尚未通过公网对外地址访问到中继（若尚未配置域名解析或反向代理属正常现象）。'
-      print_network_checklist "$public_url" "$probe_host" "$bind_port" 1
+      print_network_checklist "$public_url" "$bind_host" "$bind_port" 1
     fi
-    print_redacted_join_hint "$env_file"
+    print_redacted_join_hint "$work_dir" "$env_file"
   else
-    printf '中继容器已就绪（对外来源：%s，本机回环入口：http://%s:%s）\n' "$public_url" "$probe_host" "$bind_port"
+    printf '中继容器已就绪（对外来源：%s，本机绑定入口：http://%s:%s）\n' "$public_url" "$bind_host" "$bind_port"
     printf '手机端 PWA 入口：%s/\n' "$public_url"
     if check_public_health "${public_url}/healthz"; then
       printf '公网域名检查通过：%s/healthz\n' "$public_url"
     else
       printf '提示：尚未通过公网地址 %s/healthz 访问到中继（若尚未配置域名解析或反向代理属正常现象）。\n' "$public_url"
-      print_network_checklist "$public_url" "$probe_host" "$bind_port" 0
+      print_network_checklist "$public_url" "$bind_host" "$bind_port" 0
     fi
-    print_join_instructions "$env_file" "$public_url" "$pairing_code"
+    print_join_instructions "$work_dir" "$env_file" "$public_url" "$pairing_code"
   fi
 }
 

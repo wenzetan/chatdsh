@@ -47,26 +47,33 @@ pnpm --config.verify-deps-before-run=false test
 
 客户端产物由 `scripts/build-client.mjs` 写入 `packages/client/*/lib/client.js`。官方 profile 通过 `dsh plugin --profile web add` 装入 `@chatdsh/bundle` 后，宿主与客户端插件都从这些产物加载。
 
-## 三、启动轻量中继（默认 Docker Compose）
+## 三、启动轻量中继（默认 Docker Compose + GHCR 预构建镜像）
 
-在仓库根目录执行一行命令拉起中继容器（宿主机只需安装 Docker、Docker Compose、Bash 与 `curl`）：
+在中继宿主机直接通过远程脚本启动（无需克隆源码，宿主机只需安装 Docker、Docker Compose、Bash 与 `curl`）：
 
 ```sh
-bash scripts/relay-up.sh
+curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash
 ```
 
 首次运行行为：
 
-1. 通过命令行询问对外域名（必填，例如 `relay.example.com` 或 `https://relay.example.com`），规范化为精确 origin 并写入根目录 `.env`。
-2. 检查 `.env` 中是否已有 `CHATDSH_PAIRING_CODE`；未配置时自动生成 24 字节随机配对口令（base64url 编码）并持久化保存到 `.env`（文件权限 `0600`），后续再次运行直接复用。
-3. 执行 `docker compose --env-file .env -f docker-compose.yml up -d --build` 启动容器，并等待 `GET http://127.0.0.1:3170/healthz` 返回 `{"ok":true,"service":"chatdsh-gateway",...}`。
-4. 就绪后输出一条可在设备端直接复制执行的一行接入命令，以及后续再次打印该命令的方式：
+1. 自动在 `~/.chatdsh/relay`（可通过 `--dir` 自定义）下载 [`docker-compose.yml`](../../docker-compose.yml)、`relay-up.sh` 与 `relay-approve.sh`。
+2. 通过命令行询问对外域名（必填，例如 `relay.example.com` 或 `https://relay.example.com`），规范化为精确 origin 并写入 `.env`。
+3. 检查 `.env` 中是否已有 `CHATDSH_PAIRING_CODE`；未配置时自动生成 24 字节随机配对口令（base64url 编码）并持久化保存到 `.env`（文件权限 `0600`），后续再次运行直接复用。
+4. 拉取 GitHub Actions 自动构建的多架构镜像 `ghcr.io/wenzetan/chatdsh-relay:latest` 并执行 `docker compose up -d` 启动容器，等待 `GET http://127.0.0.1:3170/healthz` 返回 `{"ok":true,"service":"chatdsh-gateway",...}`。
+5. 就绪后输出可在任意设备上免克隆直接执行的远程接入命令，以及后续再次打印该命令的方式：
 
 ```sh
-bash scripts/relay-up.sh --print-join-command
+bash ~/.chatdsh/relay/relay-up.sh --print-join-command
 ```
 
-默认环境变量模板见 [`.env.example`](../../.env.example)。容器内固定监听 `0.0.0.0:3170`，数据持久化在命名卷 `chatdsh-relay-data`（挂载点 `/data`），宿主机默认仅绑定 `127.0.0.1:3170`（或通过 `--bind-host <穿透网卡具体 IP>` 绑定到对应内网穿透网卡 IP，脚本强制禁止宿主机绑定 `0.0.0.0` 或 `::`）。容器默认开启 `CHATDSH_PAIRING_APPROVAL=required`，客户端提交配对申请后必须由中继宿主机执行 `bash scripts/relay-approve.sh approve <requestId>` 审批放行。公网暴露建议同时启用 `CHATDSH_ACCESS_MODE=required` 或在反向代理层开启身份认证。
+在本地源码仓库内开发调试时，可附加 `--build` 结合 [`docker-compose.build.yml`](../../docker-compose.build.yml) 从本地源码构建镜像：
+
+```sh
+bash scripts/relay-up.sh --build
+```
+
+默认环境变量模板见 [`.env.example`](../../.env.example)。容器内固定监听 `0.0.0.0:3170`，数据持久化在命名卷 `chatdsh-relay-data`（挂载点 `/data`），宿主机默认仅绑定 `127.0.0.1:3170`（或通过 `--bind-host <穿透网卡具体 IP>` 绑定到对应内网穿透网卡 IP，脚本强制禁止宿主机绑定 `0.0.0.0` 或 `::`）。容器默认开启 `CHATDSH_PAIRING_APPROVAL=required`，客户端提交配对申请后必须由中继宿主机执行 `bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>` 审批放行。公网暴露建议同时启用 `CHATDSH_ACCESS_MODE=required` 或在反向代理层开启身份认证。
 
 如需在宿主机直接以 Node 进程运行（不使用容器）：
 
@@ -81,45 +88,51 @@ CHATDSH_PAIRING_APPROVAL=required \
 node gateway/lib/main.js
 ```
 
-## 四、设备一行安装插件、审批放行与配对启动
+## 四、设备一行远程安装插件、审批放行与配对启动
 
-在设备端执行（交互终端静默提示输入配对口令，避免留存 Shell 历史；同机部署可使用 `--from-relay-env .env --redact-secrets`）：
+在设备端直接执行远程脚本（无需克隆仓库、无需本地编译，自动从 GitHub Releases 下载预构建归档 `chatdsh-plugin-bundle.tar.gz` 并核对 `SHA256SUMS.txt`；交互终端静默提示输入配对口令避免留存 Shell 历史；同机部署可使用 `--from-relay-env ~/.chatdsh/relay/.env --redact-secrets`）：
 
 ```sh
-bash scripts/device-join.sh --relay https://relay.example.com
+curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay https://relay.example.com
 ```
 
 该命令自动依次完成：
 
-1. 将当前仓库的 `@chatdsh/bundle` 打包并经官方 `dsh plugin --profile web add` 安装到官方 `web` profile（可通过 `--profile desktop` 指定桌面端，或 `--bundle @chatdsh/bundle` 指定远端包）。
+1. 下载并校验 GitHub Releases 发布的 `chatdsh-plugin-bundle.tar.gz`（可用 `--release-tag <标签>` 锁定版本，或 `--bundle-archive <本地路径>` 离线安装，源码仓库内可用 `--from-local` 打包本地产物），应用 `pnpm-workspace.yaml` 覆盖表后经官方 `dsh plugin --profile web add` 安装到官方 `web` profile（可通过 `--profile desktop` 指定桌面端）。
 2. 调用 `POST <中继地址>/chatdsh/gateway/devices/pair` 提交配对申请，返回 `202 pending` 后打印 `requestId` 并等待中继宿主机审批；审批放行后自动经 `POST /chatdsh/gateway/devices/pair/claim` 一次性领取凭据，并将 `CHATDSH_CONTROL_URL`、`CHATDSH_DEVICE_ID` 与 `CHATDSH_NODE_TOKEN` 写入 `$DSH_HOME/chatdsh-device.env`（权限 `0600`）。节点令牌只通过运行环境变量注入，不进入配置树，也不出现在 `dsh --dump-config` 输出里。
-3. 注入配对凭据启动官方 DSH 运行时。
+3. 将可复用的启动脚本保存到 `~/.dsh/chatdsh-device-join.sh`，并注入配对凭据启动官方 DSH 运行时。
 
 在中继宿主机审批配对请求：
 
 ```sh
-bash scripts/relay-approve.sh list
-bash scripts/relay-approve.sh approve <requestId>
-# 或拒绝：bash scripts/relay-approve.sh reject <requestId>
+bash ~/.chatdsh/relay/relay-approve.sh list
+bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>
+# 或拒绝：bash ~/.chatdsh/relay/relay-approve.sh reject <requestId>
 ```
 
 全部目标设备完成接入后，建议关闭配对入口（需要接入新设备时再轮换启用）：
 
 ```sh
-bash scripts/relay-up.sh --disable-pairing
-# 后续重新启用并生成新口令：bash scripts/relay-up.sh --rotate-pairing-code
+bash ~/.chatdsh/relay/relay-up.sh --disable-pairing
+# 后续重新启用并生成新口令：bash ~/.chatdsh/relay/relay-up.sh --rotate-pairing-code
 ```
 
 后续在同一台设备上重启 DSH 时无需再次传入配对口令，直接执行：
 
 ```sh
-bash scripts/device-join.sh
+bash ~/.dsh/chatdsh-device-join.sh
 ```
 
 如需接入新设备，在中继宿主机重新打印配对接入命令即可：
 
 ```sh
-bash scripts/relay-up.sh --print-join-command
+bash ~/.chatdsh/relay/relay-up.sh --print-join-command
+```
+
+开发者如需在本地手动打包与 GitHub Actions 相同的自包含插件发布归档：
+
+```sh
+node scripts/pack-plugin-bundle.mjs --out-dir .run/plugin-bundle-dist
 ```
 
 设备连接成功后，`GET /chatdsh/gateway/devices` 会列出该设备并标记 `online: true`。缺少 `CHATDSH_PAIRING_CODE` 时配对端点返回 `404 pairing-disabled`。

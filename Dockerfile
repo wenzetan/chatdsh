@@ -1,5 +1,7 @@
 FROM node:24-alpine AS builder
 
+ARG NPM_REGISTRY=
+
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@11.21.0 --activate
 
@@ -12,7 +14,11 @@ COPY runtime/packages/core/diagnostics/package.json runtime/packages/core/diagno
 COPY runtime/packages/client/pwa/package.json runtime/packages/client/pwa/tsconfig.json ./runtime/packages/client/pwa/
 
 WORKDIR /app/runtime
-RUN pnpm --filter . --filter @chatdsh/gateway... --filter @chatdsh/client-pwa install --no-frozen-lockfile --ignore-scripts
+RUN if [ -n "$NPM_REGISTRY" ]; then \
+      pnpm --config.registry="$NPM_REGISTRY" --filter . --filter @chatdsh/gateway... --filter @chatdsh/client-pwa install --no-frozen-lockfile --ignore-scripts; \
+    else \
+      pnpm --filter . --filter @chatdsh/gateway... --filter @chatdsh/client-pwa install --no-frozen-lockfile --ignore-scripts; \
+    fi
 
 COPY runtime/packages/core/contracts/src ./packages/core/contracts/src
 COPY runtime/packages/core/diagnostics/src ./packages/core/diagnostics/src
@@ -22,13 +28,18 @@ COPY runtime/gateway/src ./gateway/src
 
 RUN mkdir -p .dsh-deps \
   && ln -s ../node_modules/@types .dsh-deps/@types \
-  && ln -s ../packages/core/contracts/node_modules/zod .dsh-deps/zod \
+  && ln -s ../gateway/node_modules/zod .dsh-deps/zod \
   && ln -s ../packages/core/diagnostics/node_modules/@opentelemetry .dsh-deps/@opentelemetry \
   && ./node_modules/.bin/tsc -b packages/core/contracts packages/core/diagnostics packages/client/pwa gateway \
   && rm -rf .dsh-deps \
   && CI=true pnpm --filter @chatdsh/gateway... --filter @chatdsh/client-pwa install --prod --no-frozen-lockfile --ignore-scripts --offline
 
 FROM node:24-alpine AS runner
+
+LABEL org.opencontainers.image.title="ChatDSH Relay" \
+      org.opencontainers.image.description="Lightweight self-hosted relay server for ChatDSH" \
+      org.opencontainers.image.source="https://github.com/wenzetan/chatdsh" \
+      org.opencontainers.image.licenses="MIT"
 
 WORKDIR /app/runtime
 

@@ -52,15 +52,15 @@ docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true
 将第一阶段探测到的网卡类型、内网穿透工具与反向代理情况简洁告知用户，并完成以下确认：
 
 1. **由用户本人在本地终端写入域名与监听地址（不发进对话）**：
-   - 仅检查存在性，不打印键值：
+   - 仅检查存在性，不打印键值（独立部署默认配置目录 `~/.chatdsh/relay`）：
      ```sh
-     grep -q '^CHATDSH_PUBLIC_URL=.\+' .env 2>/dev/null && echo "configured" || echo "missing"
+     grep -q '^CHATDSH_PUBLIC_URL=.\+' "${CHATDSH_RELAY_DIR:-${HOME}/.chatdsh/relay}/.env" 2>/dev/null && echo "configured" || echo "missing"
      ```
-   - 若为 `missing`，请用户在自己的终端执行以下命令录入必填域名并生成随机配对口令：
+   - 若为 `missing`，请用户在自己的终端执行远程脚本录入必填域名并生成随机配对口令（自动拉取 `docker-compose.yml` 与管理脚本到 `~/.chatdsh/relay`）：
      ```sh
-     bash scripts/relay-up.sh --prepare-only --redact-secrets
+     curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --prepare-only --redact-secrets
      ```
-   - 若用户需要让中继绑定到特定内网穿透网卡 IP（例如 WireGuard / ZeroTier / Tailscale 网卡的私有 IP）而非 `127.0.0.1`，请用户在本地终端附加 `--bind-host <该穿透网卡的具体 IP>` 或直接写入 `.env` 中的 `CHATDSH_GATEWAY_BIND_HOST`（严禁填 `0.0.0.0` 或 `::`，脚本会自动拒绝通配地址）。
+   - 若用户需要让中继绑定到特定内网穿透网卡 IP（例如 WireGuard / ZeroTier / Tailscale 网卡的私有 IP），请用户在本地终端附加 `--bind-host <该穿透网卡的具体 IP>` 或直接写入 `.env` 中的 `CHATDSH_GATEWAY_BIND_HOST`（严禁填 `0.0.0.0` 或 `::`，脚本会自动拒绝通配地址）。
 2. **向用户确认中继联网方式与访问保护**：
    - **公网域名 + 反向代理（Nginx / Caddy / Traefik 等）**：宿主机仅监听 `127.0.0.1:3170`，前置反向代理终止 TLS 并转发至 `http://127.0.0.1:3170`。**公网暴露必须提醒用户开启 `CHATDSH_ACCESS_MODE=required` 或在反向代理层启用身份认证（Cloudflare Access、OIDC 网关或 mTLS）**，防止未授权访客访问 PWA 与 `/d/<deviceId>/`。
    - **Tailscale（Tailscale Serve / Funnel）**：推荐 `tailscale serve --bg http://127.0.0.1:3170` 仅限 tailnet 私有访问；若选择公网 Funnel，同样要求启用 `CHATDSH_ACCESS_MODE=required`。
@@ -68,15 +68,15 @@ docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true
 
 ## 第三阶段：部署中继容器并完成网络指引
 
-### 3.1 以脱敏模式拉起 Docker Compose 中继容器
+### 3.1 以脱敏模式拉取预构建镜像并启动 Docker Compose 中继容器
 
-确认 `.env` 中 `CHATDSH_PUBLIC_URL` 已就绪后，在仓库根目录执行：
+确认 `~/.chatdsh/relay/.env` 中 `CHATDSH_PUBLIC_URL` 已就绪后执行：
 
 ```sh
-bash scripts/relay-up.sh --redact-secrets
+bash ~/.chatdsh/relay/relay-up.sh --redact-secrets
 ```
 
-脚本直接读取 `.env` 中的配置（默认 `CHATDSH_PAIRING_APPROVAL=required`），校验 `CHATDSH_GATEWAY_BIND_HOST` 非通配地址，缺失 `CHATDSH_PAIRING_CODE` 时自动生成 24 字节随机口令并保存为 `0600` 权限，启动 [docker-compose.yml](../../docker-compose.yml) 中的 `relay` 容器并探活，全程不向标准输出打印密钥与真实域名。
+脚本直接读取 `.env` 中的配置（默认 `CHATDSH_PAIRING_APPROVAL=required`，默认镜像 `ghcr.io/wenzetan/chatdsh-relay:latest`），校验 `CHATDSH_GATEWAY_BIND_HOST` 非通配地址，缺失 `CHATDSH_PAIRING_CODE` 时自动生成 24 字节随机口令并保存为 `0600` 权限，拉取预构建多架构镜像并启动 `relay` 容器探活，全程无需克隆源码，且不向标准输出打印密钥与真实域名。
 
 ### 3.2 按联网方式协助完成网络接入（引用变量，不展开明文）
 
@@ -88,7 +88,7 @@ bash scripts/relay-up.sh --redact-secrets
 
 中继就绪后，向用户询问：**是否需要由 Agent 代劳在当前设备上安装 `@chatdsh/bundle` 插件并完成中继配对接入？**
 
-- **用户选择自行操作**：提示用户在宿主机终端手动运行 `bash scripts/relay-up.sh --print-join-command` 获取接入步骤（跨机设备使用 `bash scripts/device-join.sh --relay <对外域名>` 后通过隐藏输入粘贴口令，不留 Shell 历史），提交申请后在宿主机运行 `bash scripts/relay-approve.sh list` 与 `bash scripts/relay-approve.sh approve <requestId>` 审批放行。
+- **用户选择自行操作**：提示用户在宿主机终端手动运行 `bash ~/.chatdsh/relay/relay-up.sh --print-join-command` 获取接入步骤（跨机设备直接执行远程脚本 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --relay <对外域名>` 后通过隐藏输入粘贴口令，免克隆仓库且不留 Shell 历史），提交申请后在宿主机运行 `bash ~/.chatdsh/relay/relay-approve.sh list` 与 `bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>` 审批放行。
 - **用户确认由 Agent 代劳**：严格按以下步骤执行。
 
 ### 4.1 探测本机 DSH 与持久化服务
@@ -111,33 +111,33 @@ supervisorctl status 2>/dev/null | grep -i dsh || true
 1. **核对服务运行用户与配置结构**：确认服务使用的 `User=`、`DSH_HOME`、`--profile` 与 `--port`（不读取或打印已有敏感环境变量值）。
 2. **向用户汇报并征求明确同意**（未获同意前禁止修改服务文件，也禁止重启服务）：
    - 列出服务名称、服务文件绝对路径、运行用户（`User=`）与当前状态；
-   - 说明拟执行的变更：安装 `@chatdsh/bundle` 并完成中继配对（需在中继宿主机审批放行），生成权限为 `0600` 且属主与服务运行用户一致的 `<DSH_HOME>/chatdsh-device.env`；在服务文件（通常 `0644` 全局可读）中仅添加 `EnvironmentFile=<DSH_HOME>/chatdsh-device.env`（严禁写入明文 `Environment=CHATDSH_NODE_TOKEN=...`）；最后重载并重启服务（会中断当前会话）。
+   - 说明拟执行的变更：从 GitHub Releases 下载预构建插件归档安装 `@chatdsh/bundle` 并完成中继配对（需在中继宿主机审批放行），生成权限为 `0600` 且属主与服务运行用户一致的 `<DSH_HOME>/chatdsh-device.env`；在服务文件（通常 `0644` 全局可读）中仅添加 `EnvironmentFile=<DSH_HOME>/chatdsh-device.env`（严禁写入明文 `Environment=CHATDSH_NODE_TOKEN=...`）；最后重载并重启服务（会中断当前会话）。
 3. **取得用户明确同意后执行**：
-   - 如尚未构建产物，先编译 `dsh-adapter` 与 `runtime`；
-   - **同机存在 `.env` 时**执行安装与配对（零命令行传密，等待中继审批）：
+   - **同机存在 `~/.chatdsh/relay/.env` 时**执行远程脚本安装预构建插件并配对（免克隆、零命令行传密，等待中继审批）：
      ```sh
-     DSH_HOME='<服务使用的 DSH_HOME>' bash scripts/device-join.sh \
+     curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | \
+       DSH_HOME='<服务使用的 DSH_HOME>' bash -s -- \
        --profile '<服务使用的 profile>' \
-       --from-relay-env .env \
+       --from-relay-env ~/.chatdsh/relay/.env \
        --pair-url 'http://<绑定地址>:<中继端口>' \
        --redact-secrets \
        --no-start
      ```
-     脚本打印 `requestId` 后，**请用户确认并在中继宿主机执行审批放行**（`bash scripts/relay-approve.sh list` 与 `bash scripts/relay-approve.sh approve <requestId>`），放行后客户端自动领取一次性凭据并写入 `<DSH_HOME>/chatdsh-device.env`（`0600`）。
+     脚本打印 `requestId` 后，**请用户确认并在中继宿主机执行审批放行**（`bash ~/.chatdsh/relay/relay-approve.sh list` 与 `bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>`），放行后客户端自动领取一次性凭据并写入 `<DSH_HOME>/chatdsh-device.env`（`0600`）。
    - 核对 `<DSH_HOME>/chatdsh-device.env` 权限为 `0600` 且属主与服务 `User=` 一致；
    - 按用户同意的方案在服务文件中添加 `EnvironmentFile=<DSH_HOME>/chatdsh-device.env`，重载并重启服务；
    - 通过本机中继入口仅核对设备在线状态（不输出域名与令牌）。
 
 ### 4.3 不存在持久化服务时的接入流程
 
-1. 确认目标 `DSH_HOME`（默认 `~/.dsh`）与 profile（默认 `web`），必要时先构建本地产物。
-2. 同机执行 `bash scripts/device-join.sh --from-relay-env .env --pair-url 'http://<绑定地址>:<中继端口>' --redact-secrets --no-start`，跨机由用户在自己终端通过隐藏输入配对。
-3. 由用户在中继宿主机执行 `bash scripts/relay-approve.sh approve <requestId>` 放行配对。
+1. 确认目标 `DSH_HOME`（默认 `~/.dsh`）与 profile（默认 `web`）。
+2. 同机执行 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/device-join.sh | bash -s -- --from-relay-env ~/.chatdsh/relay/.env --pair-url 'http://<绑定地址>:<中继端口>' --redact-secrets --no-start`，跨机由用户在自己终端通过隐藏输入配对。
+3. 由用户在中继宿主机执行 `bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>` 放行配对。
 4. 核对 `dsh --profile web --dump-config >/dev/null` 退出码为 0。
 
 ## 第五阶段：配对完成后的收尾加固
 
 全部目标设备完成配对后，向用户提示以下收尾操作：
 
-1. **关闭静态配对口令**：在宿主机执行 `bash scripts/relay-up.sh --disable-pairing`，使配对端点返回 `404 pairing-disabled`；后续需要新增设备时执行 `bash scripts/relay-up.sh --rotate-pairing-code` 重新启用。
+1. **关闭静态配对口令**：在宿主机执行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing`，使配对端点返回 `404 pairing-disabled`；后续需要新增设备时执行 `bash ~/.chatdsh/relay/relay-up.sh --rotate-pairing-code` 重新启用。
 2. **数据卷与凭据备份**：妥善加密备份容器数据卷 `chatdsh-relay-data`（包含 `gateway.sqlite` 与 `access/master.key`）及设备端 `$DSH_HOME/chatdsh-device.env`；设备丢失或怀疑凭据泄露时立即吊销设备并轮换配对口令。
