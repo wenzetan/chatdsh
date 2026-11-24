@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 推送前闸门。逐条处理待推送的引用：
-#   1. gitleaks 扫描远端没有的全部提交，首次推送时该范围等于全部历史
-#   2. 本机个人身份闭集比对同一范围
+#   1. gitleaks 扫描远端没有的全部提交，首次推送或历史重写时扫描该引用全部历史
+#   2. 校验待推送提交的作者与提交者邮箱均为 *@users.noreply.github.com
+#   3. 本机个人身份闭集比对同一范围
 # 提交前闸门只看暂存区，历史里的泄露只能在这一层拦住。
 set -euo pipefail
 
@@ -21,9 +22,9 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 	[ -n "${local_sha:-}" ] || continue
 	[ "$local_sha" = "$zero" ] && continue
 	[ "${remote_sha:-$zero}" = "$local_sha" ] && continue
-	if [ "${remote_sha:-$zero}" = "$zero" ]; then
-		echo "隐私防护：$local_ref 在远端不存在，扫描全部历史"
-		ranges+=("--all")
+	if [ "${remote_sha:-$zero}" = "$zero" ] || ! git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+		echo "隐私防护：$local_ref 扫描完整分支历史（远端基线不存在或历史已重写）"
+		ranges+=("$local_sha")
 	else
 		echo "隐私防护：扫描 $local_ref 的 $remote_sha..$local_sha"
 		ranges+=("$remote_sha..$local_sha")
@@ -36,25 +37,29 @@ if [ "${#ranges[@]}" -eq 0 ]; then
 fi
 
 for range in "${ranges[@]}"; do
-	if [ "$range" = "--all" ]; then
-		log_opts="--all"
-	else
-		log_opts="$range"
+	if ! gitleaks git --log-opts="$range" --redact --no-banner -c .gitleaks.toml -v; then
+		status=1
 	fi
-	if ! gitleaks git --log-opts="$log_opts" --redact --no-banner -c .gitleaks.toml -v; then
+	bad_meta="$(git log "$range" --format='%h %ae %ce' | awk '$2 !~ /@users\.noreply\.github\.com$/ || $3 !~ /@users\.noreply\.github\.com$/ { print $1 }')"
+	if [ -n "$bad_meta" ]; then
+		echo >&2
+		echo "隐私防护：以下待推送提交的作者或提交者邮箱未使用 GitHub noreply 地址：" >&2
+		printf '  %s\n' $bad_meta >&2
 		status=1
 	fi
 done
 
 if [ "$status" -ne 0 ]; then
 	echo >&2
-	echo "隐私防护：待推送的提交里有疑似凭据或隐私数据。" >&2
+	echo "隐私防护：待推送的提交里有疑似凭据、隐私数据或非 noreply 提交邮箱。" >&2
 	echo "  历史里的泄露必须改写历史并吊销对应凭据，不能靠新提交覆盖。" >&2
 	exit 1
 fi
 
-if ! python3 .githooks/check-identity.py --range "$(printf '%s\n' "${ranges[@]}")"; then
-	echo >&2
-	echo "隐私防护：待推送的提交包含本机个人身份信息。" >&2
-	exit 1
-fi
+for range in "${ranges[@]}"; do
+	if ! python3 .githooks/check-identity.py --range "$range"; then
+		echo >&2
+		echo "隐私防护：待推送的提交包含本机个人身份信息。" >&2
+		exit 1
+	fi
+done

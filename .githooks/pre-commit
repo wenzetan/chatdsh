@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# 提交前闸门。三层按成本从低到高依次执行，任一层命中即阻断本次提交。
+# 提交前闸门。四层按成本从低到高依次执行，任一层命中即阻断本次提交。
 #   1. 凭据文件名黑名单（与内容无关，命中即拦）
 #   2. gitleaks 规则扫描暂存内容（凭据、网络标识、联系方式）
 #   3. 本机个人身份闭集比对（用户名、邮箱、主机名、tailnet 后缀等）
+#   4. 提交元数据邮箱校验（强制使用 *@users.noreply.github.com）
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -35,5 +36,18 @@ fi
 if ! python3 .githooks/check-identity.py; then
 	status=1
 fi
+
+# ---- 第 4 层：提交元数据邮箱校验 -----------------------------------------
+author_email="${GIT_AUTHOR_EMAIL:-$(git config --get user.email || true)}"
+committer_email="${GIT_COMMITTER_EMAIL:-$(git config --get user.email || true)}"
+for meta_email in "$author_email" "$committer_email"; do
+	if [ -z "$meta_email" ] || [[ ! "$meta_email" =~ ^[A-Za-z0-9._%+-]+@users\.noreply\.github\.com$ ]]; then
+		echo >&2
+		echo "隐私防护：提交元数据邮箱必须使用 GitHub noreply 地址（*@users.noreply.github.com）。" >&2
+		echo "  修复命令：git config user.email '<数字ID>+<用户名>@users.noreply.github.com'" >&2
+		status=1
+		break
+	fi
+done
 
 exit "$status"
