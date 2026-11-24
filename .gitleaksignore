@@ -95,6 +95,8 @@ runtime/e2e/unit/client-complete-wp19-share.test.mjs:chatdsh-private-hostname:68
 runtime/e2e/unit/client-complete-wp20-support.mjs:chatdsh-private-hostname:158
 runtime/e2e/unit/client-complete-wp20-support.mjs:chatdsh-private-hostname:159
 runtime/e2e/unit/client-complete-wp21-notifications.test.mjs:chatdsh-provider-credential:847
+runtime/e2e/unit/client-complete-wp21-notifications.test.mjs:chatdsh-provider-credential:841
+runtime/e2e/unit/client-complete-wp22-notifications.test.mjs:chatdsh-private-hostname:476
 runtime/e2e/unit/client-complete-wp22-notifications.test.mjs:chatdsh-private-hostname:610
 runtime/e2e/unit/client-complete-wp22-notifications.test.mjs:chatdsh-private-hostname:811
 runtime/e2e/unit/client-complete-wp22-notifications.test.mjs:chatdsh-private-hostname:812
@@ -136,8 +138,10 @@ runtime/e2e/unit/device-link-v2.test.mjs:chatdsh-provider-credential:243
 #
 # 十二、远程设备插件的宿主字段访问被私有域名规则命中：`ctx.remote.$host` 服务的 `home`
 #     字段表示宿主主目录，本身不含网络位置；报告里的同一行是这条访问的说明文字。
+#     该行随上下文插入而下移，历史提交里在 240 行，当前文件里在 247 行，两处都登记。
 runtime/packages/client/remote/src/client/controller.ts:chatdsh-private-hostname:240
+runtime/packages/client/remote/src/client/controller.ts:chatdsh-private-hostname:247
 # 报告迁移到 runtime/docs/reports/ 后的同一行指纹。
 runtime/docs/reports/P03-REPORT.md:chatdsh-private-hostname:96
 # 历史提交中该报告尚未迁移目录时的同一行指纹（宿主主目录字段说明，不含网络位置）。
-424a55098d86aa16a2c01084c186283ca06d1cb0:P03-REPORT.md:chatdsh-private-hostname:96
+48dea04b9360659e2d5458b429e1c0f09a93b9d2:P03-REPORT.md:chatdsh-private-hostname:96
