@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
   ChatDSH Windows 设备端完全卸载脚本（PowerShell 5.1 / PowerShell 7+ 通用）。
   彻底移除 @chatdsh/bundle 插件、pnpm-workspace.yaml overrides 与本地配对凭据，保留官方 DSH 本体与历史会话日志。
@@ -26,7 +26,7 @@ if ($Help -or -not $Device) {
   -Profile <名称列表>    目标官方 DSH profile（默认 web，可用逗号传多个）
   -Help                  显示帮助信息
 '@ | Write-Host
-  if ($Help) { exit 0 } else { exit 1 }
+  if ($Help) { return } else { throw '请传入 -Device 参数执行设备端卸载，或使用 -Help 查看帮助。' }
 }
 
 function Resolve-DshBin {
@@ -36,6 +36,26 @@ function Resolve-DshBin {
     if ($null -ne $cmd) { return $cmd.Source }
   }
   return ''
+}
+
+function Invoke-TempNodeScript([string]$WorkDir, [string]$ScriptContent, [string[]]$ScriptArgs, [switch]$SuppressStderr) {
+  if (-not (Test-Path -LiteralPath $WorkDir)) {
+    New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+  }
+  $tmpScript = Join-Path $WorkDir ".chatdsh-helper-$PID-$([Guid]::NewGuid().ToString('N').Substring(0, 8)).cjs"
+  try {
+    [System.IO.File]::WriteAllText($tmpScript, $ScriptContent, (New-Object System.Text.UTF8Encoding($false)))
+    if ($SuppressStderr) {
+      $out = & node $tmpScript @ScriptArgs 2>$null
+    } else {
+      $out = & node $tmpScript @ScriptArgs
+    }
+    return @{ ExitCode = $LASTEXITCODE; Output = $out }
+  } finally {
+    if (Test-Path -LiteralPath $tmpScript) {
+      Remove-Item -LiteralPath $tmpScript -Force -ErrorAction SilentlyContinue
+    }
+  }
 }
 
 function Read-ProfileStoreDir([string]$ProfileDir, [string]$DshHome, [string]$DshBin) {
@@ -48,8 +68,8 @@ function Read-ProfileStoreDir([string]$ProfileDir, [string]$DshHome, [string]$Ds
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
-const modulesYaml = process.argv[1];
-const dshBin = process.argv[2];
+const modulesYaml = process.argv[2];
+const dshBin = process.argv[3];
 const candidates = [];
 if (dshBin) {
   try {
@@ -72,9 +92,9 @@ for (const anchor of candidates) {
   } catch {}
 }
 '@
-    $out = & node -e $js $modulesYaml $DshBin 2>$null
-    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($out)) {
-      return ($out | Select-Object -First 1).Trim()
+    $res = Invoke-TempNodeScript $DshHome $js @($modulesYaml, $DshBin) -SuppressStderr
+    if ($res.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($res.Output)) {
+      return ($res.Output | Select-Object -First 1).Trim()
     }
   }
   $fallback = Join-Path $DshHome 'chatdsh-pnpm-store'
@@ -82,14 +102,14 @@ for (const anchor of candidates) {
   return ''
 }
 
-function Clean-WorkspaceOverrides([string]$WorkspaceFile, [string]$DshBin) {
+function Clean-WorkspaceOverrides([string]$WorkspaceFile, [string]$DshHome, [string]$DshBin) {
   if (-not (Test-Path -LiteralPath $WorkspaceFile)) { return }
   $js = @'
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
-const workspaceFile = process.argv[1];
-const dshBin = process.argv[2];
+const workspaceFile = process.argv[2];
+const dshBin = process.argv[3];
 const candidates = [];
 if (dshBin) {
   try {
@@ -125,15 +145,16 @@ if (overrides && typeof overrides === "object" && Array.isArray(overrides.items)
   }
 }
 '@
-  & node -e $js $WorkspaceFile $DshBin
-  if ($LASTEXITCODE -ne 0) { throw "清理 $WorkspaceFile 失败" }
+  $res = Invoke-TempNodeScript $DshHome $js @($WorkspaceFile, $DshBin)
+  if ($res.Output) { $res.Output | ForEach-Object { Write-Host $_ } }
+  if ($res.ExitCode -ne 0) { throw "清理 $WorkspaceFile 失败" }
 }
 
-function Clean-ProfilePackageJson([string]$PkgFile) {
+function Clean-ProfilePackageJson([string]$PkgFile, [string]$DshHome) {
   if (-not (Test-Path -LiteralPath $PkgFile)) { return }
   $js = @'
 const fs = require("node:fs");
-const pkgFile = process.argv[1];
+const pkgFile = process.argv[2];
 const pkg = JSON.parse(fs.readFileSync(pkgFile, "utf8"));
 let changed = false;
 for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
@@ -152,7 +173,8 @@ if (changed) {
   console.log("已从 " + pkgFile + " 清理残留的 @chatdsh/* 声明。");
 }
 '@
-  & node -e $js $PkgFile
+  $res = Invoke-TempNodeScript $DshHome $js @($PkgFile)
+  if ($res.Output) { $res.Output | ForEach-Object { Write-Host $_ } }
 }
 
 $DshHome = if (-not [string]::IsNullOrWhiteSpace($env:DSH_HOME)) { $env:DSH_HOME.Trim() } else { Join-Path $env:USERPROFILE '.dsh' }
@@ -181,8 +203,8 @@ foreach ($p in $Profile) {
       $env:DSH_HOME = $prevHome; $env:npm_config_store_dir = $prevNpm; $env:pnpm_config_store_dir = $prevPnpm
     }
   }
-  Clean-ProfilePackageJson $pkgFile
-  Clean-WorkspaceOverrides (Join-Path $profileDir 'pnpm-workspace.yaml') $DshBin
+  Clean-ProfilePackageJson $pkgFile $DshHome
+  Clean-WorkspaceOverrides (Join-Path $profileDir 'pnpm-workspace.yaml') $DshHome $DshBin
   $scopeDir = Join-Path $profileDir 'node_modules\@chatdsh'
   if (Test-Path -LiteralPath $scopeDir) { Remove-Item -LiteralPath $scopeDir -Recurse -Force }
   $pnpmDir = Join-Path $profileDir 'node_modules\.pnpm'

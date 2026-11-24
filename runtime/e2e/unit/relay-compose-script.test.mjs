@@ -470,6 +470,12 @@ test('远程免克隆模式：relay-up.sh 自动拉取 compose 与脚本，pack-
     assert.equal(statSync(join(relayDir, '.env')).mode & 0o777, 0o600);
     assert.ok(relayRes.stdout.includes(`curl -fsSL ${rawBase}/scripts/device-join.sh | bash -s -- --relay https://relay.example.com`), relayRes.stdout);
     assert.ok(relayRes.stdout.includes(`& ([scriptblock]::Create((irm ${rawBase}/scripts/device-join.ps1))) -Relay https://relay.example.com`), relayRes.stdout);
+
+    // 校验 Windows PowerShell 脚本不含 UTF-8 BOM，避免 PowerShell 7+ 通过 [scriptblock]::Create((irm ...)) 解析失败
+    for (const psRel of ['scripts/device-join.ps1', 'scripts/uninstall.ps1']) {
+      const rawBuf = readFileSync(join(REPO_ROOT, psRel));
+      assert.equal(rawBuf[0] === 0xef && rawBuf[1] === 0xbb && rawBuf[2] === 0xbf, false, `${psRel} 不得包含 UTF-8 BOM`);
+    }
     assert.ok(relayRes.stdout.includes(join(relayDir, 'relay-approve.sh')), relayRes.stdout);
 
     // 4. 通过 POSIX sh 执行 `curl -fsSL ... | bash -s -- --install-only` 下载归档、校验 SHA-256 并真实装入 DSH web profile

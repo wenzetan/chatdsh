@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
   ChatDSH Windows 设备侧一行接入脚本（PowerShell 5.1 / PowerShell 7+ 通用）。
 
@@ -33,7 +33,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+try {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch {}
 
 $DefaultRepoUrl = 'https://github.com/wenzetan/chatdsh'
 $GithubRepo = if ($env:CHATDSH_GITHUB_REPO) { $env:CHATDSH_GITHUB_REPO } else { ([Uri]$DefaultRepoUrl).AbsolutePath.Trim('/') }
@@ -77,7 +79,7 @@ function Show-Help {
 
 if ($Help) {
   Show-Help
-  exit 0
+  return
 }
 
 function Normalize-PublicUrl([string]$Raw) {
@@ -198,15 +200,31 @@ function Verify-ArchiveSha256([string]$ArchivePath, [string]$ChecksumPath, [stri
   }
 }
 
-function Read-ProfileStoreDir([string]$ProfileDir, [string]$DshBin) {
+function Invoke-TempNodeScript([string]$WorkDir, [string]$ScriptContent, [string[]]$ScriptArgs) {
+  if (-not (Test-Path -LiteralPath $WorkDir)) {
+    New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+  }
+  $tmpScript = Join-Path $WorkDir ".chatdsh-helper-$PID-$([Guid]::NewGuid().ToString('N').Substring(0, 8)).cjs"
+  try {
+    [System.IO.File]::WriteAllText($tmpScript, $ScriptContent, (New-Object System.Text.UTF8Encoding($false)))
+    $out = & node $tmpScript @ScriptArgs 2>$null
+    return @{ ExitCode = $LASTEXITCODE; Output = $out }
+  } finally {
+    if (Test-Path -LiteralPath $tmpScript) {
+      Remove-Item -LiteralPath $tmpScript -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+function Read-ProfileStoreDir([string]$ProfileDir, [string]$DshHome, [string]$DshBin) {
   $modulesYaml = Join-Path $ProfileDir 'node_modules\.modules.yaml'
   if (-not (Test-Path -LiteralPath $modulesYaml)) { return '' }
   $js = @'
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");
-const modulesYaml = process.argv[1];
-const dshBin = process.argv[2];
+const modulesYaml = process.argv[2];
+const dshBin = process.argv[3];
 const candidates = [];
 if (dshBin) {
   try {
@@ -229,9 +247,9 @@ for (const anchor of candidates) {
   } catch {}
 }
 '@
-  $out = & node -e $js $modulesYaml $DshBin 2>$null
-  if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($out)) {
-    return ($out | Select-Object -First 1).Trim()
+  $res = Invoke-TempNodeScript $DshHome $js @($modulesYaml, $DshBin)
+  if ($res.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($res.Output)) {
+    return ($res.Output | Select-Object -First 1).Trim()
   }
   return ''
 }
@@ -240,7 +258,7 @@ function Resolve-StoreDir([string]$DshHome, [string]$ProfileName, [string]$DshBi
   if (-not [string]::IsNullOrWhiteSpace($env:pnpm_config_store_dir)) { return $env:pnpm_config_store_dir }
   if (-not [string]::IsNullOrWhiteSpace($env:npm_config_store_dir)) { return $env:npm_config_store_dir }
   if (-not [string]::IsNullOrWhiteSpace($env:CHATDSH_PNPM_STORE)) { return $env:CHATDSH_PNPM_STORE }
-  $existing = Read-ProfileStoreDir (Join-Path $DshHome "profiles\$ProfileName") $DshBin
+  $existing = Read-ProfileStoreDir (Join-Path $DshHome "profiles\$ProfileName") $DshHome $DshBin
   if (-not [string]::IsNullOrWhiteSpace($existing)) { return $existing }
   return (Join-Path $DshHome 'chatdsh-pnpm-store')
 }
@@ -333,10 +351,15 @@ function Check-PluginUpdate([string]$DshHome, [string]$ProfileName, [string]$Tag
 function Persist-StandaloneScript([string]$DshHome) {
   $saved = Join-Path $DshHome 'chatdsh-device-join.ps1'
   try {
+    $utf8Bom = New-Object System.Text.UTF8Encoding($true)
     if (-not [string]::IsNullOrWhiteSpace($PSCommandPath) -and (Test-Path -LiteralPath $PSCommandPath) -and $PSCommandPath -ne $saved) {
-      Copy-Item -LiteralPath $PSCommandPath -Destination $saved -Force
+      $content = [System.IO.File]::ReadAllText($PSCommandPath, [System.Text.Encoding]::UTF8)
+      [System.IO.File]::WriteAllText($saved, $content.TrimStart([char]0xFEFF), $utf8Bom)
     } elseif (-not (Test-Path -LiteralPath $saved)) {
-      Invoke-WebRequest -Uri "$RawBase/scripts/device-join.ps1" -OutFile $saved -UseBasicParsing -TimeoutSec 30
+      $content = Invoke-RestMethod -Uri "$RawBase/scripts/device-join.ps1" -TimeoutSec 30
+      if ($content -is [string] -and -not [string]::IsNullOrWhiteSpace($content)) {
+        [System.IO.File]::WriteAllText($saved, $content.TrimStart([char]0xFEFF), $utf8Bom)
+      }
     }
   } catch {}
 }
@@ -513,7 +536,7 @@ function Read-PairingCodeSilent {
 $DshHomeResolved = if (-not [string]::IsNullOrWhiteSpace($env:DSH_HOME)) { $env:DSH_HOME.Trim() } else { Join-Path $env:USERPROFILE '.dsh' }
 if ($CheckUpdate) {
   Check-PluginUpdate $DshHomeResolved $Profile $ReleaseTag
-  exit 0
+  return
 }
 if (-not (Test-Path -LiteralPath $DshHomeResolved)) { New-Item -ItemType Directory -Path $DshHomeResolved -Force | Out-Null }
 Persist-StandaloneScript $DshHomeResolved
@@ -529,7 +552,7 @@ if (-not $SkipInstall) {
 
 if ($InstallOnly) {
   Write-Host '插件安装完成（已按 -InstallOnly 退出）。'
-  exit 0
+  return
 }
 
 Write-Host '[2/3] 正在检查设备配对凭据...'
@@ -568,7 +591,7 @@ if (-not $RePair -and $saved['CHATDSH_DEVICE_ID'] -and $saved['CHATDSH_NODE_TOKE
 $restartHint = "powershell -ExecutionPolicy Bypass -File `"$DshHomeResolved\chatdsh-device-join.ps1`""
 if ($NoStart) {
   Write-Host "[3/3] 已按 -NoStart 跳过启动 DSH。后续启动执行：$restartHint"
-  exit 0
+  return
 }
 
 $dshArgs = @('--profile', $Profile)
