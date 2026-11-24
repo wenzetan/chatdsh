@@ -32,7 +32,8 @@ ChatDSH is a cross-device plugin bundle and self-hosted lightweight relay server
 
 ## Quick Start
 
-### Preferred: Manual CLI Setup (Zero Clone, Prebuilt GitHub Image & Plugin Bundle)
+<details>
+<summary><strong>Preferred: Manual CLI Setup (Zero Clone, Prebuilt GitHub Image &amp; Plugin Bundle)</strong> (Click to expand)</summary>
 
 GitHub Actions automatically builds and publishes two artifacts on every `main` push and version tag:
 - **Multi-arch Relay Image**: `ghcr.io/wenzetan/chatdsh-relay:latest` (`linux/amd64` and `linux/arm64`)
@@ -82,7 +83,10 @@ Once connected, open `/` on the relay for the mobile PWA, open `/d/<deviceId>/` 
 > [!TIP]
 > Developers building locally from a cloned checkout can build `dsh-adapter/` and `runtime/`, then run `bash scripts/relay-up.sh --build` and `bash scripts/device-join.sh --from-local --relay <relay-url>`. See [`runtime/docs/deployment.md`](runtime/docs/deployment.md).
 
-### Alternative: AI Agent Guided Deployment & Onboarding
+</details>
+
+<details>
+<summary><strong>Alternative: AI Agent Guided Deployment &amp; Onboarding</strong> (Click to expand)</summary>
 
 > [!WARNING]
 > Even with prompt constraints and redaction rules in place, granting an AI Agent terminal access still carries a risk of secret or domain leakage through unexpected command output, imperfect instruction adherence, or retained conversation context. Manual CLI Setup above is the preferred method; only use AI Agent guided deployment if you understand and accept this risk.
@@ -98,6 +102,8 @@ The Agent follows a redacted, approval-gated workflow:
 1. **Zero-Leakage Boundary & Network Inspection**: Never prints `.env`, device credential files, pairing secrets, or real domains into context; probes host network interface types, tunneling tools (Tailscale, Cloudflare Tunnel, FRP, WireGuard, ZeroTier), and active reverse proxies, then guides you to record your domain and bind address (never `0.0.0.0`; only `127.0.0.1` or a specific tunnel interface IP) locally and choose the connectivity mode.
 2. **Redacted Relay Deployment & Pairing Approval**: Runs `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets` to pull the prebuilt GHCR image and start the Docker Compose relay (`CHATDSH_PAIRING_APPROVAL=required` by default, so pairing requests stay pending until explicitly approved on the relay host; auto-generating and persisting a random pairing secret with `0600` permissions without echoing secrets or domains), references environment files in reverse proxy/tunnel configs with your approval, and instructs you to run `bash ~/.chatdsh/relay/relay-up.sh --print-join-command` manually when needed.
 3. **Optional DSH Plugin Installation with Persistent-Service Gate**: Asks whether you want the Agent to download the prebuilt plugin bundle from GitHub Releases, install `@chatdsh/bundle`, and pair your local DSH (using `--from-relay-env ~/.chatdsh/relay/.env --redact-secrets` on the same host, or silent interactive code input across machines so secrets stay out of shell history). If you confirm, it first checks for persistent DSH services (`systemd` / `systemctl`, `launchd`, `pm2`, `supervisorctl`). Whenever a persistent service is found, the Agent must show the service file path, run user, proposed `EnvironmentFile` reference update, and restart impact, and obtain your explicit approval before editing or restarting the service. Once all devices are paired, run `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` to close the pairing endpoint.
+
+</details>
 
 ## Documentation
 

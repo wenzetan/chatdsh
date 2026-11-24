@@ -32,7 +32,8 @@ ChatDSH 是面向官方 DSH（DeepSeek Harness）的跨设备互联插件集与�
 
 ## 快速开始
 
-### 首选方式：手动命令行部署（免克隆仓库，直接复用 GitHub 预构建镜像与插件）
+<details>
+<summary><strong>首选方式：手动命令行部署（免克隆仓库，直接复用 GitHub 预构建镜像与插件）</strong>（点击展开）</summary>
 
 GitHub Actions 在每次主干更新与版本发布时自动构建并发布两项产物：
 - **多架构中继镜像**：`ghcr.io/wenzetan/chatdsh-relay:latest`（支持 `linux/amd64` 与 `linux/arm64`）
@@ -82,7 +83,10 @@ bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>
 > [!TIP]
 > 开发者如需在本地克隆的源码仓库内自构建镜像与插件，请先在 `dsh-adapter/` 与 `runtime/` 完成构建，再分别运行 `bash scripts/relay-up.sh --build` 与 `bash scripts/device-join.sh --from-local --relay <中继地址>`，详细步骤见 [`runtime/docs/deployment.md`](runtime/docs/deployment.md)。
 
-### 次选方式：由 AI Agent 协助完成部署与接入
+</details>
+
+<details>
+<summary><strong>次选方式：由 AI Agent 协助完成部署与接入</strong>（点击展开）</summary>
 
 > [!WARNING]
 > 尽管提示词与操作指南已加入零泄露约束与命令限制，将宿主机终端权限交给 AI Agent 仍存在模型未完全遵守约束、命令异常输出带出敏感内容或上下文留存凭据的泄露风险。日常部署请优先使用上方的**手动命令行部署**；仅在你明确了解并可接受上述风险时，再尝试 AI Agent 辅助部署。
@@ -98,6 +102,8 @@ AI Agent 会严格按以下流程协作执行：
 1. **零泄露约束与网络探测**：不读取或打印 `.env`、凭据文件与真实域名；先只读检查宿主机网卡类型、Tailscale / Cloudflare Tunnel / FRP / WireGuard 等内网穿透工具及现有反向代理端口，再引导你在自己的终端写入对外域名与具体监听地址（严禁 `0.0.0.0`，仅限 `127.0.0.1` 或对应内网穿透网卡 IP）并确认联网方式。
 2. **中继容器部署与配对审批**：调用远程脚本 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets` 以脱敏模式拉取 GHCR 预构建镜像并启动 Docker Compose 中继容器（默认 `CHATDSH_PAIRING_APPROVAL=required`，客户端申请配对后需管理员审批放行；首次自动生成随机配对口令并按 `0600` 权限持久化复用）；反向代理或穿透配置通过环境变量引用，不展开明文，且修改前征得你的同意。查看完整接入命令时由你本人在宿主机终端手动执行 `bash ~/.chatdsh/relay/relay-up.sh --print-join-command`。
 3. **代劳安装 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机通过远程脚本下载 GitHub Releases 预构建插件归档安装 `@chatdsh/bundle` 并完成配对接入（同机通过 `--from-relay-env ~/.chatdsh/relay/.env --redact-secrets` 直接引用配置，跨机通过交互隐藏输入口令不留 Shell 历史）；确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、运行用户、拟添加的 `EnvironmentFile` 引用变更及重启影响，取得你的明确同意后再修改服务文件与重启；全部设备接入完成后可运行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` 关闭配对入口。
+
+</details>
 
 ## 文档导航
 
