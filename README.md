@@ -106,12 +106,12 @@ bash ~/.chatdsh/relay/relay-approve.sh approve <requestId>
 若确认接受上述风险，可将以下指令发送给具备终端执行能力的 AI Agent（如官方 DSH、Claude Code、Codex 等），按 [`runtime/docs/agent-deploy-guide.md`](runtime/docs/agent-deploy-guide.md) 逐步完成免克隆远程部署：
 
 ```text
-请先阅读 https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md（或本地 runtime/docs/agent-deploy-guide.md），严格遵守其中的零泄露红线，通过远程脚本与 GitHub 预构建镜像/插件帮我部署 ChatDSH 中继服务端并接入本机 DSH。若本机已存在中继容器或已安装插件，必须先用 --check-update 检查预构建镜像与插件归档是否存在更新并明确询问我是否更新重启，禁止直接跳过。严禁将任何密钥、令牌、配对口令、.env 内容或真实域名输出到上下文中（也不要执行 docker compose config / docker inspect / systemctl show / ps eww / curl -v）；宿主机监听禁止放行 0.0.0.0；其他服务使用密钥或域名时直接引用环境变量文件，需要查看口令或审批配对时提示我自己操作。
+请先阅读 https://raw.githubusercontent.com/wenzetan/chatdsh/main/runtime/docs/agent-deploy-guide.md（或本地 runtime/docs/agent-deploy-guide.md），严格遵守其中的零泄露红线，通过远程脚本与 GitHub 预构建镜像/插件帮我部署 ChatDSH 中继服务端并接入本机 DSH。启动或重建中继容器前，必须先根据本机网卡与反向代理/穿透架构向我明确确认宿主机监听地址（本机反代用 127.0.0.1，跨机反代或穿透回源用对应网卡具体 IP，禁止默认设为 127.0.0.1 且禁止放行 0.0.0.0）。若本机已存在中继容器或已安装插件，必须先用 --check-update 检查预构建镜像与插件归档是否存在更新并明确询问我是否更新重启，禁止直接跳过。严禁将任何密钥、令牌、配对口令、.env 内容或真实域名输出到上下文中（也不要执行 docker compose config / docker inspect / systemctl show / ps eww / curl -v）；其他服务使用密钥或域名时直接引用环境变量文件，需要查看口令或审批配对时提示我自己操作。
 ```
 
 AI Agent 会严格按以下流程协作执行：
 
-1. **零泄露约束与网络探测**：不读取或打印 `.env`、凭据文件与真实域名；先只读检查宿主机网卡类型、Tailscale / Cloudflare Tunnel / FRP / WireGuard 等内网穿透工具及现有反向代理端口，再引导你在自己的终端写入对外域名与具体监听地址（严禁 `0.0.0.0`，仅限 `127.0.0.1` 或对应内网穿透网卡 IP）并确认联网方式。
+1. **零泄露约束、网络探测与监听地址确认**：不读取或打印 `.env`、凭据文件与真实域名；先只读检查宿主机网卡类型、Tailscale / Cloudflare Tunnel / FRP / WireGuard 等内网穿透工具、现有反向代理端口及已有容器绑定地址，**向你明确确认宿主机监听地址**（本机反向代理/穿透用 `127.0.0.1`，跨机网关或穿透对端回源用对应网卡具体单网卡 IP，禁止未经确认默认设为 `127.0.0.1` 且严禁 `0.0.0.0`），再引导你在自己的终端写入对外域名与已确认的监听地址。
 2. **中继容器部署、版本更新检查与配对审批**：若宿主机已存在 `chatdsh-relay` 容器，先执行 `relay-up.sh --check-update` 对比本地运行镜像与 GHCR 远端最新预构建镜像摘要；存在更新时必须主动询问你是否拉取最新镜像并重建重启容器（保留 `.env` 与数据卷）。启动或更新均调用 `curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --redact-secrets` 以脱敏模式执行（默认 `CHATDSH_PAIRING_APPROVAL=required`，客户端申请配对后需管理员审批放行；首次自动生成随机配对口令并按 `0600` 权限持久化复用）；反向代理或穿透配置通过环境变量引用，不展开明文，且修改前征得你的同意。查看完整接入命令时由你本人在宿主机终端手动执行 `bash ~/.chatdsh/relay/relay-up.sh --print-join-command`。
 3. **代劳安装/升级 DSH 插件与持久服务确认门禁**：主动询问是否需要代劳在本机通过远程脚本下载 GitHub Releases 预构建插件归档安装 `@chatdsh/bundle` 并完成配对接入；若本机已安装插件，先执行 `device-join.sh --check-update` 检查远端最新归档，有新版本时询问你是否执行原地升级（`--remote --install-only`，保留原有配对凭据无需重新配对）。确认代劳后先检查是否存在由 `systemd`（`systemctl`）、`launchd`、`pm2`、`supervisord` 等托管的持久化 DSH 服务。发现持久服务时，必须先列出服务文件路径、运行用户、拟变更内容（添加 `EnvironmentFile` 引用或重启加载新版插件）及重启影响，取得你的明确同意后再修改服务文件与重启；全部设备接入完成后可运行 `bash ~/.chatdsh/relay/relay-up.sh --disable-pairing` 关闭配对入口。
 

@@ -13,8 +13,11 @@
    - 仅允许以布尔检查方式确认配置键是否存在（例如 `grep -q '^CHATDSH_PUBLIC_URL=.\+' .env`）。
    - 用户需要查看配对口令或完整设备接入命令时，必须提示用户**在自己的本地终端手动执行** `bash scripts/relay-up.sh --print-join-command`。
    - 中继、反向代理与持久服务使用密钥或域名时，一律通过环境变量文件（`.env`、`$DSH_HOME/chatdsh-device.env`、`EnvironmentFile=`、`${CHATDSH_PUBLIC_URL}`）间接引用，不在命令行参数、服务单元正文或上下文中展开明文。
-2. **宿主机监听地址严禁放行到 `0.0.0.0` 或 `::`**：
-   - `CHATDSH_GATEWAY_BIND_HOST` 只允许设为 `127.0.0.1`（供本机反向代理、`tailscale serve`、`cloudflared`、`frpc` 转发）或目标内网穿透/虚拟组网网卡（如 `tailscale0`、`wg0`、`zt*`）的具体单网卡 IP，禁止向全网卡通配地址暴露容器端口。
+2. **宿主机监听地址必须先向用户确认，且严禁放行到 `0.0.0.0` 或 `::`**：
+   - **禁止在未向用户确认的情况下默认设为 `127.0.0.1`**。首次部署或重建中继容器前，必须先根据宿主机网卡与反向代理/网关位置向用户明确确认 `CHATDSH_GATEWAY_BIND_HOST`：
+     - 前置反向代理 / Tailscale Serve / `cloudflared` / `frpc` 运行在**同一台宿主机**时，绑定 `127.0.0.1`；
+     - 前置反向代理或外部网关运行在**另一台主机、路由器或内网穿透对端**，经由 `tun0`、`tailscale0`、`wg0`、`zt*` 或局域网网卡回源到本机时，必须经用户确认后绑定对应网卡的具体单网卡 IP（通过 `--bind-host <该网卡 IP>` 显式传入）。
+   - 严禁绑定全网卡通配地址 `0.0.0.0` 或 `::`。
 3. **默认启用配对审批并按需关闭配对口令**：
    - 容器默认 `CHATDSH_PAIRING_APPROVAL=required`，任何客户端提交配对申请后均进入 `pending` 状态，必须由中继宿主机管理员执行 `bash scripts/relay-approve.sh approve <requestId>` 明确放行后才会签发一次性设备令牌。
    - 全部目标设备配对完成后，提醒用户执行 `bash scripts/relay-up.sh --disable-pairing` 清空静态配对口令以关闭配对入口（后续新增设备时再执行 `--rotate-pairing-code`）。
@@ -47,24 +50,29 @@ for cmd in nginx caddy traefik haproxy openresty; do
   command -v "$cmd" >/dev/null 2>&1 && printf '已安装反向代理: %s\n' "$cmd"
 done
 ss -tln 2>/dev/null | grep -E ':(80|443|3170)\b' | awk '{print $1, $4}' || true
-docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true
+docker ps -a --format '{{.Names}}\t{{.Image}}\t{{.Ports}}' 2>/dev/null || true
+grep -q '^CHATDSH_GATEWAY_BIND_HOST=.\+' "${CHATDSH_RELAY_DIR:-${HOME}/.chatdsh/relay}/.env" 2>/dev/null && echo "bind_host=configured" || echo "bind_host=missing"
 ```
 
-## 第二阶段：引导用户配置域名（不进入上下文）并确认联网方式
+## 第二阶段：引导用户配置域名（不进入上下文）并明确确认监听地址与联网方式
 
-将第一阶段探测到的网卡类型、内网穿透工具与反向代理情况简洁告知用户，并完成以下确认：
+将第一阶段探测到的网卡名称、内网穿透工具、反向代理及已有容器端口绑定情况简洁告知用户，并完成以下两项强制确认（未确认前禁止直接启动或重建容器）：
 
-1. **由用户本人在本地终端写入域名与监听地址（不发进对话）**：
+1. **必须先向用户确认宿主机监听地址（`CHATDSH_GATEWAY_BIND_HOST`）**：
+   - 向用户说明探测到的网卡类型（例如回环 `lo`、内网穿透网卡 `tun0` / `tailscale0` / `wg0`、局域网网卡 `eno1`/`eth0`）以及已有 `chatdsh-relay` 容器当前的端口绑定；
+   - **明确向用户提问**：前置反向代理 / 网关运行在本机（应绑定 `127.0.0.1`），还是运行在外部网关或内网穿透对端并经由某张特定网卡回源到本机（应绑定该网卡的具体 IP，严禁 `0.0.0.0` 或 `::`）？
+   - 若本机已有正在运行的 `chatdsh-relay` 容器且绑定了特定网卡 IP，更新或重建容器前必须核对 `.env` 中的 `CHATDSH_GATEWAY_BIND_HOST` 与该地址一致（或按用户最新确认传入 `--bind-host <具体网卡 IP>`），防止重建时被重置为 `127.0.0.1` 导致公网回源 `HTTP 502`。
+2. **由用户本人在本地终端写入域名与已确认的监听地址（不发进对话）**：
    - 仅检查存在性，不打印键值（独立部署默认配置目录 `~/.chatdsh/relay`）：
      ```sh
      grep -q '^CHATDSH_PUBLIC_URL=.\+' "${CHATDSH_RELAY_DIR:-${HOME}/.chatdsh/relay}/.env" 2>/dev/null && echo "configured" || echo "missing"
      ```
-   - 若为 `missing`，请用户在自己的终端执行远程脚本录入必填域名并生成随机配对口令（自动拉取 `docker-compose.yml` 与管理脚本到 `~/.chatdsh/relay`）：
+   - 若为 `missing`，请用户在自己的终端执行远程脚本录入必填域名并确认监听地址（脚本交互提示域名与监听地址，自动生成随机配对口令并拉取 `docker-compose.yml` 与管理脚本到 `~/.chatdsh/relay`）：
      ```sh
      curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --prepare-only --redact-secrets
      ```
-   - 若用户需要让中继绑定到特定内网穿透网卡 IP（例如 WireGuard / ZeroTier / Tailscale 网卡的私有 IP），请用户在本地终端附加 `--bind-host <该穿透网卡的具体 IP>` 或直接写入 `.env` 中的 `CHATDSH_GATEWAY_BIND_HOST`（严禁填 `0.0.0.0` 或 `::`，脚本会自动拒绝通配地址）。
-2. **向用户确认中继联网方式与访问保护**：
+   - 也可直接附加 `--bind-host <已确认的单网卡 IP>`（例如本机反代用 `--bind-host 127.0.0.1`，跨机穿透回源用 `--bind-host <该穿透网卡的具体 IP>`；脚本自动拒绝 `0.0.0.0` 或 `::`）。
+3. **向用户确认中继联网方式与访问保护**：
    - **公网域名 + 反向代理（Nginx / Caddy / Traefik 等）**：宿主机仅监听 `127.0.0.1:3170`，前置反向代理终止 TLS 并转发至 `http://127.0.0.1:3170`。**公网暴露必须提醒用户开启 `CHATDSH_ACCESS_MODE=required` 或在反向代理层启用身份认证（Cloudflare Access、OIDC 网关或 mTLS）**，防止未授权访客访问 PWA 与 `/d/<deviceId>/`。
    - **Tailscale（Tailscale Serve / Funnel）**：推荐 `tailscale serve --bg http://127.0.0.1:3170` 仅限 tailnet 私有访问；若选择公网 Funnel，同样要求启用 `CHATDSH_ACCESS_MODE=required`。
    - **其他内网穿透或组网方案（Cloudflare Tunnel、FRP、ZeroTier、WireGuard、EasyTier 等）**：穿透服务转发到 `127.0.0.1:3170` 或仅绑定该穿透服务的专用网卡 IP，严禁放行 `0.0.0.0`。
@@ -79,7 +87,7 @@ docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null || true
 curl -fsSL https://raw.githubusercontent.com/wenzetan/chatdsh/main/scripts/relay-up.sh | bash -s -- --check-update
 ```
 
-- **`STATUS=update-available`**（或容器仍在使用旧本地构建镜像）：向用户汇报当前容器运行镜像的创建时间、本地摘要与远端 GHCR 预构建镜像最新摘要，**明确询问用户是否拉取最新预构建镜像并重建重启中继容器**（说明重建期间设备隧道会短暂重连，已保存的 `.env`、数据卷与已配对设备均保留）。用户确认后执行下方的脱敏启动命令完成更新。
+- **`STATUS=update-available`**（或容器仍在使用旧本地构建镜像）：向用户汇报当前容器运行镜像的创建时间、当前端口绑定（`CONTAINER_PORTS`）、本地摘要与远端 GHCR 预构建镜像最新摘要，**明确询问用户是否拉取最新预构建镜像并重建重启中继容器，并再次确认重建后的宿主机监听地址**（说明重建期间设备隧道会短暂重连，已保存的 `.env`、数据卷与已配对设备均保留）。用户确认后执行下方的脱敏启动命令完成更新（若需沿用或指定特定网卡 IP，显式附加 `--bind-host <已确认的网卡 IP>`）。
 - **`STATUS=up-to-date`**：向用户说明中继容器已是最新预构建镜像，并询问是否仍需强制重建或直接进入下一阶段。
 - **`STATUS=not-installed`**：确认 `~/.chatdsh/relay/.env` 中 `CHATDSH_PUBLIC_URL` 已就绪后直接执行启动。
 

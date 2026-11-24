@@ -94,10 +94,13 @@ test('relay-up.sh 归一化裸域名与精确 origin，并拒绝非法域名与 
       assert.equal(existsSync(cfg), false);
     }
 
-    // 允许绑定具体内网穿透网卡 IP（RFC5737 示例地址）
+    // 允许绑定具体内网穿透网卡 IP（RFC5737 示例地址），且后续不传 --bind-host 重跑时保留原绑定地址不被重置为 127.0.0.1
     const specificCfg = join(home, 'specific-host.env');
     const okHost = runRelayUp(['--prepare-only', '--config', specificCfg, '--domain', 'relay.example.com', '--bind-host', '192.0.2.10']);
     assert.equal(okHost.status, 0, okHost.stderr);
+    assert.equal(parseSimpleEnv(readFileSync(specificCfg, 'utf8')).get('CHATDSH_GATEWAY_BIND_HOST'), '192.0.2.10');
+    const keepHost = runRelayUp(['--prepare-only', '--config', specificCfg]);
+    assert.equal(keepHost.status, 0, keepHost.stderr);
     assert.equal(parseSimpleEnv(readFileSync(specificCfg, 'utf8')).get('CHATDSH_GATEWAY_BIND_HOST'), '192.0.2.10');
   } finally {
     releaseIndependentHome(home);

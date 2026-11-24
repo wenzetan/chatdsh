@@ -357,6 +357,60 @@ prompt_required_domain() {
   done
 }
 
+prompt_bind_host() {
+  local default_host="${1:-127.0.0.1}"
+  local use_tty=0
+  if [ -t 0 ] && [ -t 2 ]; then
+    use_tty=0
+  elif { [ -z "$SCRIPT_SOURCE" ] || [ "$SCRIPT_SOURCE" = "/dev/stdin" ]; } && [ -t 2 ] && [ -r /dev/tty ]; then
+    use_tty=1
+  else
+    printf '%s' "$default_host"
+    return 0
+  fi
+
+  while true; do
+    printf '请输入宿主机监听地址（本机反向代理/Tailscale Serve 回车保持 %s；跨机网关或穿透回源请填写对应网卡具体 IP，禁止 0.0.0.0）[%s]: ' "$default_host" "$default_host" >&2
+    local answer=""
+    if [ "$use_tty" -eq 1 ]; then
+      if ! IFS= read -r answer </dev/tty; then
+        printf '%s' "$default_host"
+        return 0
+      fi
+    else
+      if ! IFS= read -r answer; then
+        printf '%s' "$default_host"
+        return 0
+      fi
+    fi
+    answer="$(trim "$answer")"
+    if [ -z "$answer" ]; then
+      printf '%s' "$default_host"
+      return 0
+    fi
+    local validated=""
+    if validated="$(validate_bind_host "$answer")"; then
+      printf '%s' "$validated"
+      return 0
+    fi
+  done
+}
+
+detect_existing_container_bind_host() {
+  local container_name="$1"
+  command -v docker >/dev/null 2>&1 || return 0
+  local ports_str=""
+  ports_str="$(docker ps -a --filter "name=^/${container_name}$" --format '{{.Ports}}' 2>/dev/null | head -n 1 || true)"
+  [ -n "$ports_str" ] || return 0
+  local host_part=""
+  host_part="$(printf '%s' "$ports_str" | grep -oE '([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|\[[0-9a-fA-F:]+\]):[0-9]+->3170/tcp' | head -n 1 | sed -E 's/:[0-9]+->3170\/tcp$//' || true)"
+  [ -n "$host_part" ] || return 0
+  case "$host_part" in
+    0.0.0.0|::|"[::]") return 0 ;;
+  esac
+  printf '%s' "$host_part"
+}
+
 extract_host_from_origin() {
   local origin="$1"
   local rest="${origin#*://}"
@@ -537,7 +591,7 @@ check_relay_update() {
   local container_name="$1"
   local target_image="$2"
   local ps_line
-  ps_line="$(docker ps -a --filter "name=^/${container_name}$" --format '{{.ID}}	{{.Image}}	{{.Status}}' | head -n 1 || true)"
+  ps_line="$(docker ps -a --filter "name=^/${container_name}$" --format '{{.ID}}	{{.Image}}	{{.Status}}	{{.Ports}}' | head -n 1 || true)"
   if [ -z "$ps_line" ]; then
     printf 'STATUS=not-installed\n'
     printf 'CONTAINER=%s\n' "$container_name"
@@ -547,7 +601,9 @@ check_relay_update() {
 
   local running_img_id
   running_img_id="$(docker container inspect --format '{{.Image}}' "$container_name" 2>/dev/null || true)"
-  local running_status="${ps_line##*$'\t'}"
+  local running_ports="${ps_line##*$'\t'}"
+  local ps_without_ports="${ps_line%$'\t'*}"
+  local running_status="${ps_without_ports##*$'\t'}"
   local local_meta=""
   local local_id=""
   local local_digests=""
@@ -573,6 +629,7 @@ check_relay_update() {
     printf 'REASON=remote-manifest-unavailable\n'
     printf 'CONTAINER=%s\n' "$container_name"
     printf 'CONTAINER_STATUS=%s\n' "$running_status"
+    printf 'CONTAINER_PORTS=%s\n' "$running_ports"
     printf 'TARGET_IMAGE=%s\n' "$target_image"
     printf 'LOCAL_IMAGE_ID=%s\n' "$local_id"
     printf 'LOCAL_CREATED=%s\n' "$local_created"
@@ -610,6 +667,7 @@ check_relay_update() {
   fi
   printf 'CONTAINER=%s\n' "$container_name"
   printf 'CONTAINER_STATUS=%s\n' "$running_status"
+  printf 'CONTAINER_PORTS=%s\n' "$running_ports"
   printf 'TARGET_IMAGE=%s\n' "$target_image"
   printf 'LOCAL_IMAGE_ID=%s\n' "$local_id"
   printf 'LOCAL_DIGESTS=%s\n' "$local_digests"
@@ -904,11 +962,20 @@ main() {
     pairing_generated=1
   fi
 
-  local raw_bind_host
+  local raw_bind_host=""
   if [ "$has_bind_host_arg" -eq 1 ]; then
     raw_bind_host="$bind_host_arg"
+  elif [ -n "${CHATDSH_GATEWAY_BIND_HOST:-}" ]; then
+    raw_bind_host="$CHATDSH_GATEWAY_BIND_HOST"
+  elif [ "$reconfigure" -eq 0 ] && [ -n "$existing_bind_host" ]; then
+    raw_bind_host="$existing_bind_host"
   else
-    raw_bind_host="${CHATDSH_GATEWAY_BIND_HOST:-${existing_bind_host:-127.0.0.1}}"
+    local inherited_bind_host=""
+    if [ "$prepare_only" -eq 0 ]; then
+      inherited_bind_host="$(detect_existing_container_bind_host "$container_name")"
+    fi
+    local suggested_bind_host="${existing_bind_host:-${inherited_bind_host:-127.0.0.1}}"
+    raw_bind_host="$(prompt_bind_host "$suggested_bind_host")"
   fi
   local bind_host
   bind_host="$(validate_bind_host "$raw_bind_host")"
